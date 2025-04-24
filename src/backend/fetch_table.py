@@ -1,4 +1,4 @@
-"""fetch_table.py – robust OData → DuckDB loader (HTTP + utilities)
+"""fetch_table.py – robust OData → DuckDB loader (HTTP + utilities)
 ----------------------------------------------------------------
 Improvements already in place
 1. **Checkpoint‑resume** for cursor‑paged tables – progress dumped to `data/.resume_state.json` every chunk (never re‑fetch rows after crash).
@@ -27,6 +27,7 @@ python fetch_table.py --all
 python fetch_table.py --sql "SELECT table_name, row_count FROM duckdb_tables();"
 ```
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,10 +50,10 @@ from tqdm import tqdm
 BASE_URL = "http://knesset.gov.il/Odata/ParliamentInfo.svc"
 DEFAULT_DB = Path("data/warehouse.duckdb")
 PAGE_SIZE = 100
-MAX_RETRIES = 8            # more patience for 503 bursts
+MAX_RETRIES = 8  # more patience for 503 bursts
 PARQUET_DIR = Path("data/parquet")
 RESUME_FILE = Path("data/.resume_state.json")
-CONCURRENCY = 8            # parallel page fetches
+CONCURRENCY = 8  # parallel page fetches
 
 COALITION_FILE = Path("data/coalition_data.xlsx")  # for data‑quality helper #3
 
@@ -77,8 +78,9 @@ CURSOR_TABLES: Dict[str, Tuple[str, int]] = {
 }
 
 # -----------------------------------------------------------------------------
-# Resume‑state helpers (improvement #1)
+# Resume‑state helpers (improvement #1)
 # -----------------------------------------------------------------------------
+
 
 def _load_resume() -> Dict[str, int]:
     if RESUME_FILE.exists():
@@ -100,6 +102,7 @@ resume_state: Dict[str, int] = _load_resume()
 # Retry helper
 # -----------------------------------------------------------------------------
 
+
 def _backoff_hdlr(details):
     print(f"🔄 back‑off {details['wait']:.1f}s after: {details['exception']}")
 
@@ -119,6 +122,7 @@ async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:  # noqa:
 # -----------------------------------------------------------------------------
 # Download logic
 # -----------------------------------------------------------------------------
+
 
 async def download_table(table: str) -> pd.DataFrame:
     """Download *table* into a DataFrame, using cursor‑paging when needed."""
@@ -183,9 +187,7 @@ async def download_table(table: str) -> pd.DataFrame:
         async def fetch_page(page_idx: int):
             async with sem:
                 skip = page_idx * PAGE_SIZE
-                url = (
-                    f"{BASE_URL}/{entity}?$format=json&$skip={skip}&$top={PAGE_SIZE}"
-                )
+                url = f"{BASE_URL}/{entity}?$format=json&$skip={skip}&$top={PAGE_SIZE}"
                 rows: List[dict] = []
                 while True:
                     try:
@@ -237,6 +239,7 @@ async def _download_sequential(
 # Storage helper (incl. Parquet mirror)
 # -----------------------------------------------------------------------------
 
+
 def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB):
     if df.empty:
         print(f"⚠️  {table}: zero rows (skipped)")
@@ -259,8 +262,9 @@ def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB):
 
 
 # -----------------------------------------------------------------------------
-# Data‑quality helper functions (idea #3)
+# Data‑quality helper functions (idea #3)
 # -----------------------------------------------------------------------------
+
 
 def load_coalition_data() -> pd.DataFrame:
     if COALITION_FILE.exists():
@@ -292,8 +296,23 @@ def map_mk_site_code(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 # -----------------------------------------------------------------------------
-# Exported helpers for Streamlit (idea #2)
+# Exported helpers for Streamlit (idea #2)
 # -----------------------------------------------------------------------------
+
+
+async def _fetch_single_table(
+    table: str,
+    progress_cb: Optional[Callable[[str, int], None]] = None,
+    db_path: Path = DEFAULT_DB,
+    **kwargs,
+) -> pd.DataFrame:
+    """Download a single table, call progress_cb, and return the DataFrame."""
+    df = await download_table(table)
+    store(df, table, db_path=db_path)
+    if progress_cb:
+        progress_cb(table, len(df))
+    return df
+
 
 async def refresh_tables(
     tables: List[str] | None = None,
@@ -301,13 +320,13 @@ async def refresh_tables(
     db_path: Path = DEFAULT_DB,
 ):
     """Download *tables* (or all) and store; progress_cb(table, rows)"""
-    if tables is None:
-        tables = TABLES
-    for t in tables:
-        df = await download_table(t)
-        store(df, t, db_path=db_path)
-        if progress_cb:
-            progress_cb(t, len(df))
+    # first, sanitize & validate the list of tables
+    tables_to_fetch = tables if tables is not None else TABLES
+    invalid = [t for t in tables_to_fetch if t not in TABLES]
+    if invalid:
+        raise ValueError(f"Invalid table(s): {invalid!r}")
+    for t in tables_to_fetch:
+        await _fetch_single_table(t, progress_cb=progress_cb, db_path=db_path)
 
 
 def ensure_latest(tables: List[str] | None = None, db_path: Path = DEFAULT_DB):
@@ -318,6 +337,7 @@ def ensure_latest(tables: List[str] | None = None, db_path: Path = DEFAULT_DB):
 # -----------------------------------------------------------------------------
 # CLI helpers (adds --sql)
 # -----------------------------------------------------------------------------
+
 
 def list_tables():
     print("Available tables:")
@@ -332,8 +352,15 @@ def parse_args():
     g = p.add_mutually_exclusive_group()
     g.add_argument("--table", help="Name of single table to fetch")
     g.add_argument("--all", action="store_true", help="Fetch all predefined tables")
-    g.add_argument("--sql", help="Run SQL against the warehouse and print result as CSV")
-    p.add_argument("--db", type=Path, default=DEFAULT_DB, help="DuckDB file (default: data/warehouse.duckdb)")
+    g.add_argument(
+        "--sql", help="Run SQL against the warehouse and print result as CSV"
+    )
+    p.add_argument(
+        "--db",
+        type=Path,
+        default=DEFAULT_DB,
+        help="DuckDB file (default: data/warehouse.duckdb)",
+    )
     return p.parse_args()
 
 
