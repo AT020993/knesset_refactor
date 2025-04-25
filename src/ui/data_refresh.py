@@ -68,6 +68,48 @@ def _last_loaded(table: str) -> str:
         return "never"
 
 
+# --- NEW: Function to get filter options ---
+@st.cache_data(ttl=3600)
+def get_filter_options():
+    """Fetches distinct Knesset numbers and Faction details from the DB."""
+    knesset_nums = []
+    factions = pd.DataFrame(columns=["FactionID", "Name", "KnessetNum"])
+    if not DB.exists():
+        return knesset_nums, factions
+    try:
+        with _connect() as con:
+            tables_in_db = (
+                con.execute(
+                    "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';"
+                )
+                .df()["table_name"]
+                .tolist()
+            )
+            if "KNS_KnessetDates" in tables_in_db:
+                knesset_nums = (
+                    con.execute(
+                        "SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC"
+                    )
+                    .df()["KnessetNum"]
+                    .tolist()
+                )
+            elif "KNS_Faction" in tables_in_db:
+                knesset_nums = (
+                    con.execute(
+                        "SELECT DISTINCT KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC"
+                    )
+                    .df()["KnessetNum"]
+                    .tolist()
+                )
+            if "KNS_Faction" in tables_in_db:
+                factions = con.execute(
+                    "SELECT FactionID, Name, KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC, Name"
+                ).df()
+    except Exception as e:
+        st.warning(f"Could not fetch filter options: {e}")
+    return knesset_nums, factions
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Sidebar  – fetch controls
 # ──────────────────────────────────────────────────────────────────────────────
@@ -79,6 +121,29 @@ selected = st.sidebar.multiselect(
 )
 
 run_now = st.sidebar.button("🚀 Fetch selected tables now")
+
+# --- NEW: Filter Widgets in Sidebar ---
+knesset_nums_options, factions_options_df = get_filter_options()
+
+faction_display_map = {
+    f"{row['Name']} (Knesset {row['KnessetNum']})": row["FactionID"]
+    for index, row in factions_options_df.iterrows()
+}
+faction_id_to_display_map = {v: k for k, v in faction_display_map.items()}
+
+st.sidebar.divider()
+st.sidebar.header("📊 Data Filters")
+
+selected_knessets = st.sidebar.multiselect(
+    "Filter by Knesset Number:",
+    options=knesset_nums_options,
+)
+
+selected_faction_names = st.sidebar.multiselect(
+    "Filter by Faction:",
+    options=list(faction_display_map.keys()),
+)
+selected_faction_ids = [faction_display_map[name] for name in selected_faction_names]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main area  – status + optional SQL + downloads
@@ -114,8 +179,167 @@ if run_now:
     with st.status("Downloading …", expanded=True):
         tables = selected if selected else None
         asyncio.run(ft.refresh_tables(tables=tables, progress_cb=_progress_cb))
-
     st.success("Finished! Scroll down to download your data.")
+    # Clear filter cache and rerun to update options
+    st.cache_data.clear()
+    st.rerun()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# NEW: Interactive Data Explorer
+# ──────────────────────────────────────────────────────────────────────────────
+st.divider()
+st.header("🔬 Interactive Data Explorer")
+
+explorer_col1, explorer_col2 = st.columns([1, 3])
+
+with explorer_col1:
+    try:
+        with _connect() as con:
+            available_tables_in_db = (
+                con.execute(
+                    "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';"
+                )
+                .df()["table_name"]
+                .tolist()
+            )
+            tables_for_explorer = [t for t in ft.TABLES if t in available_tables_in_db]
+            if not tables_for_explorer:
+                st.warning("No tables found in the database for exploration.")
+                selected_table_to_explore = None
+            else:
+                selected_table_to_explore = st.selectbox(
+                    "Select table to explore:", options=tables_for_explorer
+                )
+    except Exception as e:
+        st.warning(f"Could not list tables from DB: {e}")
+        selected_table_to_explore = None
+
+with explorer_col2:
+    st.write(f"Filters applied:")
+    st.write(f"* **Knesset(s):** {selected_knessets or 'All'}")
+    st.write(f"* **Faction(s):** {selected_faction_names or 'All'}")
+
+if selected_table_to_explore:
+    try:
+        with _connect() as con:
+            # Base query parts
+            select_clause = f"SELECT DISTINCT P.*"  # Select distinct persons
+            from_clause = (
+                f"FROM {selected_table_to_explore} P"  # Alias the main table as P
+            )
+            join_clause = ""
+            where_clauses = []
+
+            # Get columns of the main selected table
+            main_table_columns = (
+                con.execute(f"PRAGMA table_info('{selected_table_to_explore}')")
+                .df()["name"]
+                .tolist()
+            )
+
+            # Check if filtering requires joining with KNS_PersonToPosition
+            needs_join_for_filters = False
+            target_filter_table = "P"  # Default to filtering the main table
+
+            if selected_table_to_explore == "KNS_Person" and (
+                selected_knessets or selected_faction_ids
+            ):
+                # Check if KNS_PersonToPosition table exists
+                tables_in_db = (
+                    con.execute(
+                        "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';"
+                    )
+                    .df()["table_name"]
+                    .tolist()
+                )
+                if "KNS_PersonToPosition" in tables_in_db:
+                    needs_join_for_filters = True
+                    target_filter_table = "P2P"
+                    join_clause = f"INNER JOIN KNS_PersonToPosition P2P ON P.PersonID = P2P.PersonID"
+                    # Only MKs or Ministers (PositionID 61, 43)
+                    where_clauses.append(f"P2P.PositionID IN (61, 43)")
+                else:
+                    st.warning(
+                        "Cannot filter KNS_Person by Knesset/Faction: KNS_PersonToPosition table not found in database."
+                    )
+
+            # Add KnessetNum filter (applied to correct table alias)
+            if selected_knessets:
+                if needs_join_for_filters or "KnessetNum" in main_table_columns:
+                    knesset_list_str = ", ".join(map(str, selected_knessets))
+                    where_clauses.append(
+                        f"{target_filter_table}.KnessetNum IN ({knesset_list_str})"
+                    )
+
+            # Add FactionID filter (applied to correct table alias)
+            if selected_faction_ids:
+                if needs_join_for_filters or "FactionID" in main_table_columns:
+                    faction_list_str = ", ".join(map(str, selected_faction_ids))
+                    where_clauses.append(
+                        f"{target_filter_table}.FactionID IN ({faction_list_str})"
+                    )
+
+            # --- Combine Query Parts ---
+            if selected_table_to_explore == "KNS_Person" and (
+                selected_knessets or selected_faction_ids
+            ):
+                query = select_clause + " " + from_clause + " " + join_clause
+            else:
+                # Default: no join, no aliasing
+                query = f"SELECT * FROM {selected_table_to_explore}"
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
+                if "LastUpdatedDate" in main_table_columns:
+                    query += " ORDER BY LastUpdatedDate DESC"
+                elif any(
+                    pk in main_table_columns
+                    for pk in [
+                        "BillID",
+                        "PersonID",
+                        "CommitteeSessionID",
+                        "PlenumSessionID",
+                        "QueryID",
+                    ]
+                ):
+                    pk_col = next(
+                        pk
+                        for pk in [
+                            "BillID",
+                            "PersonID",
+                            "CommitteeSessionID",
+                            "PlenumSessionID",
+                            "QueryID",
+                        ]
+                        if pk in main_table_columns
+                    )
+                    query += f" ORDER BY {pk_col} DESC"
+                query += " LIMIT 1000"
+
+            if selected_table_to_explore == "KNS_Person" and (
+                selected_knessets or selected_faction_ids
+            ):
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
+                if "LastUpdatedDate" in main_table_columns:
+                    query += " ORDER BY P.LastUpdatedDate DESC"
+                elif "PersonID" in main_table_columns:
+                    query += f" ORDER BY P.PersonID DESC"
+                query += " LIMIT 1000"
+
+            st.write(f"Running query:")
+            st.code(query, language="sql")
+            filtered_df = con.execute(query).df()
+            st.dataframe(filtered_df, use_container_width=True)
+            if not filtered_df.empty:
+                csv_filtered = filtered_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="⬇️ Download Filtered Data (CSV)",
+                    data=csv_filtered,
+                    file_name=f"filtered_{selected_table_to_explore}.csv",
+                    mime="text/csv",
+                )
+    except Exception as e:
+        st.error(f"❌ Failed to query table '{selected_table_to_explore}': {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Download buttons for curated views
