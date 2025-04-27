@@ -391,7 +391,14 @@ if selected_table_to_explore:
             st.dataframe(filtered_df, use_container_width=True)
 
             # Option to download the filtered results
-            csv_filtered = filtered_df.to_csv(index=False).encode("utf-8")
+            if not filtered_df.empty:
+                # Generate CSV string with UTF-8 BOM
+                csv_string_with_bom_filtered = filtered_df.to_csv(index=False, encoding='utf-8-sig')
+                # Encode the string to bytes for the download button
+                csv_filtered = csv_string_with_bom_filtered.encode('utf-8')
+            else:
+                csv_filtered = b""
+
             st.download_button(
                 label="⬇️ Download Filtered Data (CSV)",
                 data=csv_filtered,
@@ -458,7 +465,10 @@ for label, sql in EXPORTS.items():
         continue
 
     # CSV
-    csv_bytes = df.to_csv(index=False).encode()
+    # Generate CSV string with UTF-8 BOM
+    csv_string_with_bom = df.to_csv(index=False, encoding='utf-8-sig')
+    # Encode the string to bytes for the download button
+    csv_bytes = csv_string_with_bom.encode('utf-8')
 
     # Excel (temp file because pandas needs a path)
     tmp_xlsx = Path("/tmp/tmp.xlsx")
