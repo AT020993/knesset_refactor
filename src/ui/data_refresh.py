@@ -257,6 +257,7 @@ if selected_table_to_explore:
                     "KNS_Person" in tables_in_db
                     and "KNS_PersonToPosition" in tables_in_db
                     and "KNS_GovMinistry" in tables_in_db
+                    and "KNS_Status" in tables_in_db
                 ):
                     select_clause = """
                         SELECT
@@ -270,7 +271,8 @@ if selected_table_to_explore:
                             P.LastName AS MKLastName,
                             P.GenderDesc,
                             P2P.FactionName,
-                            M.Name AS MinistryName
+                            M.Name AS MinistryName,
+                            S.Desc AS StatusDesc
                     """
                     from_clause = "FROM KNS_Query Q"
                     join_clauses = """
@@ -280,6 +282,7 @@ if selected_table_to_explore:
                             AND CAST(Q.SubmitDate AS TIMESTAMP) >= CAST(P2P.StartDate AS TIMESTAMP)
                             AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
                         LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
+                        LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
                     """
                     where_clauses = []
 
@@ -299,7 +302,7 @@ if selected_table_to_explore:
                     query += " ORDER BY Q.QueryID DESC"
                 else:
                     st.warning(
-                        "Cannot generate enriched view: Required join table(s) (KNS_Person, KNS_PersonToPosition, KNS_GovMinistry) missing."
+                        "Cannot generate enriched view: Required join table(s) (KNS_Person, KNS_PersonToPosition, KNS_GovMinistry, KNS_Status) missing."
                     )
                     # Fallback to simple query if join tables aren't available
                     query = f"SELECT * FROM {selected_table_to_explore}"
