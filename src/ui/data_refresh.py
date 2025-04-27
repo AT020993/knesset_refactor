@@ -192,27 +192,33 @@ st.header("🔬 Interactive Data Explorer")
 
 explorer_col1, explorer_col2 = st.columns([1, 3])
 
+selected_table_to_explore = None  # Initialize variable
+
 with explorer_col1:
     try:
         with _connect() as con:
-            available_tables_in_db = (
-                con.execute(
-                    "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';"
-                )
-                .df()["table_name"]
-                .tolist()
-            )
-            tables_for_explorer = [t for t in ft.TABLES if t in available_tables_in_db]
+            available_tables_in_db = con.execute("SELECT table_name FROM duckdb_tables() WHERE schema_name='main';").df()['table_name'].tolist()
+            tables_for_explorer = sorted([t for t in ft.TABLES if t in available_tables_in_db])
+
             if not tables_for_explorer:
                 st.warning("No tables found in the database for exploration.")
-                selected_table_to_explore = None
             else:
-                selected_table_to_explore = st.selectbox(
-                    "Select table to explore:", options=tables_for_explorer
+                # Define the selectbox WITH the key and a default index for KNS_Query if present
+                st.selectbox(
+                    label="Select table to explore:",
+                    options=tables_for_explorer,
+                    key="explorer_table_select",
+                    index=tables_for_explorer.index("KNS_Query") if "KNS_Query" in tables_for_explorer else 0
                 )
+                # Read value from session_state after widget is rendered
+                if "explorer_table_select" in st.session_state:
+                    selected_table_to_explore = st.session_state.explorer_table_select
+                else:
+                    selected_table_to_explore = tables_for_explorer[0] if tables_for_explorer else None
+
     except Exception as e:
         st.warning(f"Could not list tables from DB: {e}")
-        selected_table_to_explore = None
+        selected_table_to_explore = None  # Fallback
 
 with explorer_col2:
     st.write(f"Filters applied:")
@@ -222,122 +228,130 @@ with explorer_col2:
 if selected_table_to_explore:
     try:
         with _connect() as con:
-            # Base query parts
-            select_clause = f"SELECT DISTINCT P.*"  # Select distinct persons
-            from_clause = (
-                f"FROM {selected_table_to_explore} P"  # Alias the main table as P
-            )
-            join_clause = ""
-            where_clauses = []
+            query = ""
+            tables_in_db = con.execute("SELECT table_name FROM duckdb_tables() WHERE schema_name='main';").df()['table_name'].tolist()
 
-            # Get columns of the main selected table
-            main_table_columns = (
-                con.execute(f"PRAGMA table_info('{selected_table_to_explore}')")
-                .df()["name"]
-                .tolist()
-            )
+            # Now the if/elif/else block starts (keep the st.info/warning/success debug lines inside)
+            if selected_table_to_explore == "KNS_Query":
+                st.info("DEBUG: Entering KNS_Query logic block...")
+                # Check if required tables for joins exist
+                if 'KNS_Person' in tables_in_db and 'KNS_PersonToPosition' in tables_in_db:
+                    select_clause = """
+                        SELECT
+                            Q.QueryID, Q.Number, Q.KnessetNum, Q.Name, Q.TypeID, Q.TypeDesc,
+                            Q.StatusID, Q.PersonID, Q.GovMinistryID,
+                            strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDate,
+                            strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS ReplyMinisterDate,
+                            strftime(CAST(Q.ReplyDatePlanned AS TIMESTAMP), '%Y-%m-%d') AS ReplyDatePlanned,
+                            strftime(CAST(Q.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDate,
+                            P.GenderDesc,
+                            P2P.FactionName
+                    """
+                    from_clause = "FROM KNS_Query Q"
+                    # --- MODIFIED JOIN CLAUSE (Date Filter ON, Position Filter OFF) ---
+                    join_clauses = """
+                        LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
+                        LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID
+                            AND Q.KnessetNum = P2P.KnessetNum
+                            -- PositionID = 61 filter is REMOVED
+                            -- Keep date comparison using CAST
+                            AND CAST(Q.SubmitDate AS TIMESTAMP) >= CAST(P2P.StartDate AS TIMESTAMP)
+                            AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+                    """
+                    # --- END MODIFIED JOIN CLAUSE ---
+                    where_clauses = []
 
-            # Check if filtering requires joining with KNS_PersonToPosition
-            needs_join_for_filters = False
-            target_filter_table = "P"  # Default to filtering the main table
+                    # Add KnessetNum filter (applies to KNS_Query table 'Q')
+                    if selected_knessets:
+                        knesset_list_str = ', '.join(map(str, selected_knessets))
+                        where_clauses.append(f"Q.KnessetNum IN ({knesset_list_str})")
 
-            if selected_table_to_explore == "KNS_Person" and (
-                selected_knessets or selected_faction_ids
-            ):
-                # Check if KNS_PersonToPosition table exists
-                tables_in_db = (
-                    con.execute(
-                        "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';"
-                    )
-                    .df()["table_name"]
-                    .tolist()
-                )
-                if "KNS_PersonToPosition" in tables_in_db:
-                    needs_join_for_filters = True
-                    target_filter_table = "P2P"
-                    join_clause = f"INNER JOIN KNS_PersonToPosition P2P ON P.PersonID = P2P.PersonID"
-                    # Only MKs or Ministers (PositionID 61, 43)
-                    where_clauses.append(f"P2P.PositionID IN (61, 43)")
+                    # Add FactionID filter (applies to joined KNS_PersonToPosition 'P2P')
+                    if selected_faction_ids:
+                        faction_list_str = ', '.join(map(str, selected_faction_ids))
+                        where_clauses.append(f"P2P.FactionID IN ({faction_list_str})")
+
+                    query = select_clause + " " + from_clause + " " + join_clauses
+                    if where_clauses:
+                        query += " WHERE " + " AND ".join(where_clauses)
+                    query += " ORDER BY Q.QueryID DESC"
                 else:
-                    st.warning(
-                        "Cannot filter KNS_Person by Knesset/Faction: KNS_PersonToPosition table not found in database."
-                    )
+                    st.warning("Cannot generate enriched view: KNS_Person or KNS_PersonToPosition table missing.")
+                    # Fallback to simple query if join tables aren't available
+                    query = f"SELECT * FROM {selected_table_to_explore}"
+                    if selected_knessets: # Basic KnessetNum filter is still possible
+                        knesset_list_str = ', '.join(map(str, selected_knessets))
+                        query += f" WHERE KnessetNum IN ({knesset_list_str})"
+                    query += " ORDER BY QueryID DESC"
 
-            # Add KnessetNum filter (applied to correct table alias)
-            if selected_knessets:
-                if needs_join_for_filters or "KnessetNum" in main_table_columns:
-                    knesset_list_str = ", ".join(map(str, selected_knessets))
-                    where_clauses.append(
-                        f"{target_filter_table}.KnessetNum IN ({knesset_list_str})"
-                    )
+            elif selected_table_to_explore == "KNS_Person":
+                st.warning("DEBUG: Entering KNS_Person logic block...")
+                if 'KNS_PersonToPosition' in tables_in_db:
+                    select_clause = f"SELECT DISTINCT P.*"
+                    from_clause = f"FROM {selected_table_to_explore} P"
+                    join_clause = f"INNER JOIN KNS_PersonToPosition P2P ON P.PersonID = P2P.PersonID"
+                    where_clauses = []
+                    where_clauses.append(f"P2P.PositionID IN (61, 43)")
+                    if selected_knessets:
+                        knesset_list_str = ', '.join(map(str, selected_knessets))
+                        where_clauses.append(f"P2P.KnessetNum IN ({knesset_list_str})")
+                    if selected_faction_ids:
+                        faction_list_str = ', '.join(map(str, selected_faction_ids))
+                        where_clauses.append(f"P2P.FactionID IN ({faction_list_str})")
+                    query = select_clause + " " + from_clause + " " + join_clause
+                    if where_clauses:
+                        query += " WHERE " + " AND ".join(where_clauses)
+                    query += " ORDER BY P.PersonID DESC"
+                else:
+                    st.warning("Cannot filter KNS_Person by Knesset/Faction: KNS_PersonToPosition table not found.")
+                    query = f"SELECT * FROM {selected_table_to_explore} ORDER BY PersonID DESC"
 
-            # Add FactionID filter (applied to correct table alias)
-            if selected_faction_ids:
-                if needs_join_for_filters or "FactionID" in main_table_columns:
-                    faction_list_str = ", ".join(map(str, selected_faction_ids))
-                    where_clauses.append(
-                        f"{target_filter_table}.FactionID IN ({faction_list_str})"
-                    )
-
-            # --- Combine Query Parts ---
-            if selected_table_to_explore == "KNS_Person" and (
-                selected_knessets or selected_faction_ids
-            ):
-                query = select_clause + " " + from_clause + " " + join_clause
             else:
-                # Default: no join, no aliasing
-                query = f"SELECT * FROM {selected_table_to_explore}"
+                st.success(f"DEBUG: Entering Default logic block for table: {selected_table_to_explore}")
+                select_clause = f"SELECT *"
+                from_clause = f"FROM {selected_table_to_explore}"
+                where_clauses = []
+                main_table_columns = con.execute(f"PRAGMA table_info('{selected_table_to_explore}')").df()['name'].tolist()
+                if "KnessetNum" in main_table_columns and selected_knessets:
+                    knesset_list_str = ', '.join(map(str, selected_knessets))
+                    where_clauses.append(f"KnessetNum IN ({knesset_list_str})")
+                if "FactionID" in main_table_columns and selected_faction_ids:
+                    faction_list_str = ', '.join(map(str, selected_faction_ids))
+                    where_clauses.append(f"FactionID IN ({faction_list_str})")
+                query = select_clause + " " + from_clause
                 if where_clauses:
                     query += " WHERE " + " AND ".join(where_clauses)
+                pk_cols = ["BillID", "PersonID", "CommitteeSessionID", "PlenumSessionID", "QueryID", "AgendaID", "FactionID", "CommitteeID"]
+                order_col = next((pk for pk in pk_cols if pk in main_table_columns), None)
                 if "LastUpdatedDate" in main_table_columns:
                     query += " ORDER BY LastUpdatedDate DESC"
-                elif any(
-                    pk in main_table_columns
-                    for pk in [
-                        "BillID",
-                        "PersonID",
-                        "CommitteeSessionID",
-                        "PlenumSessionID",
-                        "QueryID",
-                    ]
-                ):
-                    pk_col = next(
-                        pk
-                        for pk in [
-                            "BillID",
-                            "PersonID",
-                            "CommitteeSessionID",
-                            "PlenumSessionID",
-                            "QueryID",
-                        ]
-                        if pk in main_table_columns
-                    )
-                    query += f" ORDER BY {pk_col} DESC"
-                query += " LIMIT 1000"
+                elif order_col:
+                    query += f" ORDER BY {order_col} DESC"
 
-            if selected_table_to_explore == "KNS_Person" and (
-                selected_knessets or selected_faction_ids
-            ):
-                if where_clauses:
-                    query += " WHERE " + " AND ".join(where_clauses)
-                if "LastUpdatedDate" in main_table_columns:
-                    query += " ORDER BY P.LastUpdatedDate DESC"
-                elif "PersonID" in main_table_columns:
-                    query += f" ORDER BY P.PersonID DESC"
+            # === Add Limit (applied to all queries) ===
+            if query:
                 query += " LIMIT 1000"
+            else:
+                st.error("Failed to construct query.")
+                st.stop()
+
+            # --- End of Query Construction ---
 
             st.write(f"Running query:")
-            st.code(query, language="sql")
+            st.code(query, language='sql')
+
+            # Execute query and display results
             filtered_df = con.execute(query).df()
             st.dataframe(filtered_df, use_container_width=True)
-            if not filtered_df.empty:
-                csv_filtered = filtered_df.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    label="⬇️ Download Filtered Data (CSV)",
-                    data=csv_filtered,
-                    file_name=f"filtered_{selected_table_to_explore}.csv",
-                    mime="text/csv",
-                )
+
+            # Option to download the filtered results
+            csv_filtered = filtered_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download Filtered Data (CSV)",
+                data=csv_filtered,
+                file_name=f"filtered_{selected_table_to_explore}.csv",
+                mime="text/csv",
+            )
     except Exception as e:
         st.error(f"❌ Failed to query table '{selected_table_to_explore}': {e}")
 
