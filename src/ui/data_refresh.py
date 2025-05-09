@@ -18,53 +18,39 @@
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # ------------------------------------------------------------------------------------
-# DEVELOPER INSTRUCTIONS: Debugging "Interactive Table Explorer"
+# DEVELOPER INSTRUCTIONS: Adding Coalition Status to "Queries + Full Details" Export
 # ------------------------------------------------------------------------------------
 #
 # Problem:
-# Clicking the "🔍 Explore Selected Table" button does not display the results
-# in the "📖 Interactive Table Explorer Results" section as expected.
+# The "Queries + Full Details" predefined export does not currently include the
+# coalition status of the Member of Knesset's (MK) faction.
 #
-# Debugging Steps Added:
-# 1. Inside the `if st.sidebar.button("🔍 Explore Selected Table"...)` block:
-#    - A `st.sidebar.write` message to confirm the button click is registered.
-#    - `st.sidebar.write` messages after session state variables
-#      (`show_table_explorer_results`, `executed_table_explorer_name`,
-#      `table_explorer_df.shape`) are set within the `try` block.
-#    - A `st.sidebar.write` message within the `except` block to see if an
-#      error during query execution is resetting the state.
-# 2. At the beginning of the main area rendering (after `st.title`):
-#    - `st.sidebar.write` messages to show the current values of
-#      `show_table_explorer_results` and `executed_table_explorer_name`
-#      just before the display logic for the table explorer results is evaluated.
+# Solution:
+# This version updates the SQL query for the "Queries + Full Details" export
+# in the `EXPORTS` dictionary.
 #
-# How to Use These Debug Steps:
+# Changes Made:
+# 1. In the SQL query for "Queries + Full Details":
+#    - Added a `LEFT JOIN` to the `UserFactionCoalitionStatus` table (aliased as `ufs`).
+#    - The join condition is `ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum`.
+#      This links the MK's faction (from `KNS_PersonToPosition` as `P2P`) for the
+#      relevant Knesset term to your manually managed coalition status data.
+#    - Added `ufs.CoalitionStatus AS MKFactionCoalitionStatus` to the SELECT clause
+#      to include the coalition status in the output.
+#    - Optionally, `ufs.DateJoinedCoalition` and `ufs.DateLeftCoalition` can also be added
+#      if needed for this specific query context. For now, only `CoalitionStatus` is added.
+#
+# Developer Actions:
 #
 # 1. Ensure this version of `data_refresh.py` is being used.
-# 2. Run the Streamlit application: `streamlit run src/ui/data_refresh.py`.
-# 3. Perform a hard refresh in your browser (`Ctrl+Shift+R` or `Cmd+Shift+R`).
-# 4. In the sidebar:
-#    a. Select a table from the "🔬 Interactive Table Explorer" dropdown (e.g., "KNS_Faction").
-#    b. Click the "🔍 Explore Selected Table" button.
-# 5. Observe the Streamlit Sidebar:
-#    - You should see "DEBUG: 'Explore Selected Table' button clicked."
-#    - Then, messages showing the state of `show_table_explorer_results`,
-#      `executed_table_explorer_name`, and the shape of the resulting DataFrame.
-#    - Also, observe the debug messages that appear from the main area rendering
-#      (these will appear on every script run, including after the button click).
-#
-# Analyze and Report:
-# - Does the "button clicked" message appear?
-# - After clicking, do the "Inside button try" debug messages show that
-#   `show_table_explorer_results` is `True` and `executed_table_explorer_name`
-#   is set to the table you selected? Is `table_explorer_df.shape` showing a
-#   non-empty DataFrame (e.g., (X rows, Y columns))?
-# - What are the values of `show_table_explorer_results` and
-#   `executed_table_explorer_name` shown by the "Main area render" debug
-#   messages immediately after the button click causes the script to rerun?
-#
-# This will help determine if the state is being set correctly by the button
-# and if it persists for the display logic.
+# 2. Verify that the `UserFactionCoalitionStatus` table is being correctly populated
+#    by `fetch_table.py` from your CSV file.
+# 3. After running a data refresh (to ensure all tables, including
+#    `UserFactionCoalitionStatus`, are up-to-date), test the
+#    "Queries + Full Details" export from the Streamlit UI.
+# 4. The exported CSV/Excel file should now include a column named
+#    `MKFactionCoalitionStatus` showing the coalition status for the MK's faction
+#    at the time of the query, where available.
 #
 # ------------------------------------------------------------------------------------
 
@@ -188,7 +174,7 @@ def get_filter_options_from_db():
     if not DB_PATH.exists(): return knesset_nums, factions_df
     try:
         with _connect(read_only=True) as con:
-            tbls = get_db_table_list() # Use cached table list
+            tbls = get_db_table_list() 
             if "kns_knessetdates" in (t.lower() for t in tbls): knesset_nums = con.execute("SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC").df()["KnessetNum"].tolist()
             elif "kns_faction" in (t.lower() for t in tbls): knesset_nums = con.execute("SELECT DISTINCT KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC").df()["KnessetNum"].tolist()
             if "kns_faction" in (t.lower() for t in tbls): factions_df = con.execute("SELECT FactionID, Name, KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC, Name").df()
@@ -218,6 +204,9 @@ EXPORTS = {
             Q.StatusID AS QueryStatusID, S.Desc AS QueryStatusDesc,
             Q.PersonID AS MKPersonID, P.FirstName AS MKFirstName, P.LastName AS MKLastName, P.GenderDesc AS MKGender,
             P2P.FactionName AS MKFactionName, P2P.FactionID AS MKFactionID,
+            ufs.CoalitionStatus AS MKFactionCoalitionStatus, -- Added Coalition Status
+            -- ufs.DateJoinedCoalition AS MKFactionJoinedCoalitionDate, -- Optionally add if needed
+            -- ufs.DateLeftCoalition AS MKFactionLeftCoalitionDate,   -- Optionally add if needed
             Q.GovMinistryID, M.Name AS MinistryName,
             strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted,
             strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS ReplyMinisterDateFormatted,
@@ -231,6 +220,7 @@ EXPORTS = {
             AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
         LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
         LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
+        LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum -- New Join
         ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
         LIMIT 10000;
     """
@@ -277,6 +267,8 @@ st.session_state.selected_query_name = st.sidebar.selectbox(
 )
 
 if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state.selected_query_name)):
+    # DEBUGGING LINE 1 (from previous debug session, can be removed if no longer needed for this part)
+    # st.sidebar.write(f"DEBUG: Run Selected Query button clicked. Selected: {st.session_state.selected_query_name}")
     if st.session_state.selected_query_name and DB_PATH.exists():
         selected_sql = EXPORTS[st.session_state.selected_query_name]
         try:
@@ -284,28 +276,29 @@ if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state
                 st.session_state.query_results_df = con.sql(selected_sql).df()
             st.session_state.executed_query_name = st.session_state.selected_query_name
             st.session_state.show_query_results = True
-            st.session_state.show_table_explorer_results = False # Hide table explorer results
+            st.session_state.show_table_explorer_results = False 
+            # DEBUGGING LINE 2 (from previous debug session)
+            # st.sidebar.write(f"DEBUG: Predefined query success - show_query_results: {st.session_state.show_query_results}")
         except Exception as e:
             st.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}")
             st.code(traceback.format_exc())
             st.session_state.show_query_results = False
             st.session_state.query_results_df = pd.DataFrame()
+            # DEBUGGING LINE 3 (from previous debug session)
+            # st.sidebar.write(f"DEBUG: Predefined query EXCEPTION - show_query_results: {st.session_state.show_query_results}")
     elif not st.session_state.selected_query_name: st.warning("Please select a query.")
     else: st.error("Database not found. Run data refresh."); st.session_state.show_query_results = False
 
 # --- Interactive Table Explorer Section ---
 st.sidebar.divider()
 st.sidebar.header("🔬 Interactive Table Explorer")
-db_tables_list_for_explorer = [""] + get_db_table_list() # Add blank option
+db_tables_list_for_explorer = [""] + get_db_table_list() 
 st.session_state.selected_table_for_explorer = st.sidebar.selectbox(
     "Select a table to explore:", options=db_tables_list_for_explorer, index=0, key="sb_selected_table_explorer"
 )
 
 if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_state.selected_table_for_explorer)):
-    # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-    # DEBUGGING LINE 1: Confirm button click is registered
-    # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-    st.sidebar.write("DEBUG: 'Explore Selected Table' button clicked.")
+    st.sidebar.write("DEBUG: 'Explore Selected Table' button clicked.") # Retained debug line
     if st.session_state.selected_table_for_explorer and DB_PATH.exists():
         table_to_explore = st.session_state.selected_table_for_explorer
         try:
@@ -341,9 +334,6 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
             st.session_state.executed_table_explorer_name = table_to_explore
             st.session_state.show_table_explorer_results = True
             st.session_state.show_query_results = False 
-            # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-            # DEBUGGING LINES 2: Check state after successful execution
-            # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
             st.sidebar.write(f"DEBUG: Inside button try - show_table_explorer_results: {st.session_state.show_table_explorer_results}")
             st.sidebar.write(f"DEBUG: Inside button try - executed_table_explorer_name: {st.session_state.executed_table_explorer_name}")
             st.sidebar.write(f"DEBUG: Inside button try - table_explorer_df shape: {st.session_state.table_explorer_df.shape}")
@@ -352,9 +342,6 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
             st.code(traceback.format_exc())
             st.session_state.show_table_explorer_results = False
             st.session_state.table_explorer_df = pd.DataFrame()
-            # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-            # DEBUGGING LINE 3: Check state after exception
-            # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
             st.sidebar.write(f"DEBUG: Inside button except - show_table_explorer_results: {st.session_state.show_table_explorer_results}")
     elif not st.session_state.selected_table_for_explorer: 
         st.warning("Please select a table to explore.")
@@ -376,13 +363,11 @@ selected_faction_ids_filter = [faction_display_map[name] for name in selected_fa
 # Main area
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("🇮🇱 Knesset Data Warehouse Console")
-# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-# DEBUGGING LINES 4: Check state at the start of main area render
-# VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
-st.sidebar.write(f"DEBUG: Main area render - show_table_explorer_results: {st.session_state.get('show_table_explorer_results', 'Not Set')}")
-st.sidebar.write(f"DEBUG: Main area render - executed_table_explorer_name: {st.session_state.get('executed_table_explorer_name', 'Not Set')}")
-st.sidebar.write(f"DEBUG: Main area render - show_query_results: {st.session_state.get('show_query_results', 'Not Set')}")
-st.sidebar.write(f"DEBUG: Main area render - executed_query_name: {st.session_state.get('executed_query_name', 'Not Set')}")
+# Debug lines for main area render state (can be removed once stable)
+# st.sidebar.write(f"DEBUG: Main area render - show_table_explorer_results: {st.session_state.get('show_table_explorer_results', 'Not Set')}")
+# st.sidebar.write(f"DEBUG: Main area render - executed_table_explorer_name: {st.session_state.get('executed_table_explorer_name', 'Not Set')}")
+# st.sidebar.write(f"DEBUG: Main area render - show_query_results: {st.session_state.get('show_query_results', 'Not Set')}")
+# st.sidebar.write(f"DEBUG: Main area render - executed_query_name: {st.session_state.get('executed_query_name', 'Not Set')}")
 
 
 st.subheader("🗓️ Table Update Status")
@@ -419,8 +404,12 @@ if st.session_state.show_query_results and st.session_state.executed_query_name:
         with dl_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_query_name}'", excel_bytes_export, f"{safe_sheet_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_pq_{safe_sheet_name}")
     else: st.info("The selected predefined query returned no results.")
 elif st.session_state.selected_query_name and not st.session_state.show_query_results:
-    st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'.")
-else: st.info("Select a predefined query from the sidebar and click 'Run Selected Query'.")
+    # This condition might be met if table explorer is active
+    if not st.session_state.show_table_explorer_results: # Only show if table explorer isn't also trying to show something
+        st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'.")
+elif not st.session_state.show_table_explorer_results: # Only show if table explorer isn't also trying to show something
+    st.info("Select a predefined query from the sidebar and click 'Run Selected Query'.")
+
 
 # --- Table Explorer Results Area ---
 st.divider()
@@ -440,8 +429,10 @@ if st.session_state.show_table_explorer_results and st.session_state.executed_ta
         with dl_t_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_table_explorer_name}'", excel_bytes_table, f"explored_{safe_table_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_te_{safe_table_name}")
     else: st.info("The table exploration returned no results with the current filters.")
 elif st.session_state.selected_table_for_explorer and not st.session_state.show_table_explorer_results:
-     st.info(f"Click '🔍 Explore Selected Table' in the sidebar to view '{st.session_state.selected_table_for_explorer}'.")
-else: st.info("Select a table from the sidebar and click 'Explore Selected Table'.")
+    if not st.session_state.show_query_results: # Only show if predefined query isn't active
+         st.info(f"Click '🔍 Explore Selected Table' in the sidebar to view '{st.session_state.selected_table_for_explorer}'.")
+elif not st.session_state.show_query_results: # Only show if predefined query isn't active
+    st.info("Select a table from the sidebar and click 'Explore Selected Table'.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Ad-hoc SQL Query Section
