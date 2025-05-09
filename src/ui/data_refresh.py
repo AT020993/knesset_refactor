@@ -88,7 +88,7 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
 
-st.set_page_config(page_title="Knesset OData – Refresh & Export", layout="wide")
+st.set_page_config(page_title="Data Refresh", page_icon="🔄", layout="wide")
 
 # Initialize session state variables if they don't exist
 # For Predefined Queries
@@ -258,7 +258,6 @@ EXPORTS = {
 # ──────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ──────────────────────────────────────────────────────────────────────────────
-st.sidebar.header("🔄 Data Refresh Controls")
 all_available_tables = sorted(list(set(ft.TABLES + list(ft.CURSOR_TABLES.keys())))) 
 selected_tables_to_refresh = st.sidebar.multiselect(
     "Select OData tables to refresh (blank = all predefined)", 
@@ -289,7 +288,6 @@ if st.sidebar.button("🔄 Refresh Faction Status Only"):
 
 # --- Predefined Queries Section ---
 st.sidebar.divider()
-st.sidebar.header("🔎 Predefined Queries")
 query_names_options = [""] + list(EXPORTS.keys()) 
 st.session_state.selected_query_name = st.sidebar.selectbox(
     "Select a predefined query:", options=query_names_options, index=0, key="sb_selected_query_name"
