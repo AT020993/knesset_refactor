@@ -18,39 +18,42 @@
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # ------------------------------------------------------------------------------------
-# DEVELOPER INSTRUCTIONS: Adding Coalition Status to "Queries + Full Details" Export
+# DEVELOPER INSTRUCTIONS: Adding "Agenda Items + Full Details" Predefined Query
 # ------------------------------------------------------------------------------------
 #
-# Problem:
-# The "Queries + Full Details" predefined export does not currently include the
-# coalition status of the Member of Knesset's (MK) faction.
+# Request:
+# The user wants a new predefined query for the KNS_Agenda table, similar in
+# detail to the "Queries + Full Details" export. This new query should include
+# information about the initiating MK, their faction, coalition status,
+# involved committees, and formatted dates.
 #
 # Solution:
-# This version updates the SQL query for the "Queries + Full Details" export
-# in the `EXPORTS` dictionary.
+# This version updates the `EXPORTS` dictionary by adding a new key-value pair
+# for "Agenda Items + Full Details" with its corresponding comprehensive SQL query.
 #
 # Changes Made:
-# 1. In the SQL query for "Queries + Full Details":
-#    - Added a `LEFT JOIN` to the `UserFactionCoalitionStatus` table (aliased as `ufs`).
-#    - The join condition is `ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum`.
-#      This links the MK's faction (from `KNS_PersonToPosition` as `P2P`) for the
-#      relevant Knesset term to your manually managed coalition status data.
-#    - Added `ufs.CoalitionStatus AS MKFactionCoalitionStatus` to the SELECT clause
-#      to include the coalition status in the output.
-#    - Optionally, `ufs.DateJoinedCoalition` and `ufs.DateLeftCoalition` can also be added
-#      if needed for this specific query context. For now, only `CoalitionStatus` is added.
+# 1. In the `EXPORTS` dictionary:
+#    - A new entry "Agenda Items + Full Details" has been added.
+#    - The SQL query for this entry joins `KNS_Agenda` with `KNS_Status`,
+#      `KNS_Person` (for initiator and responding minister),
+#      `KNS_PersonToPosition` (for initiator's faction details, using
+#      COALESCE on PresidentDecisionDate or LastUpdatedDate for time context),
+#      `UserFactionCoalitionStatus` (for initiator's faction coalition status),
+#      and `KNS_Committee` (for both handling and recommended committees).
+#    - Dates like `PresidentDecisionDate` and `LastUpdatedDate` are formatted.
 #
 # Developer Actions:
 #
 # 1. Ensure this version of `data_refresh.py` is being used.
-# 2. Verify that the `UserFactionCoalitionStatus` table is being correctly populated
-#    by `fetch_table.py` from your CSV file.
-# 3. After running a data refresh (to ensure all tables, including
-#    `UserFactionCoalitionStatus`, are up-to-date), test the
-#    "Queries + Full Details" export from the Streamlit UI.
-# 4. The exported CSV/Excel file should now include a column named
-#    `MKFactionCoalitionStatus` showing the coalition status for the MK's faction
-#    at the time of the query, where available.
+# 2. Verify that all tables required by the new "Agenda Items + Full Details"
+#    export are fetched by `fetch_table.py`. These include:
+#    `KNS_Agenda`, `KNS_Status`, `KNS_Person`, `KNS_PersonToPosition`,
+#    `UserFactionCoalitionStatus`, `KNS_Committee`.
+#    (These are currently configured to be fetched).
+# 3. After running a data refresh (to ensure all tables are up-to-date),
+#    test the new "Agenda Items + Full Details" export from the Streamlit UI.
+# 4. The exported CSV/Excel file should include the detailed columns as
+#    defined in the SQL query.
 #
 # ------------------------------------------------------------------------------------
 
@@ -185,28 +188,13 @@ def get_filter_options_from_db():
 # EXPORTS Dictionary - Source for Predefined Queries
 # ──────────────────────────────────────────────────────────────────────────────
 EXPORTS = {
-    "Factions Detailed Status": """
-        SELECT 
-            f.FactionID, f.Name AS OfficialFactionName, f.KnessetNum,
-            ufs.FactionName AS UserProvidedFactionName, ufs.CoalitionStatus,
-            ufs.DateJoinedCoalition, ufs.DateLeftCoalition,
-            strftime(CAST(f.StartDate AS TIMESTAMP), '%Y-%m-%d') AS FactionStartDateInKnesset,
-            strftime(CAST(f.FinishDate AS TIMESTAMP), '%Y-%m-%d') AS FactionFinishDateInKnesset,
-            f.IsCurrent AS IsFactionCurrentlyActiveInAPI 
-        FROM KNS_Faction f
-        LEFT JOIN UserFactionCoalitionStatus ufs 
-            ON f.FactionID = ufs.FactionID AND f.KnessetNum = ufs.KnessetNum
-        ORDER BY f.KnessetNum DESC, f.Name;
-    """,
     "Queries + Full Details": """
         SELECT
             Q.QueryID, Q.Number, Q.KnessetNum, Q.Name AS QueryName, Q.TypeID AS QueryTypeID, Q.TypeDesc AS QueryTypeDesc,
             Q.StatusID AS QueryStatusID, S.Desc AS QueryStatusDesc,
             Q.PersonID AS MKPersonID, P.FirstName AS MKFirstName, P.LastName AS MKLastName, P.GenderDesc AS MKGender,
             P2P.FactionName AS MKFactionName, P2P.FactionID AS MKFactionID,
-            ufs.CoalitionStatus AS MKFactionCoalitionStatus, -- Added Coalition Status
-            -- ufs.DateJoinedCoalition AS MKFactionJoinedCoalitionDate, -- Optionally add if needed
-            -- ufs.DateLeftCoalition AS MKFactionLeftCoalitionDate,   -- Optionally add if needed
+            ufs.CoalitionStatus AS MKFactionCoalitionStatus, 
             Q.GovMinistryID, M.Name AS MinistryName,
             strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted,
             strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS ReplyMinisterDateFormatted,
@@ -220,8 +208,49 @@ EXPORTS = {
             AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
         LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
         LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-        LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum -- New Join
+        LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum
         ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
+        LIMIT 10000;
+    """,
+    "Agenda Items + Full Details": """
+        SELECT
+            A.AgendaID,
+            A.Number AS AgendaNumber,
+            A.KnessetNum,
+            A.Name AS AgendaName,
+            A.ClassificationDesc AS AgendaClassification,
+            A.SubTypeDesc AS AgendaSubType,
+            S.Desc AS AgendaStatus,
+            A.InitiatorPersonID,
+            INIT_P.FirstName AS InitiatorFirstName,
+            INIT_P.LastName AS InitiatorLastName,
+            INIT_P.GenderDesc AS InitiatorGender,
+            INIT_P2P.FactionName AS InitiatorFactionName,
+            INIT_P2P.FactionID AS InitiatorFactionID,
+            INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
+            A.CommitteeID AS HandlingCommitteeID,
+            HC.Name AS HandlingCommitteeName,
+            A.RecommendCommitteeID,
+            RC.Name AS RecommendedCommitteeName,
+            A.GovRecommendationDesc,
+            A.MinisterPersonID,
+            MIN_P.FirstName AS MinisterFirstName,
+            MIN_P.LastName AS MinisterLastName,
+            strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted,
+            strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d %H:%M') AS LastUpdatedDateFormatted
+            -- A.PresidentDecisionDate, A.LastUpdatedDate -- Raw dates if needed
+        FROM KNS_Agenda A
+        LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
+        LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
+        LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID
+            AND A.KnessetNum = INIT_P2P.KnessetNum
+            AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) >= CAST(INIT_P2P.StartDate AS TIMESTAMP)
+            AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) <= CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+        LEFT JOIN UserFactionCoalitionStatus INIT_UFS ON INIT_P2P.FactionID = INIT_UFS.FactionID AND INIT_P2P.KnessetNum = INIT_UFS.KnessetNum
+        LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
+        LEFT JOIN KNS_Committee RC ON A.RecommendCommitteeID = RC.CommitteeID
+        LEFT JOIN KNS_Person MIN_P ON A.MinisterPersonID = MIN_P.PersonID
+        ORDER BY A.KnessetNum DESC, A.AgendaID DESC
         LIMIT 10000;
     """
 }
@@ -230,7 +259,7 @@ EXPORTS = {
 # Sidebar
 # ──────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("🔄 Data Refresh Controls")
-all_available_tables = sorted(list(set(ft.TABLES + list(ft.CURSOR_TABLES.keys()))))
+all_available_tables = sorted(list(set(ft.TABLES + list(ft.CURSOR_TABLES.keys())))) 
 selected_tables_to_refresh = st.sidebar.multiselect(
     "Select OData tables to refresh (blank = all predefined)", 
     all_available_tables, default=[], placeholder="All predefined tables"
@@ -267,8 +296,6 @@ st.session_state.selected_query_name = st.sidebar.selectbox(
 )
 
 if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state.selected_query_name)):
-    # DEBUGGING LINE 1 (from previous debug session, can be removed if no longer needed for this part)
-    # st.sidebar.write(f"DEBUG: Run Selected Query button clicked. Selected: {st.session_state.selected_query_name}")
     if st.session_state.selected_query_name and DB_PATH.exists():
         selected_sql = EXPORTS[st.session_state.selected_query_name]
         try:
@@ -277,15 +304,11 @@ if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state
             st.session_state.executed_query_name = st.session_state.selected_query_name
             st.session_state.show_query_results = True
             st.session_state.show_table_explorer_results = False 
-            # DEBUGGING LINE 2 (from previous debug session)
-            # st.sidebar.write(f"DEBUG: Predefined query success - show_query_results: {st.session_state.show_query_results}")
         except Exception as e:
             st.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}")
             st.code(traceback.format_exc())
             st.session_state.show_query_results = False
             st.session_state.query_results_df = pd.DataFrame()
-            # DEBUGGING LINE 3 (from previous debug session)
-            # st.sidebar.write(f"DEBUG: Predefined query EXCEPTION - show_query_results: {st.session_state.show_query_results}")
     elif not st.session_state.selected_query_name: st.warning("Please select a query.")
     else: st.error("Database not found. Run data refresh."); st.session_state.show_query_results = False
 
@@ -298,7 +321,6 @@ st.session_state.selected_table_for_explorer = st.sidebar.selectbox(
 )
 
 if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_state.selected_table_for_explorer)):
-    st.sidebar.write("DEBUG: 'Explore Selected Table' button clicked.") # Retained debug line
     if st.session_state.selected_table_for_explorer and DB_PATH.exists():
         table_to_explore = st.session_state.selected_table_for_explorer
         try:
@@ -334,15 +356,11 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
             st.session_state.executed_table_explorer_name = table_to_explore
             st.session_state.show_table_explorer_results = True
             st.session_state.show_query_results = False 
-            st.sidebar.write(f"DEBUG: Inside button try - show_table_explorer_results: {st.session_state.show_table_explorer_results}")
-            st.sidebar.write(f"DEBUG: Inside button try - executed_table_explorer_name: {st.session_state.executed_table_explorer_name}")
-            st.sidebar.write(f"DEBUG: Inside button try - table_explorer_df shape: {st.session_state.table_explorer_df.shape}")
         except Exception as e:
             st.error(f"Error exploring table '{table_to_explore}': {e}")
             st.code(traceback.format_exc())
             st.session_state.show_table_explorer_results = False
             st.session_state.table_explorer_df = pd.DataFrame()
-            st.sidebar.write(f"DEBUG: Inside button except - show_table_explorer_results: {st.session_state.show_table_explorer_results}")
     elif not st.session_state.selected_table_for_explorer: 
         st.warning("Please select a table to explore.")
     else: 
@@ -363,19 +381,6 @@ selected_faction_ids_filter = [faction_display_map[name] for name in selected_fa
 # Main area
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("🇮🇱 Knesset Data Warehouse Console")
-# Debug lines for main area render state (can be removed once stable)
-# st.sidebar.write(f"DEBUG: Main area render - show_table_explorer_results: {st.session_state.get('show_table_explorer_results', 'Not Set')}")
-# st.sidebar.write(f"DEBUG: Main area render - executed_table_explorer_name: {st.session_state.get('executed_table_explorer_name', 'Not Set')}")
-# st.sidebar.write(f"DEBUG: Main area render - show_query_results: {st.session_state.get('show_query_results', 'Not Set')}")
-# st.sidebar.write(f"DEBUG: Main area render - executed_query_name: {st.session_state.get('executed_query_name', 'Not Set')}")
-
-
-st.subheader("🗓️ Table Update Status")
-if DB_PATH.exists():
-    tables_to_check_status = sorted(list(set(all_available_tables + ["UserFactionCoalitionStatus"])))
-    status_data = [{"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)} for t_name in tables_to_check_status]
-    st.dataframe(pd.DataFrame(status_data), hide_index=True, use_container_width=True)
-else: st.info("Database not found. Please run a data refresh from the sidebar.")
 
 with st.expander("ℹ️ How This Works", expanded=False):
     st.markdown(dedent(f"""
@@ -404,10 +409,9 @@ if st.session_state.show_query_results and st.session_state.executed_query_name:
         with dl_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_query_name}'", excel_bytes_export, f"{safe_sheet_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_pq_{safe_sheet_name}")
     else: st.info("The selected predefined query returned no results.")
 elif st.session_state.selected_query_name and not st.session_state.show_query_results:
-    # This condition might be met if table explorer is active
-    if not st.session_state.show_table_explorer_results: # Only show if table explorer isn't also trying to show something
+    if not st.session_state.show_table_explorer_results: 
         st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'.")
-elif not st.session_state.show_table_explorer_results: # Only show if table explorer isn't also trying to show something
+elif not st.session_state.show_table_explorer_results: 
     st.info("Select a predefined query from the sidebar and click 'Run Selected Query'.")
 
 
@@ -429,14 +433,12 @@ if st.session_state.show_table_explorer_results and st.session_state.executed_ta
         with dl_t_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_table_explorer_name}'", excel_bytes_table, f"explored_{safe_table_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_te_{safe_table_name}")
     else: st.info("The table exploration returned no results with the current filters.")
 elif st.session_state.selected_table_for_explorer and not st.session_state.show_table_explorer_results:
-    if not st.session_state.show_query_results: # Only show if predefined query isn't active
+    if not st.session_state.show_query_results: 
          st.info(f"Click '🔍 Explore Selected Table' in the sidebar to view '{st.session_state.selected_table_for_explorer}'.")
-elif not st.session_state.show_query_results: # Only show if predefined query isn't active
+elif not st.session_state.show_query_results: 
     st.info("Select a table from the sidebar and click 'Explore Selected Table'.")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Ad-hoc SQL Query Section
-# ──────────────────────────────────────────────────────────────────────────────
+# --- Ad-hoc SQL Query Section ---
 with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=False):
     if not DB_PATH.exists(): st.warning("Database not found. Cannot run SQL queries.")
     else:
@@ -450,3 +452,13 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
                 if not adhoc_result_df.empty:
                     st.download_button("⬇️ Download Ad-hoc (CSV)", adhoc_result_df.to_csv(index=False).encode('utf-8-sig'), "adhoc_results.csv", "text/csv", key="adhoc_csv_download" )
             except Exception as e: st.error(f"❌ SQL Query Error: {e}"); st.code(traceback.format_exc())
+
+# --- Table Update Status (Moved to the bottom and put in an expander) ---
+st.divider() 
+with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False):
+    if DB_PATH.exists():
+        tables_to_check_status = sorted(list(set(all_available_tables + ["UserFactionCoalitionStatus"])))
+        status_data = [{"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)} for t_name in tables_to_check_status]
+        st.dataframe(pd.DataFrame(status_data), hide_index=True, use_container_width=True)
+    else: 
+        st.info("Database not found. Table status cannot be displayed.")
