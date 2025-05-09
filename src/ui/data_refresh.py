@@ -8,7 +8,7 @@
 #  ------------
 #  ▸ Select which tables to refresh (or all of them)
 #  ▸ Watch live progress + see "last updated" timestamps
-#  ▸ Select and run predefined queries from the sidebar.
+#  ▸ Select and run predefined queries from the sidebar, with dynamic KnessetNum filtering.
 #  ▸ Interactively explore raw database tables with filters.
 #  ▸ Display results with download options.
 #  ▸ (Optional) run ad-hoc SQL against the DuckDB warehouse
@@ -18,42 +18,60 @@
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # ------------------------------------------------------------------------------------
-# DEVELOPER INSTRUCTIONS: Adding "Agenda Items + Full Details" Predefined Query
+# DEVELOPER INSTRUCTIONS: Applying Sidebar Filters to Predefined Queries
 # ------------------------------------------------------------------------------------
 #
 # Request:
-# The user wants a new predefined query for the KNS_Agenda table, similar in
-# detail to the "Queries + Full Details" export. This new query should include
-# information about the initiating MK, their faction, coalition status,
-# involved committees, and formatted dates.
+# The user wants the "Knesset Number(s)" filter selected in the sidebar to
+# dynamically apply to the "Predefined Queries" when they are executed.
 #
 # Solution:
-# This version updates the `EXPORTS` dictionary by adding a new key-value pair
-# for "Agenda Items + Full Details" with its corresponding comprehensive SQL query.
+# This version modifies the application to inject Knesset Number filters into
+# the predefined SQL queries before execution.
 #
 # Changes Made:
-# 1. In the `EXPORTS` dictionary:
-#    - A new entry "Agenda Items + Full Details" has been added.
-#    - The SQL query for this entry joins `KNS_Agenda` with `KNS_Status`,
-#      `KNS_Person` (for initiator and responding minister),
-#      `KNS_PersonToPosition` (for initiator's faction details, using
-#      COALESCE on PresidentDecisionDate or LastUpdatedDate for time context),
-#      `UserFactionCoalitionStatus` (for initiator's faction coalition status),
-#      and `KNS_Committee` (for both handling and recommended committees).
-#    - Dates like `PresidentDecisionDate` and `LastUpdatedDate` are formatted.
+# 1. `EXPORTS` Dictionary Structure:
+#    - Each entry in the `EXPORTS` dictionary is now a sub-dictionary containing:
+#        - `"sql"`: The base SQL query string.
+#        - `"knesset_filter_column"`: The fully qualified column name (e.g., "Q.KnessetNum",
+#          "A.KnessetNum") in the base query that should be used for filtering by KnessetNum.
+#
+# 2. "Run Selected Query" Button Logic:
+#    - When this button is clicked:
+#        - It retrieves the base SQL and the `knesset_filter_column` from the `EXPORTS` entry.
+#        - It checks `st.session_state.ms_knesset_filter` (the session state key for the
+#          Knesset Number multiselect widget in the sidebar).
+#        - If Knesset numbers are selected in the filter:
+#            - A `WHERE` or `AND` clause for `knesset_filter_column IN (...)` is
+#              dynamically constructed.
+#            - This clause is inserted into the base SQL query *before* any existing
+#              `ORDER BY` or `LIMIT` clauses using regular expressions for robust insertion.
+#        - The (potentially modified) SQL query is then executed.
+#        - The executed SQL (including the dynamic filter) is shown in the expander.
+#
+# 3. Sidebar Filter Header:
+#    - The header for the filter section in the sidebar has been updated to
+#      "📊 Filters (for Predefined Queries, Table Explorer & Ad-hoc SQL)"
+#      to reflect its expanded role.
+#
+# 4. User Feedback in Main Area:
+#    - When displaying results for a predefined query, if Knesset filters were
+#      applied, this will be indicated in the subheader.
 #
 # Developer Actions:
 #
 # 1. Ensure this version of `data_refresh.py` is being used.
-# 2. Verify that all tables required by the new "Agenda Items + Full Details"
-#    export are fetched by `fetch_table.py`. These include:
-#    `KNS_Agenda`, `KNS_Status`, `KNS_Person`, `KNS_PersonToPosition`,
-#    `UserFactionCoalitionStatus`, `KNS_Committee`.
-#    (These are currently configured to be fetched).
-# 3. After running a data refresh (to ensure all tables are up-to-date),
-#    test the new "Agenda Items + Full Details" export from the Streamlit UI.
-# 4. The exported CSV/Excel file should include the detailed columns as
-#    defined in the SQL query.
+# 2. Review the updated structure of the `EXPORTS` dictionary. Ensure the
+#    `knesset_filter_column` is correctly specified for each predefined query.
+# 3. Test the functionality:
+#    - Select a predefined query.
+#    - Select one or more Knesset numbers from the sidebar filter.
+#    - Click "▶️ Run Selected Query".
+#    - Verify that the results are filtered by the selected Knesset numbers.
+#    - Check the "Show Executed SQL" expander to see the modified query.
+#    - Test with no Knesset numbers selected (should run the original query).
+# 4. The Knesset Number filter widget already uses `key="ms_knesset_filter"`,
+#    so its value is accessible via `st.session_state.ms_knesset_filter`.
 #
 # ------------------------------------------------------------------------------------
 
@@ -64,6 +82,7 @@ import sys
 import traceback # For more detailed error logging
 from pathlib import Path
 import io # For BytesIO
+import re # For modifying SQL strings
 
 ROOT = Path(__file__).resolve().parents[1]  #  …/src
 if str(ROOT) not in sys.path:
@@ -88,7 +107,7 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
 
-st.set_page_config(page_title="Data Refresh", page_icon="🔄", layout="wide")
+st.set_page_config(page_title="Knesset OData – Refresh & Export", layout="wide")
 
 # Initialize session state variables if they don't exist
 # For Predefined Queries
@@ -96,10 +115,15 @@ if 'selected_query_name' not in st.session_state:
     st.session_state.selected_query_name = None
 if 'executed_query_name' not in st.session_state:
     st.session_state.executed_query_name = None
+if 'executed_sql_string' not in st.session_state: # To store the actually executed SQL
+    st.session_state.executed_sql_string = ""
 if 'query_results_df' not in st.session_state:
     st.session_state.query_results_df = pd.DataFrame()
 if 'show_query_results' not in st.session_state:
     st.session_state.show_query_results = False
+if 'applied_knesset_filter_to_query' not in st.session_state: # To store applied filter info
+    st.session_state.applied_knesset_filter_to_query = []
+
 
 # For Interactive Table Explorer
 if 'selected_table_for_explorer' not in st.session_state:
@@ -110,6 +134,12 @@ if 'table_explorer_df' not in st.session_state:
     st.session_state.table_explorer_df = pd.DataFrame()
 if 'show_table_explorer_results' not in st.session_state:
     st.session_state.show_table_explorer_results = False
+
+# For Sidebar Filters - ensure they are initialized for direct access
+if 'ms_knesset_filter' not in st.session_state:
+    st.session_state.ms_knesset_filter = []
+if 'ms_faction_filter' not in st.session_state:
+    st.session_state.ms_faction_filter = []
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -188,76 +218,70 @@ def get_filter_options_from_db():
 # EXPORTS Dictionary - Source for Predefined Queries
 # ──────────────────────────────────────────────────────────────────────────────
 EXPORTS = {
-    "Queries + Full Details": """
-        SELECT
-            Q.QueryID, Q.Number, Q.KnessetNum, Q.Name AS QueryName, Q.TypeID AS QueryTypeID, Q.TypeDesc AS QueryTypeDesc,
-            Q.StatusID AS QueryStatusID, S.Desc AS QueryStatusDesc,
-            Q.PersonID AS MKPersonID, P.FirstName AS MKFirstName, P.LastName AS MKLastName, P.GenderDesc AS MKGender,
-            P2P.FactionName AS MKFactionName, P2P.FactionID AS MKFactionID,
-            ufs.CoalitionStatus AS MKFactionCoalitionStatus, 
-            Q.GovMinistryID, M.Name AS MinistryName,
-            strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted,
-            strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS ReplyMinisterDateFormatted,
-            strftime(CAST(Q.ReplyDatePlanned AS TIMESTAMP), '%Y-%m-%d') AS ReplyDatePlannedFormatted,
-            strftime(CAST(Q.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d %H:%M') AS LastUpdatedDateFormatted
-        FROM KNS_Query Q
-        LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
-        LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID
-            AND Q.KnessetNum = P2P.KnessetNum
-            AND CAST(Q.SubmitDate AS TIMESTAMP) >= CAST(P2P.StartDate AS TIMESTAMP)
-            AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
-        LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
-        LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-        LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum
-        ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
-        LIMIT 10000;
-    """,
-    "Agenda Items + Full Details": """
-        SELECT
-            A.AgendaID,
-            A.Number AS AgendaNumber,
-            A.KnessetNum,
-            A.Name AS AgendaName,
-            A.ClassificationDesc AS AgendaClassification,
-            A.SubTypeDesc AS AgendaSubType,
-            S.Desc AS AgendaStatus,
-            A.InitiatorPersonID,
-            INIT_P.FirstName AS InitiatorFirstName,
-            INIT_P.LastName AS InitiatorLastName,
-            INIT_P.GenderDesc AS InitiatorGender,
-            INIT_P2P.FactionName AS InitiatorFactionName,
-            INIT_P2P.FactionID AS InitiatorFactionID,
-            INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
-            A.CommitteeID AS HandlingCommitteeID,
-            HC.Name AS HandlingCommitteeName,
-            A.RecommendCommitteeID,
-            RC.Name AS RecommendedCommitteeName,
-            A.GovRecommendationDesc,
-            A.MinisterPersonID,
-            MIN_P.FirstName AS MinisterFirstName,
-            MIN_P.LastName AS MinisterLastName,
-            strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted,
-            strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d %H:%M') AS LastUpdatedDateFormatted
-            -- A.PresidentDecisionDate, A.LastUpdatedDate -- Raw dates if needed
-        FROM KNS_Agenda A
-        LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-        LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
-        LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID
-            AND A.KnessetNum = INIT_P2P.KnessetNum
-            AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) >= CAST(INIT_P2P.StartDate AS TIMESTAMP)
-            AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) <= CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
-        LEFT JOIN UserFactionCoalitionStatus INIT_UFS ON INIT_P2P.FactionID = INIT_UFS.FactionID AND INIT_P2P.KnessetNum = INIT_UFS.KnessetNum
-        LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
-        LEFT JOIN KNS_Committee RC ON A.RecommendCommitteeID = RC.CommitteeID
-        LEFT JOIN KNS_Person MIN_P ON A.MinisterPersonID = MIN_P.PersonID
-        ORDER BY A.KnessetNum DESC, A.AgendaID DESC
-        LIMIT 10000;
-    """
+    "Queries + Full Details": {
+        "sql": """
+            SELECT
+                Q.QueryID, Q.Number, Q.KnessetNum, Q.Name AS QueryName, Q.TypeID AS QueryTypeID, Q.TypeDesc AS QueryTypeDesc,
+                Q.StatusID AS QueryStatusID, S.Desc AS QueryStatusDesc,
+                Q.PersonID AS MKPersonID, P.FirstName AS MKFirstName, P.LastName AS MKLastName, P.GenderDesc AS MKGender,
+                P2P.FactionName AS MKFactionName, P2P.FactionID AS MKFactionID,
+                ufs.CoalitionStatus AS MKFactionCoalitionStatus, 
+                Q.GovMinistryID, M.Name AS MinistryName,
+                strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted,
+                strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS ReplyMinisterDateFormatted,
+                strftime(CAST(Q.ReplyDatePlanned AS TIMESTAMP), '%Y-%m-%d') AS ReplyDatePlannedFormatted,
+                strftime(CAST(Q.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d %H:%M') AS LastUpdatedDateFormatted
+            FROM KNS_Query Q
+            LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
+            LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID
+                AND Q.KnessetNum = P2P.KnessetNum
+                AND CAST(Q.SubmitDate AS TIMESTAMP) >= CAST(P2P.StartDate AS TIMESTAMP)
+                AND CAST(Q.SubmitDate AS TIMESTAMP) <= CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
+            LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
+            LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum
+            ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
+            LIMIT 10000;
+        """,
+        "knesset_filter_column": "Q.KnessetNum" # Column to use for KnessetNum filtering
+    },
+    "Agenda Items + Full Details": {
+        "sql": """
+            SELECT
+                A.AgendaID, A.Number AS AgendaNumber, A.KnessetNum, A.Name AS AgendaName,
+                A.ClassificationDesc AS AgendaClassification, A.SubTypeDesc AS AgendaSubType,
+                S.Desc AS AgendaStatus,
+                A.InitiatorPersonID, INIT_P.FirstName AS InitiatorFirstName, INIT_P.LastName AS InitiatorLastName, INIT_P.GenderDesc AS InitiatorGender,
+                INIT_P2P.FactionName AS InitiatorFactionName, INIT_P2P.FactionID AS InitiatorFactionID,
+                INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
+                A.CommitteeID AS HandlingCommitteeID, HC.Name AS HandlingCommitteeName,
+                A.RecommendCommitteeID, RC.Name AS RecommendedCommitteeName,
+                A.GovRecommendationDesc,
+                A.MinisterPersonID, MIN_P.FirstName AS MinisterFirstName, MIN_P.LastName AS MinisterLastName,
+                strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted,
+                strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d %H:%M') AS LastUpdatedDateFormatted
+            FROM KNS_Agenda A
+            LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
+            LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
+            LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID
+                AND A.KnessetNum = INIT_P2P.KnessetNum
+                AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) >= CAST(INIT_P2P.StartDate AS TIMESTAMP)
+                AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) <= CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN UserFactionCoalitionStatus INIT_UFS ON INIT_P2P.FactionID = INIT_UFS.FactionID AND INIT_P2P.KnessetNum = INIT_UFS.KnessetNum
+            LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
+            LEFT JOIN KNS_Committee RC ON A.RecommendCommitteeID = RC.CommitteeID
+            LEFT JOIN KNS_Person MIN_P ON A.MinisterPersonID = MIN_P.PersonID
+            ORDER BY A.KnessetNum DESC, A.AgendaID DESC
+            LIMIT 10000;
+        """,
+        "knesset_filter_column": "A.KnessetNum" # Column to use for KnessetNum filtering
+    }
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ──────────────────────────────────────────────────────────────────────────────
+st.sidebar.header("🔄 Data Refresh Controls")
 all_available_tables = sorted(list(set(ft.TABLES + list(ft.CURSOR_TABLES.keys())))) 
 selected_tables_to_refresh = st.sidebar.multiselect(
     "Select OData tables to refresh (blank = all predefined)", 
@@ -288,6 +312,7 @@ if st.sidebar.button("🔄 Refresh Faction Status Only"):
 
 # --- Predefined Queries Section ---
 st.sidebar.divider()
+st.sidebar.header("🔎 Predefined Queries")
 query_names_options = [""] + list(EXPORTS.keys()) 
 st.session_state.selected_query_name = st.sidebar.selectbox(
     "Select a predefined query:", options=query_names_options, index=0, key="sb_selected_query_name"
@@ -295,10 +320,42 @@ st.session_state.selected_query_name = st.sidebar.selectbox(
 
 if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state.selected_query_name)):
     if st.session_state.selected_query_name and DB_PATH.exists():
-        selected_sql = EXPORTS[st.session_state.selected_query_name]
+        query_info = EXPORTS[st.session_state.selected_query_name]
+        base_sql = query_info["sql"]
+        knesset_filter_col = query_info.get("knesset_filter_column") # Get the column to filter on
+        
+        modified_sql = base_sql
+        applied_filters_info = []
+
+        # Apply Knesset Number filter if selected and applicable to the query
+        if knesset_filter_col and st.session_state.ms_knesset_filter:
+            knesset_values_str = ", ".join(map(str, st.session_state.ms_knesset_filter))
+            knesset_condition = f"{knesset_filter_col} IN ({knesset_values_str})"
+            
+            # Try to insert before ORDER BY or LIMIT
+            order_by_match = re.search(r"\sORDER\s+BY\s", modified_sql, re.IGNORECASE)
+            limit_match = re.search(r"\sLIMIT\s", modified_sql, re.IGNORECASE)
+            
+            insertion_point = len(modified_sql)
+            if order_by_match: insertion_point = order_by_match.start()
+            if limit_match and limit_match.start() < insertion_point: insertion_point = limit_match.start()
+
+            main_query_part = modified_sql[:insertion_point]
+            suffix_part = modified_sql[insertion_point:]
+
+            if re.search(r"\sWHERE\s", main_query_part, re.IGNORECASE):
+                modified_sql = f"{main_query_part.rstrip()} AND {knesset_condition} {suffix_part.lstrip()}"
+            else:
+                modified_sql = f"{main_query_part.rstrip()} WHERE {knesset_condition} {suffix_part.lstrip()}"
+            applied_filters_info.append(f"Knesset(s): {st.session_state.ms_knesset_filter}")
+
+        st.session_state.executed_sql_string = modified_sql # Store the actually executed SQL
+        st.session_state.applied_knesset_filter_to_query = applied_filters_info
+
+
         try:
             with _connect(read_only=True) as con:
-                st.session_state.query_results_df = con.sql(selected_sql).df()
+                st.session_state.query_results_df = con.sql(modified_sql).df()
             st.session_state.executed_query_name = st.session_state.selected_query_name
             st.session_state.show_query_results = True
             st.session_state.show_table_explorer_results = False 
@@ -339,10 +396,16 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
                 k_col_prefix = "f." if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in current_db_tables else \
                                "p2p." if table_to_explore.lower() == "kns_persontoposition" and "userfactioncoalitionstatus" in current_db_tables else ""
                 
-                if "knessetnum" in table_columns and selected_knessets_filter: 
-                    where_clauses.append(f"{k_col_prefix}KnessetNum IN ({', '.join(map(str, selected_knessets_filter))})")
-                if "factionid" in table_columns and selected_faction_ids_filter: 
-                    where_clauses.append(f"{k_col_prefix}FactionID IN ({', '.join(map(str, selected_faction_ids_filter))})")
+                # Use st.session_state.ms_knesset_filter for consistency
+                if "knessetnum" in table_columns and st.session_state.ms_knesset_filter: 
+                    where_clauses.append(f"{k_col_prefix}KnessetNum IN ({', '.join(map(str, st.session_state.ms_knesset_filter))})")
+                
+                # Similarly for faction filter, if you decide to use st.session_state.ms_faction_filter
+                # For now, selected_faction_ids_filter is derived locally, which is fine for this button's scope
+                current_faction_ids_filter = [faction_display_map[name] for name in st.session_state.ms_faction_filter]
+                if "factionid" in table_columns and current_faction_ids_filter: 
+                    where_clauses.append(f"{k_col_prefix}FactionID IN ({', '.join(map(str, current_faction_ids_filter))})")
+
 
                 final_query = base_query + (" WHERE " + " AND ".join(where_clauses) if where_clauses else "")
                 order_by = "ORDER BY LastUpdatedDate DESC" if "lastupdateddate" in table_columns else ""
@@ -370,10 +433,25 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
 knesset_nums_options, factions_options_df = get_filter_options_from_db()
 faction_display_map = {f"{row['Name']} (K{row['KnessetNum']})": row["FactionID"] for _, row in factions_options_df.iterrows()}
 st.sidebar.divider()
-st.sidebar.header("📊 Filters (for Table Explorer & Ad-hoc SQL)")
-selected_knessets_filter = st.sidebar.multiselect("Knesset Number(s):", options=knesset_nums_options, default=[], key="ms_knesset_filter")
-selected_faction_names_filter = st.sidebar.multiselect("Faction(s):", options=list(faction_display_map.keys()), default=[], key="ms_faction_filter")
-selected_faction_ids_filter = [faction_display_map[name] for name in selected_faction_names_filter]
+# Updated header for filters
+st.sidebar.header("📊 Filters (for Predefined Queries, Table Explorer & Ad-hoc SQL)")
+
+# Ensure multiselects write to and read from session_state
+st.session_state.ms_knesset_filter = st.sidebar.multiselect(
+    "Knesset Number(s):", 
+    options=knesset_nums_options, 
+    default=st.session_state.get('ms_knesset_filter', []), # Initialize from session state
+    key="ms_knesset_filter_widget" # Use a unique key for the widget itself
+)
+st.session_state.ms_faction_filter = st.sidebar.multiselect(
+    "Faction(s):", 
+    options=list(faction_display_map.keys()), 
+    default=st.session_state.get('ms_faction_filter', []), # Initialize from session state
+    key="ms_faction_filter_widget" # Use a unique key for the widget itself
+)
+# This derived list is fine as it's used immediately within the Table Explorer button logic
+selected_faction_ids_filter = [faction_display_map[name] for name in st.session_state.ms_faction_filter]
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main area
@@ -383,7 +461,7 @@ st.title("🇮🇱 Knesset Data Warehouse Console")
 with st.expander("ℹ️ How This Works", expanded=False):
     st.markdown(dedent(f"""
         * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses from `{ft.FACTION_COALITION_STATUS_FILE.name}`.
-        * **Predefined Queries:** Select a query from the sidebar, click "Run". Results appear in "Query Results".
+        * **Predefined Queries:** Select a query from the sidebar. Apply optional Knesset Number filters, then click "Run". Results appear in "Query Results".
         * **Interactive Table Explorer:** Select a table from the sidebar, apply filters, click "Explore". Results appear in "Table Explorer Results".
         * **Ad-hoc SQL:** Use the sandbox at the bottom to run custom SQL.
     """))
@@ -392,9 +470,14 @@ with st.expander("ℹ️ How This Works", expanded=False):
 st.divider()
 st.header("📄 Predefined Query Results")
 if st.session_state.show_query_results and st.session_state.executed_query_name:
-    st.subheader(f"Results for: {st.session_state.executed_query_name}")
+    subheader_text = f"Results for: {st.session_state.executed_query_name}"
+    if st.session_state.applied_knesset_filter_to_query:
+        subheader_text += f" (Filtered by Knesset(s): {', '.join(map(str,st.session_state.applied_knesset_filter_to_query))})"
+    st.subheader(subheader_text)
+
     with st.expander("Show Executed SQL", expanded=False):
-        st.code(EXPORTS[st.session_state.executed_query_name], language="sql")
+        st.code(st.session_state.executed_sql_string, language="sql") # Show the modified SQL
+
     if not st.session_state.query_results_df.empty:
         st.dataframe(st.session_state.query_results_df, use_container_width=True, height=400)
         csv_export = st.session_state.query_results_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
@@ -405,10 +488,10 @@ if st.session_state.show_query_results and st.session_state.executed_query_name:
         dl_col1, dl_col2 = st.columns(2)
         with dl_col1: st.download_button(f"⬇️ CSV '{st.session_state.executed_query_name}'", csv_export, f"{safe_sheet_name.lower()}.csv", "text/csv", key=f"csv_pq_{safe_sheet_name}")
         with dl_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_query_name}'", excel_bytes_export, f"{safe_sheet_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_pq_{safe_sheet_name}")
-    else: st.info("The selected predefined query returned no results.")
+    else: st.info("The selected predefined query returned no results with the current filters.")
 elif st.session_state.selected_query_name and not st.session_state.show_query_results:
     if not st.session_state.show_table_explorer_results: 
-        st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'.")
+        st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'. Apply Knesset filters if needed.")
 elif not st.session_state.show_table_explorer_results: 
     st.info("Select a predefined query from the sidebar and click 'Run Selected Query'.")
 
@@ -418,7 +501,11 @@ st.divider()
 st.header("📖 Interactive Table Explorer Results")
 if st.session_state.show_table_explorer_results and st.session_state.executed_table_explorer_name:
     st.subheader(f"Exploring Table: {st.session_state.executed_table_explorer_name}")
-    st.markdown(f"Filters Applied: Knesset(s): `{selected_knessets_filter or 'All'}`, Faction(s): `{selected_faction_names_filter or 'All'}`")
+    # Use session state for filters here for consistency in display
+    knesset_filter_display = st.session_state.get('ms_knesset_filter', [])
+    faction_filter_display = st.session_state.get('ms_faction_filter', [])
+    st.markdown(f"Filters Applied: Knesset(s): `{knesset_filter_display or 'All'}`, Faction(s): `{faction_filter_display or 'All'}`")
+
     if not st.session_state.table_explorer_df.empty:
         st.dataframe(st.session_state.table_explorer_df, use_container_width=True, height=400)
         csv_export_table = st.session_state.table_explorer_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
@@ -455,8 +542,8 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
 st.divider() 
 with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False):
     if DB_PATH.exists():
-        tables_to_check_status = sorted(list(set(all_available_tables + ["UserFactionCoalitionStatus"])))
-        status_data = [{"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)} for t_name in tables_to_check_status]
-        st.dataframe(pd.DataFrame(status_data), hide_index=True, use_container_width=True)
+        tables_to_check_status_main = sorted(list(set(all_available_tables + ["UserFactionCoalitionStatus"]))) # Use a different variable name
+        status_data_main = [{"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)} for t_name in tables_to_check_status_main]
+        st.dataframe(pd.DataFrame(status_data_main), hide_index=True, use_container_width=True)
     else: 
         st.info("Database not found. Table status cannot be displayed.")
