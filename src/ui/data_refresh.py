@@ -77,9 +77,53 @@
 
 from __future__ import annotations
 
+# ─── Debugging Python Path ──────────────────────────────────────────────────
+import sys
+from pathlib import Path
+import os
+
+print("--- DEBUGGING IMPORTS ---")
+print(f"Current Working Directory: {Path.cwd()}")
+
+_CURRENT_FILE = Path(__file__).resolve()
+print(f"Current File (__file__): {_CURRENT_FILE}")
+
+ROOT = _CURRENT_FILE.parents[1]  #  …/src
+print(f"Calculated ROOT (expected src/): {ROOT}")
+
+if str(ROOT) not in sys.path:
+    print(f"Adding to sys.path: {ROOT}")
+    sys.path.insert(0, str(ROOT)) # Insert at the beginning for higher precedence
+else:
+    print(f"{ROOT} already in sys.path.")
+
+print("sys.path contents:")
+for p_idx, p_val in enumerate(sys.path):
+    print(f"  {p_idx}: {p_val}")
+
+_UTILS_DIR = ROOT / "utils"
+print(f"Expected utils directory: {_UTILS_DIR}")
+if _UTILS_DIR.exists() and _UTILS_DIR.is_dir():
+    print(f"Contents of {_UTILS_DIR}: {os.listdir(_UTILS_DIR)}")
+else:
+    print(f"{_UTILS_DIR} DOES NOT EXIST or IS NOT A DIRECTORY!")
+
+print(f"Python executable: {sys.executable}")
+print("--- END DEBUGGING IMPORTS ---")
+# ──────────────────────────────────────────────────────────────────────────────
+
 # ─── make sibling packages importable ─────────────────────────────────────────
 import sys
-import traceback # For more detailed error logging
+import logging
+from utils.logger_setup import setup_logging
+
+# Helper to format exceptions for UI display
+_DEF_LOG_FORMATTER = logging.Formatter()
+def _format_exc():
+    return _DEF_LOG_FORMATTER.formatException(sys.exc_info())
+
+# Initialize logger for the UI module
+ui_logger = setup_logging('knesset.ui.data_refresh', console_output=True) # Ensure console output for Streamlit dev
 from pathlib import Path
 import io # For BytesIO
 import re # For modifying SQL strings
@@ -299,7 +343,10 @@ if st.sidebar.button("🚀 Fetch Selected OData Tables"):
             asyncio.run(ft.refresh_tables(tables=tables_to_run, progress_cb=_sidebar_progress_cb, db_path=DB_PATH))
             st.sidebar.success("Data refresh process complete!")
             st.cache_data.clear(); st.rerun() 
-        except Exception as e: st.sidebar.error(f"Refresh failed: {e}"); st.sidebar.code(traceback.format_exc()) 
+        except Exception as e:
+            ui_logger.error(f"Data refresh failed via UI: {e}", exc_info=True)
+            st.sidebar.error(f"Refresh failed: {e}")
+            st.sidebar.code(str(e) + "\n\n" + _format_exc())
 
 if st.sidebar.button("🔄 Refresh Faction Status Only"):
     st.sidebar.info(f"Refreshing faction coalition statuses from {ft.FACTION_COALITION_STATUS_FILE.name}...")
@@ -308,7 +355,10 @@ if st.sidebar.button("🔄 Refresh Faction Status Only"):
             ft.load_and_store_faction_statuses(db_path=DB_PATH)
             st.sidebar.success("Faction coalition statuses refreshed!")
             st.cache_data.clear(); st.rerun()
-        except Exception as e: st.sidebar.error(f"Faction status refresh failed: {e}"); st.sidebar.code(traceback.format_exc())
+        except Exception as e:
+            ui_logger.error(f"Faction status refresh failed via UI: {e}", exc_info=True)
+            st.sidebar.error(f"Faction status refresh failed: {e}")
+            st.sidebar.code(str(e) + "\n\n" + _format_exc())
 
 # --- Predefined Queries Section ---
 st.sidebar.divider()
@@ -360,8 +410,9 @@ if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state
             st.session_state.show_query_results = True
             st.session_state.show_table_explorer_results = False 
         except Exception as e:
+            ui_logger.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}", exc_info=True)
             st.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}")
-            st.code(traceback.format_exc())
+            st.code(str(e) + "\n\n" + _format_exc())
             st.session_state.show_query_results = False
             st.session_state.query_results_df = pd.DataFrame()
     elif not st.session_state.selected_query_name: st.warning("Please select a query.")
@@ -418,8 +469,9 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
             st.session_state.show_table_explorer_results = True
             st.session_state.show_query_results = False 
         except Exception as e:
+            ui_logger.error(f"Error exploring table '{table_to_explore}': {e}", exc_info=True)
             st.error(f"Error exploring table '{table_to_explore}': {e}")
-            st.code(traceback.format_exc())
+            st.code(str(e) + "\n\n" + _format_exc())
             st.session_state.show_table_explorer_results = False
             st.session_state.table_explorer_df = pd.DataFrame()
     elif not st.session_state.selected_table_for_explorer: 
@@ -536,7 +588,10 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
                 st.dataframe(adhoc_result_df, use_container_width=True)
                 if not adhoc_result_df.empty:
                     st.download_button("⬇️ Download Ad-hoc (CSV)", adhoc_result_df.to_csv(index=False).encode('utf-8-sig'), "adhoc_results.csv", "text/csv", key="adhoc_csv_download" )
-            except Exception as e: st.error(f"❌ SQL Query Error: {e}"); st.code(traceback.format_exc())
+            except Exception as e:
+                ui_logger.error(f"❌ SQL Query Error: {e}", exc_info=True)
+                st.error(f"❌ SQL Query Error: {e}")
+                st.code(str(e) + "\n\n" + _format_exc())
 
 # --- Table Update Status (Moved to the bottom and put in an expander) ---
 st.divider() 
