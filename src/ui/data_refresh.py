@@ -1,148 +1,49 @@
-# ──────────────────────────────────────────────────────────────────────────────
-#  src/ui/data_refresh.py  – self-service GUI for the researcher
-#
-#  Launch with:
-#     streamlit run src/ui/data_refresh.py
-#
-#  Key features
-#  ------------
-#  ▸ Select which tables to refresh (or all of them)
-#  ▸ Watch live progress + see "last updated" timestamps
-#  ▸ Select and run predefined queries from the sidebar, with dynamic KnessetNum filtering.
-#  ▸ Interactively explore raw database tables with filters.
-#  ▸ Display results with download options.
-#  ▸ (Optional) run ad-hoc SQL against the DuckDB warehouse
-#
-#  Dependencies:
-#     pip install streamlit duckdb pandas openpyxl
-# ──────────────────────────────────────────────────────────────────────────────
-#
-# ------------------------------------------------------------------------------------
-# DEVELOPER INSTRUCTIONS: Applying Sidebar Filters to Predefined Queries
-# ------------------------------------------------------------------------------------
-#
-# Request:
-# The user wants the "Knesset Number(s)" filter selected in the sidebar to
-# dynamically apply to the "Predefined Queries" when they are executed.
-#
-# Solution:
-# This version modifies the application to inject Knesset Number filters into
-# the predefined SQL queries before execution.
-#
-# Changes Made:
-# 1. `EXPORTS` Dictionary Structure:
-#    - Each entry in the `EXPORTS` dictionary is now a sub-dictionary containing:
-#        - `"sql"`: The base SQL query string.
-#        - `"knesset_filter_column"`: The fully qualified column name (e.g., "Q.KnessetNum",
-#          "A.KnessetNum") in the base query that should be used for filtering by KnessetNum.
-#
-# 2. "Run Selected Query" Button Logic:
-#    - When this button is clicked:
-#        - It retrieves the base SQL and the `knesset_filter_column` from the `EXPORTS` entry.
-#        - It checks `st.session_state.ms_knesset_filter` (the session state key for the
-#          Knesset Number multiselect widget in the sidebar).
-#        - If Knesset numbers are selected in the filter:
-#            - A `WHERE` or `AND` clause for `knesset_filter_column IN (...)` is
-#              dynamically constructed.
-#            - This clause is inserted into the base SQL query *before* any existing
-#              `ORDER BY` or `LIMIT` clauses using regular expressions for robust insertion.
-#        - The (potentially modified) SQL query is then executed.
-#        - The executed SQL (including the dynamic filter) is shown in the expander.
-#
-# 3. Sidebar Filter Header:
-#    - The header for the filter section in the sidebar has been updated to
-#      "📊 Filters (for Predefined Queries, Table Explorer & Ad-hoc SQL)"
-#      to reflect its expanded role.
-#
-# 4. User Feedback in Main Area:
-#    - When displaying results for a predefined query, if Knesset filters were
-#      applied, this will be indicated in the subheader.
-#
-# Developer Actions:
-#
-# 1. Ensure this version of `data_refresh.py` is being used.
-# 2. Review the updated structure of the `EXPORTS` dictionary. Ensure the
-#    `knesset_filter_column` is correctly specified for each predefined query.
-# 3. Test the functionality:
-#    - Select a predefined query.
-#    - Select one or more Knesset numbers from the sidebar filter.
-#    - Click "▶️ Run Selected Query".
-#    - Verify that the results are filtered by the selected Knesset numbers.
-#    - Check the "Show Executed SQL" expander to see the modified query.
-#    - Test with no Knesset numbers selected (should run the original query).
-# 4. The Knesset Number filter widget already uses `key="ms_knesset_filter"`,
-#    so its value is accessible via `st.session_state.ms_knesset_filter`.
-#
-# ------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
-# ─── Debugging Python Path ──────────────────────────────────────────────────
-import sys
-from pathlib import Path
-import os
-
-print("--- DEBUGGING IMPORTS ---")
-print(f"Current Working Directory: {Path.cwd()}")
-
-_CURRENT_FILE = Path(__file__).resolve()
-print(f"Current File (__file__): {_CURRENT_FILE}")
-
-ROOT = _CURRENT_FILE.parents[1]  #  …/src
-print(f"Calculated ROOT (expected src/): {ROOT}")
-
-if str(ROOT) not in sys.path:
-    print(f"Adding to sys.path: {ROOT}")
-    sys.path.insert(0, str(ROOT)) # Insert at the beginning for higher precedence
-else:
-    print(f"{ROOT} already in sys.path.")
-
-print("sys.path contents:")
-for p_idx, p_val in enumerate(sys.path):
-    print(f"  {p_idx}: {p_val}")
-
-_UTILS_DIR = ROOT / "utils"
-print(f"Expected utils directory: {_UTILS_DIR}")
-if _UTILS_DIR.exists() and _UTILS_DIR.is_dir():
-    print(f"Contents of {_UTILS_DIR}: {os.listdir(_UTILS_DIR)}")
-else:
-    print(f"{_UTILS_DIR} DOES NOT EXIST or IS NOT A DIRECTORY!")
-
-print(f"Python executable: {sys.executable}")
-print("--- END DEBUGGING IMPORTS ---")
-# ──────────────────────────────────────────────────────────────────────────────
-
-# ─── make sibling packages importable ─────────────────────────────────────────
-import sys
+# Standard Library Imports
+import asyncio
+import io
 import logging
-from utils.logger_setup import setup_logging
+import re # For safe filename generation and SQL injection
+import sys
+from datetime import datetime
+from pathlib import Path
+from textwrap import dedent
+from zoneinfo import ZoneInfo
+
+# Third-Party Imports
+import duckdb
+import openpyxl  # Required by pandas for Excel writing to .xlsx, even if not directly used by code
+import pandas as pd
+import streamlit as st
+
+# Add the 'src' directory to sys.path to allow absolute imports
+_CURRENT_FILE_DIR = Path(__file__).resolve().parent 
+_SRC_DIR = _CURRENT_FILE_DIR.parent 
+_PROJECT_ROOT = _SRC_DIR.parent 
+
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+if str(_PROJECT_ROOT) not in sys.path: 
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+# Local Application Imports
+from utils.logger_setup import setup_logging # type: ignore
+from backend.fetch_table import TABLES # type: ignore # Import TABLES list
+import backend.fetch_table as ft # type: ignore
+
+# Initialize logger for the UI module
+ui_logger = setup_logging('knesset.ui.data_refresh', console_output=True)
+
+_ALL_TABLE_NAMES_FROM_METADATA = TABLES # Use TABLES list directly for _get_all_table_statuses
+_SELECT_ALL_TABLES_OPTION = "🔄 Select/Deselect All Tables" # Define the constant
 
 # Helper to format exceptions for UI display
 _DEF_LOG_FORMATTER = logging.Formatter()
 def _format_exc():
     return _DEF_LOG_FORMATTER.formatException(sys.exc_info())
 
-# Initialize logger for the UI module
-ui_logger = setup_logging('knesset.ui.data_refresh', console_output=True) # Ensure console output for Streamlit dev
-from pathlib import Path
-import io # For BytesIO
-import re # For modifying SQL strings
-
-ROOT = Path(__file__).resolve().parents[1]  #  …/src
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
-# ──────────────────────────────────────────────────────────────────────────────
-
-import asyncio
-from datetime import datetime, timezone
-from textwrap import dedent
-
-import duckdb
-import pandas as pd
-import streamlit as st
-
 # local modules  – keep alias `ft` for simplicity
-import backend.fetch_table as ft # type: ignore
 
 DB_PATH = Path("data/warehouse.duckdb") 
 PARQUET_DIR = Path("data/parquet") 
@@ -168,7 +69,6 @@ if 'show_query_results' not in st.session_state:
 if 'applied_knesset_filter_to_query' not in st.session_state: # To store applied filter info
     st.session_state.applied_knesset_filter_to_query = []
 
-
 # For Interactive Table Explorer
 if 'selected_table_for_explorer' not in st.session_state:
     st.session_state.selected_table_for_explorer = None
@@ -185,78 +85,143 @@ if 'ms_knesset_filter' not in st.session_state:
 if 'ms_faction_filter' not in st.session_state:
     st.session_state.ms_faction_filter = []
 
+# Helper function definitions moved here to ensure they are defined before use
+
+@st.cache_resource # Use cache_resource for connection objects
+def _connect(read_only: bool = True) -> duckdb.DuckDBPyConnection:
+    """Establishes a new connection to the DuckDB database."""
+    # Ensure DB_PATH is defined (it should be at the top of the script)
+    if not DB_PATH.exists() and not read_only:
+        # This info is helpful if the user intends to write data
+        st.info(f"Database {DB_PATH} does not exist. It will be created by DuckDB during write operation.")
+    elif not DB_PATH.exists() and read_only:
+        # For read-only operations, if DB doesn't exist, it's a problem.
+        st.warning(f"Database {DB_PATH} does not exist. Please run a data refresh first. Query execution will fail.")
+        # Connect to an in-memory DB as a fallback to avoid crashing, though queries will likely be empty.
+        return duckdb.connect(database=':memory:', read_only=True) 
+    return duckdb.connect(database=DB_PATH.as_posix(), read_only=read_only)
+
+@st.cache_data(ttl=3600) # Cache for 1 hour
+def get_db_table_list():
+    """Fetches the list of all tables from the database."""
+    ui_logger.info("Fetching database table list...")
+    if not DB_PATH.exists():
+        ui_logger.warning("Database file not found. Returning empty table list.")
+        return []
+    try:
+        con = _connect(read_only=True) # Get cached connection
+        tables_df = con.execute("SHOW TABLES;").df()
+        table_list = sorted(tables_df['name'].tolist()) if not tables_df.empty else []
+        ui_logger.info(f"Database table list fetched: {len(table_list)} tables.")
+        return table_list
+    except duckdb.Error as e:
+        ui_logger.error(f"Database error in get_db_table_list: {e}", exc_info=True)
+        st.sidebar.error(f"DB error listing tables: {e}", icon="🔥")
+        return []
+    except Exception as e:
+        ui_logger.error(f"Unexpected error in get_db_table_list: {e}", exc_info=True)
+        st.sidebar.error(f"Error listing tables: {e}", icon="🔥")
+        return []
+
+# @st.cache_data(ttl="1h", show_spinner="Fetching filter options...") # Potential caching strategy
+def get_filter_options_from_db():
+    """Fetches distinct Knesset numbers and faction data for filter dropdowns."""
+    ui_logger.info("Fetching filter options from database...")
+    if not DB_PATH.exists():
+        ui_logger.warning("Database file not found. Returning empty filter options.")
+        st.sidebar.warning("DB not found. Filters unavailable.", icon="⚠️")
+        return [], pd.DataFrame(columns=['FactionName', 'FactionID'])
+
+    try:
+        con = _connect(read_only=True) # Get cached connection
+        # Get Knesset Numbers
+        knesset_nums_query = "SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC;" # Corrected table name
+        knesset_nums_df = con.execute(knesset_nums_query).df()
+        knesset_nums_options = sorted(knesset_nums_df['KnessetNum'].unique().tolist(), reverse=True) if not knesset_nums_df.empty else []
+        
+        # Get Factions by joining KNS_Faction with UserFactionCoalitionStatus
+        factions_query = """
+            SELECT DISTINCT
+                ufcs.FactionName,
+                ufcs.FactionID,
+                ufcs.KnessetNum
+            FROM
+                KNS_Faction AS kf
+            INNER JOIN
+                UserFactionCoalitionStatus AS ufcs ON kf.FactionID = ufcs.FactionID
+            ORDER BY
+                ufcs.FactionName;
+        """
+        factions_df = con.execute(factions_query).df()
+        
+        ui_logger.info(f"Filter options fetched: {len(knesset_nums_options)} Knesset Nums, {len(factions_df)} Factions.")
+        return knesset_nums_options, factions_df
+    except duckdb.Error as e: # More specific exception
+        ui_logger.error(f"Database error in get_filter_options_from_db: {e}", exc_info=True)
+        st.sidebar.error(f"DB error fetching filters: {e}", icon="🔥")
+        return [], pd.DataFrame(columns=['FactionName', 'FactionID'])
+    except Exception as e:
+        ui_logger.error(f"Unexpected error in get_filter_options_from_db: {e}", exc_info=True)
+        st.sidebar.error(f"Error fetching filters: {e}", icon="🔥")
+        return [], pd.DataFrame(columns=['FactionName', 'FactionID'])
+
+# Define filter options data early, as it's needed by both main page logic and sidebar
+knesset_nums_options, factions_options_df = get_filter_options_from_db()
+faction_display_map = {f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"] for _, row in factions_options_df.iterrows()}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
-def _connect(read_only: bool = True) -> duckdb.DuckDBPyConnection:
-    """Establishes a new connection to the DuckDB database."""
-    if not DB_PATH.exists() and not read_only:
-        st.info(f"Database {DB_PATH} does not exist. It will be created by DuckDB during write operation.")
-    elif not DB_PATH.exists() and read_only:
-        st.warning(f"Database {DB_PATH} does not exist. Please run a data refresh first. Query execution will fail.")
-        return duckdb.connect(database=':memory:', read_only=True) 
-    return duckdb.connect(database=DB_PATH.as_posix(), read_only=read_only)
-
-
 def _human_ts(ts_value):
     """Converts a timestamp or datetime object to a human-readable UTC string."""
-    if pd.isna(ts_value) or ts_value is None: return "never"
+    if ts_value is None:
+        return "N/A"
     try:
-        if isinstance(ts_value, (datetime, pd.Timestamp)):
-            dt_object = pd.to_datetime(ts_value) 
-            dt_object = dt_object.tz_localize(None) if dt_object.tzinfo else dt_object 
-            dt_object = dt_object.tz_localize(timezone.utc)
-        else: 
-            dt_object = pd.to_datetime(ts_value, unit='s', utc=True, errors='coerce')
-            if pd.isna(dt_object): dt_object = pd.to_datetime(ts_value, utc=True, errors='coerce')
-            if pd.isna(dt_object): return "invalid date"
-        return dt_object.strftime("%Y-%m-%d %H:%M UTC")
-    except Exception: return "conversion error"
+        # If it's a float/int timestamp (seconds since epoch)
+        if isinstance(ts_value, (int, float)):
+            dt_obj = datetime.fromtimestamp(ts_value, ZoneInfo('UTC'))
+        elif isinstance(ts_value, str):
+            # Attempt to parse common ISO formats
+            try:
+                dt_obj = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
+            except ValueError:
+                # Add other parsing attempts if needed, e.g., for non-standard formats
+                dt_obj = pd.to_datetime(ts_value).to_pydatetime()
+        elif isinstance(ts_value, datetime):
+            dt_obj = ts_value
+        else:
+            return "Invalid date format"
 
+        # Ensure datetime is UTC if not already, then format
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_obj.replace(tzinfo=ZoneInfo('UTC'))
+        else:
+            dt_obj = dt_obj.astimezone(ZoneInfo('UTC'))
+        return dt_obj.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except Exception as e:
+        ui_logger.warning(f"Could not parse timestamp '{ts_value}': {e}")
+        return str(ts_value) # fallback to original string if parsing fails
 
 def _get_last_updated_from_db(table_name: str) -> str:
-    if not DB_PATH.exists(): return "never (DB not found)"
-    try:
-        with _connect(read_only=True) as con:
-            tables_in_db_df = con.execute("SELECT table_name FROM duckdb_tables() WHERE schema_name='main';").df()
-            if table_name.lower() not in tables_in_db_df['table_name'].str.lower().tolist(): return "table not found"
-            cols_df = con.execute(f"PRAGMA table_info('{table_name}');").df()
-            if 'lastupdateddate' in cols_df['name'].str.lower().tolist():
-                res = con.sql(f"SELECT MAX(LastUpdatedDate) FROM \"{table_name}\"").fetchone()
-                return _human_ts(res[0]) if res and res[0] else "empty/no dates"
-            elif table_name.lower() == "userfactioncoalitionstatus" and ft.FACTION_COALITION_STATUS_FILE.exists():
-                return _human_ts(ft.FACTION_COALITION_STATUS_FILE.stat().st_mtime) + " (CSV mod time)"
-            elif (PARQUET_DIR / f"{table_name}.parquet").exists():
-                return _human_ts((PARQUET_DIR / f"{table_name}.parquet").stat().st_mtime) + " (Parquet mod)"
-            return "no LastUpdatedDate"
-    except Exception as e: return f"error ({type(e).__name__})"
-
-
-@st.cache_data(ttl=3600) 
-def get_db_table_list():
-    """Fetches the list of all tables from the database."""
+    """Fetches the last_updated timestamp for a given table from the metadata table."""
+    # Returns a human-readable string or None if not found/error.
+    # ui_logger.debug(f"Fetching last_updated for table: {table_name}")
     if not DB_PATH.exists():
-        return []
+        # ui_logger.warning(f"DB not found. Cannot get last_updated for {table_name}")
+        return None # Return None if DB doesn't exist, _human_ts will handle it if called with None by other parts
     try:
-        with _connect(read_only=True) as con:
-            return con.execute("SELECT table_name FROM duckdb_tables() WHERE schema_name='main' ORDER BY table_name;").df()["table_name"].tolist()
+        con = _connect(read_only=True) # Get cached connection
+        query = "SELECT last_updated FROM table_metadata WHERE table_name = ?;"
+        result = con.execute(query, [table_name]).fetchone()
+        # ui_logger.debug(f"Last updated for {table_name}: {result[0] if result else 'Not found'}")
+        return _human_ts(result[0]) if result and result[0] is not None else "Never (or N/A)"
+    except duckdb.Error as e:
+        ui_logger.error(f"DB error fetching last_updated for {table_name}: {e}")
+        return "Error"
     except Exception as e:
-        st.sidebar.error(f"Error fetching table list for explorer: {e}")
-        return []
-
-@st.cache_data(ttl=3600) 
-def get_filter_options_from_db():
-    knesset_nums, factions_df = [], pd.DataFrame(columns=["FactionID", "Name", "KnessetNum"])
-    if not DB_PATH.exists(): return knesset_nums, factions_df
-    try:
-        with _connect(read_only=True) as con:
-            tbls = get_db_table_list() 
-            if "kns_knessetdates" in (t.lower() for t in tbls): knesset_nums = con.execute("SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC").df()["KnessetNum"].tolist()
-            elif "kns_faction" in (t.lower() for t in tbls): knesset_nums = con.execute("SELECT DISTINCT KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC").df()["KnessetNum"].tolist()
-            if "kns_faction" in (t.lower() for t in tbls): factions_df = con.execute("SELECT FactionID, Name, KnessetNum FROM KNS_Faction ORDER BY KnessetNum DESC, Name").df()
-    except Exception as e: st.sidebar.error(f"Filter options error: {e}")
-    return knesset_nums, factions_df
+        ui_logger.error(f"Unexpected error fetching last_updated for {table_name}: {e}")
+        return "Error"
+    # No con.close() here
 
 # ──────────────────────────────────────────────────────────────────────────────
 # EXPORTS Dictionary - Source for Predefined Queries
@@ -325,40 +290,93 @@ EXPORTS = {
 # ──────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ──────────────────────────────────────────────────────────────────────────────
+def _handle_data_refresh_button_click():
+    # Handles the logic when the '🔄 Refresh Selected Data' button is clicked.
+    if st.session_state.data_refresh_process_running:
+        return
+
+    all_tables = st.session_state.get('ms_tables_to_refresh', []) # Default to empty list if not set
+    
+    if not all_tables:
+        st.sidebar.warning("No tables selected.")
+        return
+    if not DB_PATH.exists():
+        st.sidebar.error("Database not found. Cannot refresh tables.")
+        return
+    
+    tables_to_run = [t for t in all_tables if t != _SELECT_ALL_TABLES_OPTION] # Filter out 'ALL'
+    if _SELECT_ALL_TABLES_OPTION in all_tables:
+        tables_to_run = TABLES # Use all defined tables if 'ALL' is selected
+    
+    if not tables_to_run:
+        st.sidebar.info("No specific tables chosen for refresh (e.g., only 'ALL' was selected but no tables are defined, or selection was cleared).")
+        return # Stop if no actual tables are to be processed
+
+    st.session_state.data_refresh_process_running = True
+    # Clear previous progress
+
+    ui_logger.info(f"Starting data refresh for tables: {tables_to_run}")
+    progress_bar_sidebar = st.sidebar.progress(0, text="Preparing refresh...")
+    status_text_sidebar = st.sidebar.empty()
+
+    def _sidebar_progress_cb(progress_data):
+        # progress_data is expected to be a dict like {'percentage': float, 'message': str}
+        if 'percentage' in progress_data and 'message' in progress_data:
+            percentage = progress_data['percentage']
+            message = progress_data['message']
+            progress_bar_sidebar.progress(int(percentage), text=message)
+            status_text_sidebar.text(message) # Also update the separate status text
+        elif 'message' in progress_data: # Handle message-only updates
+            status_text_sidebar.text(progress_data['message'])
+            ui_logger.info(progress_data['message'])
+
+    async def _refresh_async_wrapper(tables_to_run_async):
+        await ft.refresh_tables(tables=tables_to_run_async, progress_cb=_sidebar_progress_cb, db_path=DB_PATH)
+
+    with st.spinner("Fetching data... Please wait."): # This spinner might be redundant if sidebar progress is used
+        try:
+            asyncio.run(_refresh_async_wrapper(tables_to_run))
+            st.sidebar.success("Data refresh process complete!")
+            _sidebar_progress_cb({'percentage': 100, 'message': 'Refresh complete!'})
+            # Refresh filter options and table list after successful data refresh
+            st.cache_data.clear() # Clear data cache to get fresh filter options
+            st.cache_resource.clear() # Clear resource cache (db connection)
+            st.rerun() # Easiest way to ensure everything reloads with new data
+
+        except Exception as e:
+            ui_logger.error(f"❌ Data Refresh Error: {e}", exc_info=True)
+            st.sidebar.error(f"❌ Data Refresh Error: {e}")
+            st.sidebar.code(str(e) + "\n\n" + _format_exc())
+            _sidebar_progress_cb({'percentage': 0, 'message': f'Error: {e}'})
+        finally:
+            st.session_state.data_refresh_process_running = False
+            progress_bar_sidebar.empty() # Clear the progress bar
+            status_text_sidebar.empty() # Clear the status text
+
 st.sidebar.header("🔄 Data Refresh Controls")
-all_available_tables = sorted(list(set(ft.TABLES + list(ft.CURSOR_TABLES.keys())))) 
-selected_tables_to_refresh = st.sidebar.multiselect(
-    "Select OData tables to refresh (blank = all predefined)", 
-    all_available_tables, default=[], placeholder="All predefined tables"
+
+default_selection = []
+if 'ms_tables_to_refresh' in st.session_state:
+    default_selection = st.session_state.ms_tables_to_refresh
+
+selected_tables_for_refresh = st.sidebar.multiselect(
+    label="Select tables to refresh/fetch:",
+    options=TABLES, # Use TABLES list directly
+    default=default_selection,
+    key="ms_tables_to_refresh",
 )
 
-if st.sidebar.button("🚀 Fetch Selected OData Tables"):
-    tables_to_run = selected_tables_to_refresh if selected_tables_to_refresh else None
-    st.sidebar.info(f"Refreshing: {'selected OData tables' if tables_to_run else 'All predefined OData tables'} and faction statuses...")
-    progress_area_sidebar = st.sidebar.empty()
-    def _sidebar_progress_cb(table_name, rows_done):
-        progress_area_sidebar.write(f"✔ **{table_name}** – {rows_done:,} rows.")
-    with st.spinner("Fetching data... Please wait."):
-        try:
-            asyncio.run(ft.refresh_tables(tables=tables_to_run, progress_cb=_sidebar_progress_cb, db_path=DB_PATH))
-            st.sidebar.success("Data refresh process complete!")
-            st.cache_data.clear(); st.rerun() 
-        except Exception as e:
-            ui_logger.error(f"Data refresh failed via UI: {e}", exc_info=True)
-            st.sidebar.error(f"Refresh failed: {e}")
-            st.sidebar.code(str(e) + "\n\n" + _format_exc())
+if st.sidebar.button(_SELECT_ALL_TABLES_OPTION, key="btn_select_all_tables_refresh"):
+    if st.session_state.get('all_tables_selected_for_refresh', False):
+        st.session_state.ms_tables_to_refresh = []
+        st.session_state.all_tables_selected_for_refresh = False
+    else:
+        st.session_state.ms_tables_to_refresh = TABLES[:]
+        st.session_state.all_tables_selected_for_refresh = True
+    st.rerun()
 
-if st.sidebar.button("🔄 Refresh Faction Status Only"):
-    st.sidebar.info(f"Refreshing faction coalition statuses from {ft.FACTION_COALITION_STATUS_FILE.name}...")
-    with st.spinner("Refreshing faction statuses..."):
-        try:
-            ft.load_and_store_faction_statuses(db_path=DB_PATH)
-            st.sidebar.success("Faction coalition statuses refreshed!")
-            st.cache_data.clear(); st.rerun()
-        except Exception as e:
-            ui_logger.error(f"Faction status refresh failed via UI: {e}", exc_info=True)
-            st.sidebar.error(f"Faction status refresh failed: {e}")
-            st.sidebar.code(str(e) + "\n\n" + _format_exc())
+if st.sidebar.button("🔄 Refresh Selected Data", on_click=_handle_data_refresh_button_click, key="btn_refresh_data"):
+    pass # Logic is handled by on_click
 
 # --- Predefined Queries Section ---
 st.sidebar.divider()
@@ -370,53 +388,93 @@ st.session_state.selected_query_name = st.sidebar.selectbox(
 
 if st.sidebar.button("▶️ Run Selected Query", disabled=(not st.session_state.selected_query_name)):
     if st.session_state.selected_query_name and DB_PATH.exists():
-        query_info = EXPORTS[st.session_state.selected_query_name]
-        base_sql = query_info["sql"]
-        knesset_filter_col = query_info.get("knesset_filter_column") # Get the column to filter on
-        
-        modified_sql = base_sql
-        applied_filters_info = []
-
-        # Apply Knesset Number filter if selected and applicable to the query
-        if knesset_filter_col and st.session_state.ms_knesset_filter:
-            knesset_values_str = ", ".join(map(str, st.session_state.ms_knesset_filter))
-            knesset_condition = f"{knesset_filter_col} IN ({knesset_values_str})"
-            
-            # Try to insert before ORDER BY or LIMIT
-            order_by_match = re.search(r"\sORDER\s+BY\s", modified_sql, re.IGNORECASE)
-            limit_match = re.search(r"\sLIMIT\s", modified_sql, re.IGNORECASE)
-            
-            insertion_point = len(modified_sql)
-            if order_by_match: insertion_point = order_by_match.start()
-            if limit_match and limit_match.start() < insertion_point: insertion_point = limit_match.start()
-
-            main_query_part = modified_sql[:insertion_point]
-            suffix_part = modified_sql[insertion_point:]
-
-            if re.search(r"\sWHERE\s", main_query_part, re.IGNORECASE):
-                modified_sql = f"{main_query_part.rstrip()} AND {knesset_condition} {suffix_part.lstrip()}"
-            else:
-                modified_sql = f"{main_query_part.rstrip()} WHERE {knesset_condition} {suffix_part.lstrip()}"
-            applied_filters_info.append(f"Knesset(s): {st.session_state.ms_knesset_filter}")
-
-        st.session_state.executed_sql_string = modified_sql # Store the actually executed SQL
-        st.session_state.applied_knesset_filter_to_query = applied_filters_info
-
-
         try:
-            with _connect(read_only=True) as con:
+            query_info = EXPORTS[st.session_state.selected_query_name]
+            base_sql = query_info["sql"]
+            knesset_filter_col = query_info.get("knesset_filter_column") # Get the column to filter on
+            
+            modified_sql = base_sql
+            # Strip trailing whitespace and semicolon from base_sql before modification
+            modified_sql = modified_sql.strip().rstrip(';')
+            applied_filters_info = []
+
+            # Apply Knesset Number filter if selected and applicable to the query
+            if knesset_filter_col and st.session_state.ms_knesset_filter:
+                selected_knesset_nums = st.session_state.ms_knesset_filter
+                filter_clause = f"{knesset_filter_col} IN ({', '.join(map(str, selected_knesset_nums))})"
+                applied_filters_info.append(f"KnessetNum IN ({', '.join(map(str, selected_knesset_nums))})")
+
+                # Determine if we need 'WHERE' or 'AND' based on existing WHERE clause
+                if re.search(r'\sWHERE\s', modified_sql, re.IGNORECASE):
+                    keyword_to_use = "AND"
+                else:
+                    keyword_to_use = "WHERE"
+                
+                # filter_string_to_add has a leading space, but no trailing space initially.
+                filter_string_to_add = f" {keyword_to_use} {filter_clause}"
+
+                # Clauses to find; search for the start of these keywords.
+                # Regex patterns do not require a leading space for the keyword itself.
+                clauses_keywords_to_find = [
+                    r'GROUP\s+BY', r'HAVING', r'WINDOW', r'ORDER\s+BY', 
+                    r'LIMIT', r'OFFSET', r'FETCH'
+                ]
+                
+                insertion_point = -1 # Default: append if no target clause found
+
+                for pattern_str in clauses_keywords_to_find:
+                    match = re.search(pattern_str, modified_sql, re.IGNORECASE)
+                    if match:
+                        current_match_start = match.start()
+                        # Find the earliest occurring clause to insert before
+                        if insertion_point == -1 or current_match_start < insertion_point:
+                            insertion_point = current_match_start
+                
+                if insertion_point != -1:
+                    # Insert the filter string, then a space, then the rest of the original query
+                    prefix = modified_sql[:insertion_point]
+                    suffix = modified_sql[insertion_point:]
+                    modified_sql = prefix + filter_string_to_add + " " + suffix
+                else:
+                    # If none of the specified clauses were found, append the filter string.
+                    # filter_string_to_add already has its necessary leading space.
+                    modified_sql += filter_string_to_add
+            
+            ui_logger.info(f"Executing predefined query: {st.session_state.selected_query_name} with SQL:\n{modified_sql}")
+            
+            # Pre-execution validation of the modified_sql
+            final_check_sql = modified_sql.strip()
+            if not final_check_sql or not re.match(r'^(SELECT|WITH|INSERT|UPDATE|DELETE|VALUES|TABLE|EXPLAIN)\b', final_check_sql, re.IGNORECASE):
+                error_message = (
+                    f"Generated SQL query for '{st.session_state.selected_query_name}' is invalid or empty. "
+                    f"Please check its base definition in EXPORTS. Generated SQL attempt:\n{modified_sql}"
+                )
+                ui_logger.error(error_message)
+                st.error(error_message)
+                # Optionally, clear previous results or set to empty DataFrame
+                st.session_state.query_results_df = pd.DataFrame()
+            else:
+                con = _connect(read_only=True) # Get cached connection
                 st.session_state.query_results_df = con.sql(modified_sql).df()
-            st.session_state.executed_query_name = st.session_state.selected_query_name
-            st.session_state.show_query_results = True
-            st.session_state.show_table_explorer_results = False 
+                st.session_state.executed_query_name = st.session_state.selected_query_name
+                st.session_state.show_query_results = True
+                st.session_state.show_table_explorer_results = False 
+                st.session_state.applied_filters_info_query = applied_filters_info # Store for display
+                st.session_state.last_executed_sql = modified_sql # Store for display
+                # st.toast(f"✅ Query '{st.session_state.executed_query_name}' executed.", icon="📊")
+
         except Exception as e:
-            ui_logger.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}", exc_info=True)
-            st.error(f"Error executing predefined query '{st.session_state.selected_query_name}': {e}")
-            st.code(str(e) + "\n\n" + _format_exc())
-            st.session_state.show_query_results = False
-            st.session_state.query_results_df = pd.DataFrame()
-    elif not st.session_state.selected_query_name: st.warning("Please select a query.")
-    else: st.error("Database not found. Run data refresh."); st.session_state.show_query_results = False
+            ui_logger.error(f"Error executing query '{st.session_state.selected_query_name}': {e}")
+            # Log the problematic SQL again, specifically at the point of failure
+            ui_logger.error(f"Failed SQL for '{st.session_state.selected_query_name}':\n{modified_sql}")
+            st.error(f"Error executing query '{st.session_state.selected_query_name}': {e}")
+            st.code(str(e) + "\n\n" + _format_exc()) # Show full traceback in UI for debug
+            st.session_state.show_query_results = False # Reset on error
+            st.session_state.query_results_df = pd.DataFrame() # Reset on error
+
+    elif not DB_PATH.exists():
+        st.error("Database not found. Please ensure 'data/warehouse.duckdb' exists or run data refresh.")
+        st.session_state.show_query_results = False
 
 # --- Interactive Table Explorer Section ---
 st.sidebar.divider()
@@ -430,60 +488,67 @@ if st.sidebar.button("🔍 Explore Selected Table", disabled=(not st.session_sta
     if st.session_state.selected_table_for_explorer and DB_PATH.exists():
         table_to_explore = st.session_state.selected_table_for_explorer
         try:
-            with _connect(read_only=True) as con:
-                base_query = f"SELECT * FROM \"{table_to_explore}\""
-                where_clauses = []
-                current_db_tables = [t.lower() for t in get_db_table_list()] 
-                table_columns_df = con.execute(f"PRAGMA table_info('{table_to_explore}')").df()
-                table_columns = table_columns_df["name"].str.lower().tolist()
+            con = _connect(read_only=True) # Get cached connection
+            base_query = "SELECT * FROM \"" + table_to_explore + "\""
+            where_clauses = []
+            current_db_tables = [t.lower() for t in get_db_table_list()] 
+            table_columns_df = con.execute(f"PRAGMA table_info('{table_to_explore}')").df()
+            table_columns = table_columns_df["name"].str.lower().tolist()
 
-                if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in current_db_tables:
-                    base_query = """SELECT f.*, ufs.FactionName AS UserProvidedFactionName, ufs.CoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition
-                                    FROM KNS_Faction f LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID AND f.KnessetNum = ufs.KnessetNum"""
-                elif table_to_explore.lower() == "kns_persontoposition" and "userfactioncoalitionstatus" in current_db_tables and "factionid" in table_columns and "knessetnum" in table_columns:
-                    base_query = f"""SELECT p2p.*, ufs.CoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition
-                                     FROM KNS_PersonToPosition p2p LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum"""
+            if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in current_db_tables:
+                base_query = """SELECT f.*, ufs.CoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition
+                                 FROM KNS_Faction f LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID AND f.KnessetNum = ufs.KnessetNum"""
+            elif table_to_explore.lower() == "kns_persontoposition" and "userfactioncoalitionstatus" in current_db_tables and "factionid" in table_columns and "knessetnum" in table_columns:
+                base_query = """SELECT p2p.*, ufs.CoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition
+                                 FROM KNS_PersonToPosition p2p LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum"""
                 
-                k_col_prefix = "f." if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in current_db_tables else \
-                               "p2p." if table_to_explore.lower() == "kns_persontoposition" and "userfactioncoalitionstatus" in current_db_tables else ""
+            k_col_prefix = ""
+            if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in current_db_tables:
+                 k_col_prefix = "f."
+            elif table_to_explore.lower() == "kns_persontoposition" and "userfactioncoalitionstatus" in current_db_tables:
+                 k_col_prefix = "p2p." 
                 
-                # Use st.session_state.ms_knesset_filter for consistency
-                if "knessetnum" in table_columns and st.session_state.ms_knesset_filter: 
-                    where_clauses.append(f"{k_col_prefix}KnessetNum IN ({', '.join(map(str, st.session_state.ms_knesset_filter))})")
-                
-                # Similarly for faction filter, if you decide to use st.session_state.ms_faction_filter
-                # For now, selected_faction_ids_filter is derived locally, which is fine for this button's scope
-                current_faction_ids_filter = [faction_display_map[name] for name in st.session_state.ms_faction_filter]
-                if "factionid" in table_columns and current_faction_ids_filter: 
-                    where_clauses.append(f"{k_col_prefix}FactionID IN ({', '.join(map(str, current_faction_ids_filter))})")
-
-
-                final_query = base_query + (" WHERE " + " AND ".join(where_clauses) if where_clauses else "")
-                order_by = "ORDER BY LastUpdatedDate DESC" if "lastupdateddate" in table_columns else ""
-                if not order_by and table_columns: order_by = f"ORDER BY {table_columns[0]} DESC" 
-                final_query += f" {order_by} LIMIT 1000"
-                
-                st.session_state.table_explorer_df = con.sql(final_query).df()
+            # Use st.session_state.ms_knesset_filter for consistency
+            if "knessetnum" in table_columns and st.session_state.ms_knesset_filter: 
+                where_clauses.append(f"{k_col_prefix}KnessetNum IN ({', '.join(map(str, st.session_state.ms_knesset_filter))})")
             
+            # Similarly for faction filter, if you decide to use st.session_state.ms_faction_filter
+            # For now, selected_faction_ids_filter is derived locally, which is fine for this button's scope
+            current_faction_ids_filter = [faction_display_map[name] for name in st.session_state.ms_faction_filter]
+            if "factionid" in table_columns and current_faction_ids_filter: 
+                where_clauses.append(f"{k_col_prefix}FactionID IN ({', '.join(map(str, current_faction_ids_filter))})")
+
+
+            final_query = base_query
+            if where_clauses:
+                final_query += " WHERE " + " AND ".join(where_clauses)
+            
+            order_by = ""
+            if "lastupdateddate" in table_columns:
+                order_by = "ORDER BY LastUpdatedDate DESC"
+            elif table_columns: # Check if table_columns is not empty
+                order_by = f"ORDER BY \"{table_columns[0]}\" DESC" # Quote column name if it might have spaces/special chars
+            
+            final_query += f" {order_by} LIMIT 1000"
+            
+            st.session_state.table_explorer_df = con.sql(final_query).df()
+            
+            # These should only be set on successful execution of the query
             st.session_state.executed_table_explorer_name = table_to_explore
             st.session_state.show_table_explorer_results = True
             st.session_state.show_query_results = False 
+
         except Exception as e:
             ui_logger.error(f"Error exploring table '{table_to_explore}': {e}", exc_info=True)
             st.error(f"Error exploring table '{table_to_explore}': {e}")
             st.code(str(e) + "\n\n" + _format_exc())
-            st.session_state.show_table_explorer_results = False
-            st.session_state.table_explorer_df = pd.DataFrame()
+            st.session_state.show_table_explorer_results = False # Reset on error
+            st.session_state.table_explorer_df = pd.DataFrame() # Reset on error
+
     elif not st.session_state.selected_table_for_explorer: 
         st.warning("Please select a table to explore.")
-    else: 
-        st.error("Database not found. Run data refresh.")
-        st.session_state.show_table_explorer_results = False
-
 
 # --- Data Filters (for Ad-hoc SQL & Table Explorer) ---
-knesset_nums_options, factions_options_df = get_filter_options_from_db()
-faction_display_map = {f"{row['Name']} (K{row['KnessetNum']})": row["FactionID"] for _, row in factions_options_df.iterrows()}
 st.sidebar.divider()
 # Updated header for filters
 st.sidebar.header("📊 Filters (for Predefined Queries, Table Explorer & Ad-hoc SQL)")
@@ -521,59 +586,86 @@ with st.expander("ℹ️ How This Works", expanded=False):
 # --- Query Results Area (for Predefined Queries) ---
 st.divider()
 st.header("📄 Predefined Query Results")
-if st.session_state.show_query_results and st.session_state.executed_query_name:
-    subheader_text = f"Results for: {st.session_state.executed_query_name}"
-    if st.session_state.applied_knesset_filter_to_query:
-        subheader_text += f" (Filtered by Knesset(s): {', '.join(map(str,st.session_state.applied_knesset_filter_to_query))})"
-    st.subheader(subheader_text)
 
-    with st.expander("Show Executed SQL", expanded=False):
-        st.code(st.session_state.executed_sql_string, language="sql") # Show the modified SQL
+# Check conditions to display this section. Content moved inside this block.
+if st.session_state.show_query_results and st.session_state.executed_query_name:
+    st.subheader("Query Results") # Moved from outside
+    subheader_text = f"Results for: {st.session_state.executed_query_name}"
+    if st.session_state.applied_filters_info_query:
+        subheader_text += f" (Filters: {'; '.join(st.session_state.applied_filters_info_query)})"
+    st.markdown(subheader_text)
 
     if not st.session_state.query_results_df.empty:
         st.dataframe(st.session_state.query_results_df, use_container_width=True, height=400)
-        csv_export = st.session_state.query_results_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-        excel_buffer = io.BytesIO()
-        safe_sheet_name = "".join(c if c.isalnum() else "_" for c in st.session_state.executed_query_name)[:30] or "Export"
-        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer: st.session_state.query_results_df.to_excel(writer, index=False, sheet_name=safe_sheet_name)
-        excel_bytes_export = excel_buffer.getvalue()
-        dl_col1, dl_col2 = st.columns(2)
-        with dl_col1: st.download_button(f"⬇️ CSV '{st.session_state.executed_query_name}'", csv_export, f"{safe_sheet_name.lower()}.csv", "text/csv", key=f"csv_pq_{safe_sheet_name}")
-        with dl_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_query_name}'", excel_bytes_export, f"{safe_sheet_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_pq_{safe_sheet_name}")
-    else: st.info("The selected predefined query returned no results with the current filters.")
-elif st.session_state.selected_query_name and not st.session_state.show_query_results:
-    if not st.session_state.show_table_explorer_results: 
-        st.info(f"Click '▶️ Run Selected Query' in the sidebar to execute '{st.session_state.selected_query_name}'. Apply Knesset filters if needed.")
-elif not st.session_state.show_table_explorer_results: 
-    st.info("Select a predefined query from the sidebar and click 'Run Selected Query'.")
+        # CSV and Excel Download Buttons
+        safe_query_name_csv = re.sub(r'[^a-zA-Z0-9_\-]+', '_', st.session_state.executed_query_name)
+        safe_query_name_excel = re.sub(r'[^a-zA-Z0-9_\-]+', '_', st.session_state.executed_query_name)
 
+        col_csv, col_excel = st.columns(2)
+        with col_csv:
+            st.download_button(
+                label="⬇️ Download Results (CSV)",
+                data=st.session_state.query_results_df.to_csv(index=False).encode('utf-8-sig'),
+                file_name=f"{safe_query_name_csv}_results.csv",
+                mime="text/csv",
+                key="csv_download_button_query"
+            )
+        with col_excel:
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                st.session_state.query_results_df.to_excel(writer, index=False, sheet_name='Results')
+            st.download_button(
+                label="⬇️ Download Results (Excel)",
+                data=excel_buffer.getvalue(),
+                file_name=f"{safe_query_name_excel}_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="excel_download_button_query"
+            )
+    else:
+        st.info("The query returned no results.")
+    
+    with st.expander("Show Executed SQL", expanded=False):
+        st.code(st.session_state.last_executed_sql, language='sql')
 
 # --- Table Explorer Results Area ---
 st.divider()
 st.header("📖 Interactive Table Explorer Results")
+
+# Check conditions to display this section. Content moved inside this block.
 if st.session_state.show_table_explorer_results and st.session_state.executed_table_explorer_name:
-    st.subheader(f"Exploring Table: {st.session_state.executed_table_explorer_name}")
-    # Use session state for filters here for consistency in display
+    st.subheader(f"Exploring: {st.session_state.executed_table_explorer_name}") # Moved from outside
     knesset_filter_display = st.session_state.get('ms_knesset_filter', [])
     faction_filter_display = st.session_state.get('ms_faction_filter', [])
     st.markdown(f"Filters Applied: Knesset(s): `{knesset_filter_display or 'All'}`, Faction(s): `{faction_filter_display or 'All'}`")
 
     if not st.session_state.table_explorer_df.empty:
         st.dataframe(st.session_state.table_explorer_df, use_container_width=True, height=400)
-        csv_export_table = st.session_state.table_explorer_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-        excel_buffer_table = io.BytesIO()
-        safe_table_name = "".join(c if c.isalnum() else "_" for c in st.session_state.executed_table_explorer_name)[:30] or "Table"
-        with pd.ExcelWriter(excel_buffer_table, engine="openpyxl") as writer: st.session_state.table_explorer_df.to_excel(writer, index=False, sheet_name=safe_table_name)
-        excel_bytes_table = excel_buffer_table.getvalue()
-        dl_t_col1, dl_t_col2 = st.columns(2)
-        with dl_t_col1: st.download_button(f"⬇️ CSV '{st.session_state.executed_table_explorer_name}'", csv_export_table, f"explored_{safe_table_name.lower()}.csv", "text/csv", key=f"csv_te_{safe_table_name}")
-        with dl_t_col2: st.download_button(f"⬇️ Excel '{st.session_state.executed_table_explorer_name}'", excel_bytes_table, f"explored_{safe_table_name.lower()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_te_{safe_table_name}")
-    else: st.info("The table exploration returned no results with the current filters.")
-elif st.session_state.selected_table_for_explorer and not st.session_state.show_table_explorer_results:
-    if not st.session_state.show_query_results: 
-         st.info(f"Click '🔍 Explore Selected Table' in the sidebar to view '{st.session_state.selected_table_for_explorer}'.")
-elif not st.session_state.show_query_results: 
-    st.info("Select a table from the sidebar and click 'Explore Selected Table'.")
+        # CSV and Excel Download Buttons for table explorer
+        safe_table_name_csv = re.sub(r'[^a-zA-Z0-9_\-]+', '_', st.session_state.executed_table_explorer_name)
+        safe_table_name_excel = re.sub(r'[^a-zA-Z0-9_\-]+', '_', st.session_state.executed_table_explorer_name)
+
+        col_csv_table, col_excel_table = st.columns(2)
+        with col_csv_table:
+            st.download_button(
+                label="⬇️ Download Table Data (CSV)",
+                data=st.session_state.table_explorer_df.to_csv(index=False).encode('utf-8-sig'),
+                file_name=f"{safe_table_name_csv}_table_data.csv",
+                mime="text/csv",
+                key="csv_download_button_table"
+            )
+        with col_excel_table:
+            excel_buffer_table = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer_table, engine='openpyxl') as writer:
+                st.session_state.table_explorer_df.to_excel(writer, index=False, sheet_name='TableData')
+            st.download_button(
+                label="⬇️ Download Table Data (Excel)",
+                data=excel_buffer_table.getvalue(),
+                file_name=f"{safe_table_name_excel}_table_data.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="excel_download_button_table"
+            )
+    else:
+        st.info("The table exploration returned no results or no table was selected.")
 
 # --- Ad-hoc SQL Query Section ---
 with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=False):
@@ -584,21 +676,28 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
         sql_query_input = st.text_area("Enter your SQL query:", default_sql_query, height=150, key="adhoc_sql_query" )
         if st.button("▶︎ Run Ad-hoc SQL", key="run_adhoc_sql"): 
             try:
-                with _connect(read_only=True) as con: adhoc_result_df = con.sql(sql_query_input).df()
+                con = _connect(read_only=True) # Get cached connection
+                adhoc_result_df = con.sql(sql_query_input).df()
                 st.dataframe(adhoc_result_df, use_container_width=True)
                 if not adhoc_result_df.empty:
                     st.download_button("⬇️ Download Ad-hoc (CSV)", adhoc_result_df.to_csv(index=False).encode('utf-8-sig'), "adhoc_results.csv", "text/csv", key="adhoc_csv_download" )
             except Exception as e:
                 ui_logger.error(f"❌ SQL Query Error: {e}", exc_info=True)
                 st.error(f"❌ SQL Query Error: {e}")
-                st.code(str(e) + "\n\n" + _format_exc())
+                st.code(str(e) + "\n\n" + _format_exc()) # Show full traceback in UI for debug
 
 # --- Table Update Status (Moved to the bottom and put in an expander) ---
 st.divider() 
 with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False):
     if DB_PATH.exists():
-        tables_to_check_status_main = sorted(list(set(all_available_tables + ["UserFactionCoalitionStatus"]))) # Use a different variable name
-        status_data_main = [{"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)} for t_name in tables_to_check_status_main]
-        st.dataframe(pd.DataFrame(status_data_main), hide_index=True, use_container_width=True)
+        tables_to_check_status_main = sorted(list(set(TABLES)))
+        status_data_main = []
+        for t_name in tables_to_check_status_main:
+            status_data_main.append({"Table": t_name, "Last Updated": _get_last_updated_from_db(t_name)})
+        
+        if status_data_main: # Check if list is not empty before creating DataFrame
+            st.dataframe(pd.DataFrame(status_data_main), hide_index=True, use_container_width=True)
+        else:
+            st.info("No tables found to display status.")
     else: 
         st.info("Database not found. Table status cannot be displayed.")
