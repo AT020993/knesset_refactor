@@ -16,6 +16,7 @@ from datetime import datetime
 # Define a consistent color sequence for categorical data if needed
 KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly 
 COALITION_OPPOSITION_COLORS = {"Coalition": "#1f77b4", "Opposition": "#ff7f0e", "Unknown": "#7f7f7f", "": "#c7c7c7"} # Adjusted for better contrast
+ANSWER_STATUS_COLORS = {"Answered": "#2ca02c", "Not Answered": "#d62728", "Other/In Progress": "#ffbb78", "Unknown": "#c7c7c7"}
 
 
 def check_tables_exist(con: duckdb.DuckDBPyConnection, required_tables: list[str], logger_obj: logging.Logger) -> bool:
@@ -49,9 +50,6 @@ def plot_queries_by_year(
     try:
         con = connect_func(read_only=True)
         required_tables = ["KNS_Query"]
-        # If faction_filter is to be applied by submitter's faction, joins would be needed.
-        # This plot currently doesn't implement direct filtering by submitter's faction for simplicity,
-        # as it would require joining KNS_Query -> KNS_Person -> KNS_PersonToPosition.
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
 
@@ -68,19 +66,14 @@ def plot_queries_by_year(
         where_clauses = [
             "q.SubmitDate IS NOT NULL",
             "q.KnessetNum IS NOT NULL",
-            f"CAST(strftime(CAST(q.SubmitDate AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}", # Ensure no future dates
-            "CAST(strftime(CAST(q.SubmitDate AS TIMESTAMP), '%Y') AS INTEGER) > 1940" # Basic sanity check
+            f"CAST(strftime(CAST(q.SubmitDate AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}", 
+            "CAST(strftime(CAST(q.SubmitDate AS TIMESTAMP), '%Y') AS INTEGER) > 1940" 
         ]
 
         if knesset_filter:
             knesset_nums_str = ', '.join(map(str, knesset_filter))
             where_clauses.append(f"q.KnessetNum IN ({knesset_nums_str})")
         
-        # Note: Faction filter on query submitter would require joins.
-        # If faction_filter is provided and needs to be applied on the submitter's faction:
-        # The query would need to join KNS_Query with KNS_Person and KNS_PersonToPosition
-        # and then filter on p2p.FactionID. This is omitted for this specific plot's simplicity.
-
         if where_clauses:
             base_sql += " WHERE " + " AND ".join(where_clauses)
 
@@ -95,7 +88,7 @@ def plot_queries_by_year(
             return None
         
         df["KnessetNum"] = df["KnessetNum"].astype(str) 
-        df["SubmitYear"] = df["SubmitYear"].astype(str)
+        df["SubmitYear"] = df["SubmitYear"].astype(str) 
 
         fig = px.bar(df, 
                      x="SubmitYear", 
@@ -103,12 +96,18 @@ def plot_queries_by_year(
                      color="KnessetNum",
                      title="<b>Number of Queries Submitted per Year (by Knesset)</b>",
                      labels={"SubmitYear": "Year of Submission", "QueryCount": "Number of Queries", "KnessetNum": "Knesset Number"},
-                     category_orders={"SubmitYear": sorted(df["SubmitYear"].unique())}, # Ensure years are sorted
+                     category_orders={"SubmitYear": sorted(df["SubmitYear"].unique())}, 
                      hover_name="KnessetNum",
-                     hover_data={"SubmitYear": True, "QueryCount": True, "KnessetNum": False}, # Control hover info
+                     hover_data={"SubmitYear": True, "QueryCount": True, "KnessetNum": False}, 
                      color_discrete_sequence=KNESSET_COLOR_SEQUENCE
                     )
-        fig.update_layout(xaxis_title="Year", yaxis_title="Number of Queries", legend_title_text='Knesset', title_x=0.5)
+        fig.update_layout(
+            xaxis_title="Year", 
+            yaxis_title="Number of Queries", 
+            legend_title_text='Knesset', 
+            title_x=0.5,
+            xaxis_type='category' 
+        )
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_year': {e}", exc_info=True)
@@ -120,7 +119,7 @@ def plot_query_types_distribution(
     connect_func: callable,
     logger_obj: logging.Logger,
     knesset_filter: list | None = None,
-    faction_filter: list | None = None # Not directly applied here for simplicity
+    faction_filter: list | None = None 
     ):
     """Generates a pie chart of query types distribution, faceted by KnessetNum."""
     if not db_path.exists():
@@ -146,8 +145,6 @@ def plot_query_types_distribution(
             knesset_nums_str = ', '.join(map(str, knesset_filter))
             where_clauses.append(f"q.KnessetNum IN ({knesset_nums_str})")
         
-        # Faction filter would require joins if applied to submitter's faction
-        
         if where_clauses:
             base_sql += " WHERE " + " AND ".join(where_clauses)
             
@@ -166,12 +163,12 @@ def plot_query_types_distribution(
         fig = px.pie(df, 
                      names="TypeDesc", 
                      values="QueryCount", 
-                     color="TypeDesc", # Color by TypeDesc for distinct colors
+                     color="TypeDesc", 
                      facet_col="KnessetNum", 
-                     facet_col_wrap=4, # Adjust as needed
+                     facet_col_wrap=4, 
                      title="<b>Distribution of Query Types (Faceted by Knesset)</b>",
                      labels={"TypeDesc": "Query Type", "QueryCount": "Number of Queries", "KnessetNum": "Knesset Number"},
-                     hole=0.3, # Donut chart style
+                     hole=0.3, 
                      hover_data=["QueryCount"]
                     )
         fig.update_traces(
@@ -180,7 +177,7 @@ def plot_query_types_distribution(
             insidetextorientation='radial',
             hovertemplate="<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>"
         )
-        fig.for_each_annotation(lambda a: a.update(text=f"<b>Knesset {a.text.split('=')[-1]}</b>")) # Make facet titles bold
+        fig.for_each_annotation(lambda a: a.update(text=f"<b>Knesset {a.text.split('=')[-1]}</b>")) 
         fig.update_layout(
             legend_title_text='Query Type',
             title_x=0.5
@@ -207,7 +204,7 @@ def plot_agendas_by_year(
     try:
         con = connect_func(read_only=True)
         required_tables = ["KNS_Agenda"]
-        if faction_filter: # If filtering by initiator's faction
+        if faction_filter: 
             required_tables.extend(["KNS_Person", "KNS_PersonToPosition"])
 
         if not check_tables_exist(con, required_tables, logger_obj):
@@ -261,7 +258,7 @@ def plot_agendas_by_year(
             return None
         
         df["KnessetNum"] = df["KnessetNum"].astype(str)
-        df["AgendaYear"] = df["AgendaYear"].astype(str)
+        df["AgendaYear"] = df["AgendaYear"].astype(str) 
 
         fig = px.bar(df, 
                      x="AgendaYear", 
@@ -274,7 +271,13 @@ def plot_agendas_by_year(
                      hover_data={"AgendaYear": True, "AgendaCount": True, "KnessetNum": False},
                      color_discrete_sequence=KNESSET_COLOR_SEQUENCE
                     )
-        fig.update_layout(xaxis_title="Year", yaxis_title="Number of Agenda Items", legend_title_text='Knesset', title_x=0.5)
+        fig.update_layout(
+            xaxis_title="Year", 
+            yaxis_title="Number of Agenda Items", 
+            legend_title_text='Knesset', 
+            title_x=0.5,
+            xaxis_type='category' 
+            )
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agendas_by_year': {e}", exc_info=True)
@@ -364,7 +367,6 @@ def plot_agenda_classifications_pie(
         st.error(f"Could not generate 'Agenda Classifications' plot: {e}")
         return None
 
-# --- NEW PLOT 1: Queries by Submitting Faction (Coalition/Opposition Status) ---
 def plot_queries_by_faction_status(
     db_path: Path,
     connect_func: callable,
@@ -424,7 +426,7 @@ def plot_queries_by_faction_status(
             qfi.KnessetNum,
             qfi.FactionName,
             ufs.CoalitionStatus
-        HAVING QueryCount > 0 -- Only include factions with queries
+        HAVING QueryCount > 0 
         ORDER BY
             qfi.KnessetNum DESC,
             QueryCount DESC;
@@ -463,7 +465,7 @@ def plot_queries_by_faction_status(
         fig.update_layout(
             legend_title_text='Coalition Status',
             title_x=0.5,
-            height=max(600, 250 * ((len(df["KnessetNum"].unique()) + 1) // 2) ) # Dynamic height based on facets
+            height=max(600, 250 * ((len(df["KnessetNum"].unique()) + 1) // 2) ) 
         )
         return fig
 
@@ -472,8 +474,6 @@ def plot_queries_by_faction_status(
         st.error(f"Could not generate 'Queries by Faction Status' plot: {e}")
         return None
 
-
-# --- NEW PLOT 2: Agenda Item Status Distribution ---
 def plot_agenda_status_distribution(
     db_path: Path,
     connect_func: callable,
@@ -491,7 +491,7 @@ def plot_agenda_status_distribution(
     try:
         con = connect_func(read_only=True)
         required_tables = ["KNS_Agenda", "KNS_Status"]
-        if faction_filter: # If filtering by initiator's faction
+        if faction_filter: 
              required_tables.extend(["KNS_Person", "KNS_PersonToPosition"])
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
@@ -546,10 +546,9 @@ def plot_agenda_status_distribution(
         df["AgendaCount"] = pd.to_numeric(df["AgendaCount"], errors='coerce').fillna(0)
         df["StatusDescription"] = df["StatusDescription"].fillna("Unknown Status")
 
-        # Determine if faceting is needed
         num_knessets_in_data = len(df["KnessetNum"].unique())
         facet_by_knesset = num_knessets_in_data > 1
-        if knesset_filter and len(knesset_filter) == 1: # If user explicitly selected only one Knesset
+        if knesset_filter and len(knesset_filter) == 1: 
             facet_by_knesset = False
 
 
@@ -566,12 +565,11 @@ def plot_agenda_status_distribution(
             fig.for_each_annotation(lambda a: a.update(text=f"<b>Knesset {a.text.split('=')[-1]}</b>"))
         else: 
             knesset_num_display = df["KnessetNum"].unique()[0] if num_knessets_in_data > 0 else "Selected"
-            # Aggregate data if multiple knessets are present but not faceting (e.g. no knesset_filter)
             if num_knessets_in_data > 1 and not knesset_filter:
                 df_agg = df.groupby("StatusDescription", as_index=False)["AgendaCount"].sum()
                 knesset_num_display = "All Selected Knessets"
             else:
-                df_agg = df # Use as is if only one Knesset's data or specific Knesset filtered
+                df_agg = df 
 
             fig = px.pie(df_agg,
                          names="StatusDescription",
@@ -589,4 +587,228 @@ def plot_agenda_status_distribution(
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agenda_status_distribution': {e}", exc_info=True)
         st.error(f"Could not generate 'Agenda Item Status Distribution' plot: {e}")
+        return None
+
+# --- NEW PLOT: Queries per Faction in a specific Knesset ---
+def plot_queries_per_faction_in_knesset(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    knesset_filter: list | None = None, # Expected to be a single Knesset
+    faction_filter: list | None = None # For filtering specific factions within that Knesset
+):
+    """
+    Generates a bar chart of queries per faction for a specific Knesset.
+    """
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate 'Queries per Faction' visualization.")
+        logger_obj.error("Database not found for plot_queries_per_faction_in_knesset.")
+        return None
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset using the plot-specific filter to view 'Queries per Faction'.")
+        return None
+    
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "KNS_Faction"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        # Corrected GROUP BY clause
+        sql_query = f"""
+        SELECT
+            COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+            p2p.FactionID,
+            COUNT(DISTINCT q.QueryID) AS QueryCount
+        FROM KNS_Query q
+        JOIN KNS_Person p ON q.PersonID = p.PersonID
+        LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+            AND q.KnessetNum = p2p.KnessetNum
+            AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+        LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = f_fallback.KnessetNum
+        WHERE q.KnessetNum = {single_knesset_num} AND p2p.FactionID IS NOT NULL
+        """
+        
+        if faction_filter:
+            sql_query += f" AND p2p.FactionID IN ({', '.join(map(str, faction_filter))})"
+        
+        sql_query += """
+        GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+        HAVING QueryCount > 0
+        ORDER BY QueryCount DESC;
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_queries_per_faction_in_knesset (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No query data found for Knesset {single_knesset_num} with the current filters.")
+            logger_obj.info(f"No data for 'Queries per Faction' plot for Knesset {single_knesset_num}.")
+            return None
+
+        df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors='coerce').fillna(0)
+        df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
+
+        fig = px.bar(df,
+                     x="FactionName",
+                     y="QueryCount",
+                     color="FactionName", 
+                     title=f"<b>Number of Queries per Faction in Knesset {single_knesset_num}</b>",
+                     labels={"FactionName": "Faction", "QueryCount": "Number of Queries"},
+                     hover_name="FactionName",
+                     hover_data={"QueryCount": True}
+                     )
+        
+        fig.update_layout(
+            xaxis_title="Faction",
+            yaxis_title="Number of Queries",
+            title_x=0.5,
+            xaxis_tickangle=-45,
+            showlegend=False 
+        )
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_queries_per_faction_in_knesset': {e}", exc_info=True)
+        st.error(f"Could not generate 'Queries per Faction' plot: {e}")
+        return None
+
+# --- NEW PLOT: Queries by Coalition/Opposition and Answered Status ---
+def plot_queries_by_coalition_and_answer_status(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    knesset_filter: list | None = None, # Expected to be a single Knesset
+    faction_filter: list | None = None 
+):
+    """
+    Generates a grouped bar chart of queries by coalition/opposition status, 
+    further grouped by whether the query was answered, for a specific Knesset.
+    """
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate 'Queries by Coalition & Answer Status' visualization.")
+        return None
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset using the plot-specific filter to view 'Queries by Coalition & Answer Status'.")
+        return None
+    
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "UserFactionCoalitionStatus", "KNS_Status"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        answer_status_case_sql = """
+            CASE
+                WHEN s.Desc LIKE '%נענתה%' AND s.Desc NOT LIKE '%לא נענתה%' THEN 'Answered' 
+                WHEN s.Desc LIKE '%לא נענתה%' THEN 'Not Answered' 
+                WHEN s.Desc LIKE '%הועברה%' THEN 'Other/In Progress' 
+                WHEN s.Desc LIKE '%בטיפול%' THEN 'Other/In Progress' 
+                WHEN s.Desc LIKE '%נדחתה%' THEN 'Not Answered' 
+                WHEN s.Desc LIKE '%הוסרה%' THEN 'Other/In Progress' 
+                ELSE 'Unknown'
+            END AS AnswerStatus
+        """
+
+        sql_query = f"""
+        WITH QueryDetails AS (
+            SELECT
+                q.QueryID,
+                q.KnessetNum,
+                p2p.FactionID,
+                q.SubmitDate,
+                {answer_status_case_sql}
+            FROM KNS_Query q
+            JOIN KNS_Status s ON q.StatusID = s.StatusID
+            JOIN KNS_Person p ON q.PersonID = p.PersonID
+            LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+                AND q.KnessetNum = p2p.KnessetNum
+                AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+            WHERE q.KnessetNum = {single_knesset_num} AND p2p.FactionID IS NOT NULL
+        )
+        SELECT
+            COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+            qd.AnswerStatus,
+            COUNT(DISTINCT qd.QueryID) AS QueryCount
+        FROM QueryDetails qd
+        LEFT JOIN UserFactionCoalitionStatus ufs ON qd.FactionID = ufs.FactionID AND qd.KnessetNum = ufs.KnessetNum
+        """
+        
+        faction_where_clause = ""
+        if faction_filter:
+            faction_where_clause = f" WHERE qd.FactionID IN ({', '.join(map(str, faction_filter))})" 
+            # Note: This WHERE applies to the outer query on QueryDetails. If FactionID is not in QueryDetails (e.g. due to join miss)
+            # it won't filter. The FactionID is from p2p which is already filtered by KnessetNum.
+            # A more robust way if FactionID could be NULL in QueryDetails is to put it in the CTE or ensure FactionID is always present.
+            # For now, assuming FactionID is present if p2p.FactionID was NOT NULL.
+            # Let's adjust the CTE to ensure FactionID is selected.
+            # The current CTE already selects p2p.FactionID and filters where p2p.FactionID IS NOT NULL.
+            # So, if faction_filter is applied, it will be on the FactionIDs that are definitely present.
+            # The current structure should be okay.
+        
+        sql_query += faction_where_clause # This might need to be integrated into the CTE or handled carefully if it's on qd.FactionID
+                                          # Let's assume for now it's fine as FactionID is in QueryDetails
+        
+        sql_query += """
+        GROUP BY CoalitionStatus, qd.AnswerStatus
+        HAVING QueryCount > 0
+        ORDER BY CoalitionStatus, qd.AnswerStatus;
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_queries_by_coalition_and_answer_status (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No query data found for Knesset {single_knesset_num} with the current filters for 'Queries by Coalition & Answer Status'.")
+            return None
+
+        df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors='coerce').fillna(0)
+        df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+        df["AnswerStatus"] = df["AnswerStatus"].fillna("Unknown")
+        
+        all_coalition_statuses = ["Coalition", "Opposition", "Unknown"] # Predefined for consistent ordering
+        all_answer_statuses_ordered = ["Answered", "Not Answered", "Other/In Progress", "Unknown"]
+
+        # Create a complete grid of statuses for consistent plotting even if some combinations have 0 count
+        # Filter to only those statuses present in the data to avoid empty groups if not necessary
+        present_coalition_statuses = df["CoalitionStatus"].unique()
+        present_answer_statuses = df["AnswerStatus"].unique()
+
+        idx = pd.MultiIndex.from_product([present_coalition_statuses, present_answer_statuses], names=['CoalitionStatus', 'AnswerStatus'])
+        df_complete = df.set_index(['CoalitionStatus', 'AnswerStatus']).reindex(idx, fill_value=0).reset_index()
+
+
+        fig = px.bar(df_complete,
+                     x="CoalitionStatus",
+                     y="QueryCount",
+                     color="AnswerStatus",
+                     barmode="group",
+                     title=f"<b>Queries by Coalition/Opposition and Answer Status (Knesset {single_knesset_num})</b>",
+                     labels={"CoalitionStatus": "Submitter's Coalition Status", 
+                             "QueryCount": "Number of Queries", 
+                             "AnswerStatus": "Query Outcome"},
+                     color_discrete_map=ANSWER_STATUS_COLORS,
+                     category_orders={
+                         "AnswerStatus": all_answer_statuses_ordered, 
+                         "CoalitionStatus": all_coalition_statuses
+                         } 
+                     )
+        
+        fig.update_layout(
+            xaxis_title="Submitter's Coalition Status",
+            yaxis_title="Number of Queries",
+            legend_title_text='Query Outcome',
+            title_x=0.5
+        )
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_queries_by_coalition_and_answer_status': {e}", exc_info=True)
+        st.error(f"Could not generate 'Queries by Coalition & Answer Status' plot: {e}")
         return None
