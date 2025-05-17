@@ -15,7 +15,7 @@ from datetime import datetime
 
 # Define a consistent color sequence for categorical data if needed
 KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly 
-COALITION_OPPOSITION_COLORS = {"Coalition": "#1f77b4", "Opposition": "#ff7f0e", "Unknown": "#7f7f7f", "": "#c7c7c7"} # Adjusted for better contrast
+COALITION_OPPOSITION_COLORS = {"Coalition": "#1f77b4", "Opposition": "#ff7f0e", "Unknown": "#7f7f7f", "": "#c7c7c7"} 
 ANSWER_STATUS_COLORS = {"Answered": "#2ca02c", "Not Answered": "#d62728", "Other/In Progress": "#ffbb78", "Unknown": "#c7c7c7"}
 
 
@@ -589,13 +589,12 @@ def plot_agenda_status_distribution(
         st.error(f"Could not generate 'Agenda Item Status Distribution' plot: {e}")
         return None
 
-# --- NEW PLOT: Queries per Faction in a specific Knesset ---
 def plot_queries_per_faction_in_knesset(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expected to be a single Knesset
-    faction_filter: list | None = None # For filtering specific factions within that Knesset
+    knesset_filter: list | None = None, 
+    faction_filter: list | None = None 
 ):
     """
     Generates a bar chart of queries per faction for a specific Knesset.
@@ -617,7 +616,6 @@ def plot_queries_per_faction_in_knesset(
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
 
-        # Corrected GROUP BY clause
         sql_query = f"""
         SELECT
             COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
@@ -676,12 +674,11 @@ def plot_queries_per_faction_in_knesset(
         st.error(f"Could not generate 'Queries per Faction' plot: {e}")
         return None
 
-# --- NEW PLOT: Queries by Coalition/Opposition and Answered Status ---
 def plot_queries_by_coalition_and_answer_status(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expected to be a single Knesset
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None 
 ):
     """
@@ -741,19 +738,10 @@ def plot_queries_by_coalition_and_answer_status(
         """
         
         faction_where_clause = ""
-        if faction_filter:
-            faction_where_clause = f" WHERE qd.FactionID IN ({', '.join(map(str, faction_filter))})" 
-            # Note: This WHERE applies to the outer query on QueryDetails. If FactionID is not in QueryDetails (e.g. due to join miss)
-            # it won't filter. The FactionID is from p2p which is already filtered by KnessetNum.
-            # A more robust way if FactionID could be NULL in QueryDetails is to put it in the CTE or ensure FactionID is always present.
-            # For now, assuming FactionID is present if p2p.FactionID was NOT NULL.
-            # Let's adjust the CTE to ensure FactionID is selected.
-            # The current CTE already selects p2p.FactionID and filters where p2p.FactionID IS NOT NULL.
-            # So, if faction_filter is applied, it will be on the FactionIDs that are definitely present.
-            # The current structure should be okay.
+        if faction_filter: 
+            faction_where_clause = f" WHERE qd.FactionID IN ({', '.join(map(str, faction_filter))})"
         
-        sql_query += faction_where_clause # This might need to be integrated into the CTE or handled carefully if it's on qd.FactionID
-                                          # Let's assume for now it's fine as FactionID is in QueryDetails
+        sql_query += faction_where_clause
         
         sql_query += """
         GROUP BY CoalitionStatus, qd.AnswerStatus
@@ -772,11 +760,9 @@ def plot_queries_by_coalition_and_answer_status(
         df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
         df["AnswerStatus"] = df["AnswerStatus"].fillna("Unknown")
         
-        all_coalition_statuses = ["Coalition", "Opposition", "Unknown"] # Predefined for consistent ordering
+        all_coalition_statuses = ["Coalition", "Opposition", "Unknown"] 
         all_answer_statuses_ordered = ["Answered", "Not Answered", "Other/In Progress", "Unknown"]
 
-        # Create a complete grid of statuses for consistent plotting even if some combinations have 0 count
-        # Filter to only those statuses present in the data to avoid empty groups if not necessary
         present_coalition_statuses = df["CoalitionStatus"].unique()
         present_answer_statuses = df["AnswerStatus"].unique()
 
@@ -811,4 +797,124 @@ def plot_queries_by_coalition_and_answer_status(
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_coalition_and_answer_status': {e}", exc_info=True)
         st.error(f"Could not generate 'Queries by Coalition & Answer Status' plot: {e}")
+        return None
+
+def plot_queries_by_ministry_and_status(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    knesset_filter: list | None = None, 
+    faction_filter: list | None = None 
+):
+    """
+    Generates a stacked bar chart showing query distribution and reply percentage by ministry
+    for a specific Knesset.
+    """
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate 'Query Performance by Ministry' visualization.")
+        return None
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset using the plot-specific filter to view 'Query Performance by Ministry'.")
+        return None
+    
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_GovMinistry", "KNS_Status"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        answer_status_case_sql = """
+            CASE
+                WHEN s.Desc LIKE '%נענתה%' AND s.Desc NOT LIKE '%לא נענתה%' THEN 'Answered' 
+                WHEN s.Desc LIKE '%לא נענתה%' THEN 'Not Answered' 
+                WHEN s.Desc LIKE '%הועברה%' THEN 'Other/In Progress' 
+                WHEN s.Desc LIKE '%בטיפול%' THEN 'Other/In Progress' 
+                WHEN s.Desc LIKE '%נדחתה%' THEN 'Not Answered' 
+                WHEN s.Desc LIKE '%הוסרה%' THEN 'Other/In Progress' 
+                ELSE 'Unknown'
+            END AS AnswerStatus
+        """
+
+        sql_query = f"""
+        WITH MinistryQueryStats AS (
+            SELECT
+                q.GovMinistryID,
+                m.Name AS MinistryName,
+                {answer_status_case_sql},
+                COUNT(q.QueryID) AS QueryCount
+            FROM KNS_Query q
+            JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+            JOIN KNS_Status s ON q.StatusID = s.StatusID
+            WHERE q.KnessetNum = {single_knesset_num} AND q.GovMinistryID IS NOT NULL
+            GROUP BY q.GovMinistryID, m.Name, AnswerStatus
+        )
+        SELECT
+            MinistryName,
+            AnswerStatus,
+            QueryCount,
+            SUM(QueryCount) OVER (PARTITION BY MinistryName) AS TotalQueriesForMinistry,
+            SUM(CASE WHEN AnswerStatus = 'Answered' THEN QueryCount ELSE 0 END) OVER (PARTITION BY MinistryName) AS AnsweredQueriesForMinistry
+        FROM MinistryQueryStats
+        ORDER BY TotalQueriesForMinistry DESC, MinistryName, AnswerStatus;
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_queries_by_ministry_and_status (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No query data found for ministries in Knesset {single_knesset_num} with the current filters.")
+            return None
+
+        df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors='coerce').fillna(0)
+        df["TotalQueriesForMinistry"] = pd.to_numeric(df["TotalQueriesForMinistry"], errors='coerce').fillna(0)
+        df["AnsweredQueriesForMinistry"] = pd.to_numeric(df["AnsweredQueriesForMinistry"], errors='coerce').fillna(0)
+        
+        df["ReplyPercentage"] = ((df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100).round(1) # Avoid division by zero
+        df["ReplyPercentageText"] = df["ReplyPercentage"].apply(lambda x: f"{x}% replied" if pd.notna(x) else "N/A replied")
+
+
+        df_annotations = df.drop_duplicates(subset=['MinistryName']).sort_values(by="TotalQueriesForMinistry", ascending=False)
+
+
+        fig = px.bar(df,
+                     x="MinistryName",
+                     y="QueryCount",
+                     color="AnswerStatus",
+                     title=f"<b>Query Distribution and Reply Rate by Ministry (Knesset {single_knesset_num})</b>",
+                     labels={"MinistryName": "Ministry", 
+                             "QueryCount": "Number of Queries", 
+                             "AnswerStatus": "Query Outcome"},
+                     color_discrete_map=ANSWER_STATUS_COLORS,
+                     category_orders={
+                         "AnswerStatus": ["Answered", "Not Answered", "Other/In Progress", "Unknown"],
+                         "MinistryName": df_annotations["MinistryName"].tolist() 
+                         }
+                     )
+        
+        fig.update_traces(
+            customdata=df[['TotalQueriesForMinistry', 'ReplyPercentage']],
+            hovertemplate="<b>Ministry:</b> %{x}<br>" +
+                          "<b>Status:</b> %{fullMarker.name}<br>" + 
+                          "<b>Count (this status):</b> %{y}<br>" +
+                          "<b>Total Queries (Ministry):</b> %{customdata[0]}<br>" +
+                          "<b>Reply Rate (Ministry):</b> %{customdata[1]:.1f}%<extra></extra>"
+        )
+
+
+        fig.update_layout(
+            xaxis_title="Ministry",
+            yaxis_title="Number of Queries",
+            legend_title_text='Query Outcome',
+            title_x=0.5,
+            xaxis_tickangle=-45,
+            height=700 
+        )
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_queries_by_ministry_and_status': {e}", exc_info=True)
+        st.error(f"Could not generate 'Query Performance by Ministry' plot: {e}")
         return None

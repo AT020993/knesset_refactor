@@ -74,8 +74,8 @@ if "ms_knesset_filter" not in st.session_state: st.session_state.ms_knesset_filt
 if "ms_faction_filter" not in st.session_state: st.session_state.ms_faction_filter = []
 
 # For Predefined Data Visualizations
-if "selected_plot_topic" not in st.session_state: st.session_state.selected_plot_topic = "" # New for topic selection
-if "selected_plot_name_from_topic" not in st.session_state: st.session_state.selected_plot_name_from_topic = "" # New for chart within topic
+if "selected_plot_topic" not in st.session_state: st.session_state.selected_plot_topic = "" 
+if "selected_plot_name_from_topic" not in st.session_state: st.session_state.selected_plot_name_from_topic = "" 
 if "generated_plot_figure" not in st.session_state: st.session_state.generated_plot_figure = None
 if "plot_specific_knesset_selection" not in st.session_state: st.session_state.plot_specific_knesset_selection = ""
 
@@ -101,7 +101,6 @@ if "builder_log_x" not in st.session_state: st.session_state.builder_log_x = Fal
 if "builder_log_y" not in st.session_state: st.session_state.builder_log_y = False
 if "builder_barmode" not in st.session_state: st.session_state.builder_barmode = "relative"
 if "builder_generated_chart" not in st.session_state: st.session_state.builder_generated_chart = None
-# Chart-Specific Filters
 if "builder_knesset_filter_cs" not in st.session_state: st.session_state.builder_knesset_filter_cs = []
 if "builder_faction_filter_cs" not in st.session_state: st.session_state.builder_faction_filter_cs = []
 if "builder_data_for_cs_filters" not in st.session_state: st.session_state.builder_data_for_cs_filters = pd.DataFrame()
@@ -110,7 +109,6 @@ if "builder_data_for_cs_filters" not in st.session_state: st.session_state.build
 # --- Database Connection and Utility Functions ---
 @st.cache_resource(ttl=300)
 def _connect(read_only: bool = True) -> duckdb.DuckDBPyConnection:
-    """Establishes a new connection to the DuckDB database."""
     if not DB_PATH.exists() and not read_only:
         st.info(f"Database {DB_PATH} does not exist. It will be created by DuckDB during write operation.")
     elif not DB_PATH.exists() and read_only:
@@ -126,7 +124,6 @@ def _connect(read_only: bool = True) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(database=":memory:", read_only=True)
 
 def _safe_execute_query(con: duckdb.DuckDBPyConnection, query: str) -> pd.DataFrame:
-    """Safely execute a query with proper error handling."""
     try:
         return con.execute(query).df()
     except Exception as e:
@@ -136,7 +133,6 @@ def _safe_execute_query(con: duckdb.DuckDBPyConnection, query: str) -> pd.DataFr
 
 @st.cache_data(ttl=3600)
 def get_db_table_list():
-    """Fetches the list of all tables from the database."""
     ui_logger.info("Fetching database table list...")
     if not DB_PATH.exists():
         ui_logger.warning("Database file not found. Returning empty table list.")
@@ -154,7 +150,6 @@ def get_db_table_list():
 
 @st.cache_data(ttl=3600)
 def get_table_columns(table_name: str) -> tuple[list[str], list[str], list[str]]:
-    """Fetches all column names, numeric column names, and categorical column names for a table."""
     if not table_name or not DB_PATH.exists(): return [], [], []
     try:
         con = _connect(read_only=True)
@@ -170,7 +165,6 @@ def get_table_columns(table_name: str) -> tuple[list[str], list[str], list[str]]
 
 @st.cache_data(ttl=3600)
 def get_filter_options_from_db():
-    """Fetches distinct Knesset numbers and faction data for filter dropdowns."""
     ui_logger.info("Fetching filter options from database...")
     if not DB_PATH.exists():
         ui_logger.warning("Database file not found. Returning empty filter options.")
@@ -279,9 +273,10 @@ AVAILABLE_PLOTS_BY_TOPIC = {
     "Queries": {
         "Number of Queries per Year": pg.plot_queries_by_year,
         "Distribution of Query Types": pg.plot_query_types_distribution,
-        "Queries by Faction (Coalition/Opposition)": pg.plot_queries_by_faction_status, 
+        "Queries by Faction (Coalition/Opposition Status)": pg.plot_queries_by_faction_status, 
         "Queries per Faction (Single Knesset)": pg.plot_queries_per_faction_in_knesset, 
-        "Queries by Coalition & Answer Status (Single Knesset)": pg.plot_queries_by_coalition_and_answer_status, 
+        "Queries by Coalition & Answer Status (Single Knesset)": pg.plot_queries_by_coalition_and_answer_status,
+        "Query Performance by Ministry (Single Knesset)": pg.plot_queries_by_ministry_and_status,
     },
     "Agendas": {
         "Number of Agenda Items per Year": pg.plot_agendas_by_year,
@@ -385,12 +380,12 @@ else:
 
     if selected_topic_widget != st.session_state.get("selected_plot_topic"):
         st.session_state.selected_plot_topic = selected_topic_widget
-        st.session_state.selected_plot_name_from_topic = "" # Reset specific chart if topic changes
-        st.session_state.plot_specific_knesset_selection = "" # Reset Knesset focus
+        st.session_state.selected_plot_name_from_topic = "" 
+        st.session_state.plot_specific_knesset_selection = "" 
         st.rerun()
 
     # --- Chart Selection (within topic) ---
-    selected_plot_name_for_display = "" # This will hold the final plot name to be used
+    selected_plot_name_for_display = "" 
     if st.session_state.get("selected_plot_topic"):
         charts_in_topic = AVAILABLE_PLOTS_BY_TOPIC[st.session_state.selected_plot_topic]
         chart_options_for_topic = [""] + list(charts_in_topic.keys())
@@ -410,7 +405,7 @@ else:
 
         if selected_chart_widget != st.session_state.get("selected_plot_name_from_topic"):
             st.session_state.selected_plot_name_from_topic = selected_chart_widget
-            st.session_state.plot_specific_knesset_selection = "" # Reset Knesset focus if chart changes
+            st.session_state.plot_specific_knesset_selection = "" 
             st.rerun()
         
         selected_plot_name_for_display = st.session_state.selected_plot_name_from_topic
@@ -470,9 +465,9 @@ else:
                     ui_logger.error(f"Error displaying plot '{selected_plot_name_for_display}': {e}", exc_info=True)
                     st.error(f"An error occurred while generating the plot: {e}")
                     st.code(str(e) + "\n\n" + _format_exc())
-    elif st.session_state.get("selected_plot_topic"): # Topic selected, but no specific chart yet
+    elif st.session_state.get("selected_plot_topic"): 
         st.info("Please choose a specific visualization from the dropdown above.")
-    else: # No topic selected
+    else: 
         st.info("Select a plot topic to see available visualizations.")
 
 
