@@ -101,6 +101,10 @@ if "builder_log_x" not in st.session_state: st.session_state.builder_log_x = Fal
 if "builder_log_y" not in st.session_state: st.session_state.builder_log_y = False
 if "builder_barmode" not in st.session_state: st.session_state.builder_barmode = "relative"
 if "builder_generated_chart" not in st.session_state: st.session_state.builder_generated_chart = None
+# Chart-Specific Filters
+if "builder_knesset_filter_cs" not in st.session_state: st.session_state.builder_knesset_filter_cs = []
+if "builder_faction_filter_cs" not in st.session_state: st.session_state.builder_faction_filter_cs = []
+if "builder_data_for_cs_filters" not in st.session_state: st.session_state.builder_data_for_cs_filters = pd.DataFrame()
 
 
 # --- Database Connection and Utility Functions ---
@@ -278,7 +282,6 @@ AVAILABLE_PLOTS = {
     "Number of Agenda Items per Year": pg.plot_agendas_by_year,
     "Distribution of Agenda Classifications": pg.plot_agenda_classifications_pie,
     "Agenda Item Status Distribution": pg.plot_agenda_status_distribution, 
-    # "Number of Factions per Knesset": pg.plot_factions_per_knesset, # This line is removed
 }
 
 sc.display_sidebar(
@@ -301,7 +304,7 @@ with st.expander("ℹ️ How This Works", expanded=False):
         * **Predefined Queries:** Select a query, apply filters, click "Run". Results appear below.
         * **Interactive Table Explorer:** Select a table, apply filters, click "Explore". Results appear below.
         * **Predefined Visualizations:** Select a plot. If your sidebar Knesset filter isn't for a single Knesset, a dropdown will appear to let you focus the plot on one Knesset.
-        * **Interactive Chart Builder:** Dynamically create your own charts. Data for charts is filtered by sidebar selections and limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Faceting is limited to columns with fewer than {MAX_UNIQUE_VALUES_FOR_FACET} unique values.
+        * **Interactive Chart Builder:** Dynamically create your own charts. Data for charts is filtered by sidebar selections and then by chart-specific filters. Data limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Faceting is limited to columns with fewer than {MAX_UNIQUE_VALUES_FOR_FACET} unique values.
         * **Ad-hoc SQL:** Use the sandbox at the bottom to run custom SQL.
     """))
 
@@ -468,12 +471,46 @@ else:
             st.session_state.builder_columns = [""] + all_cols
             st.session_state.builder_numeric_columns = [""] + numeric_cols
             st.session_state.builder_categorical_columns = [""] + categorical_cols
+            
+            # Fetch initial data for populating chart-specific filters
+            try:
+                con = _connect(read_only=True)
+                # Apply global filters first to get relevant data for CS filter options
+                temp_query = f'SELECT * FROM "{selectbox_output_table}"'
+                temp_where_clauses = []
+                sidebar_knesset_filter = st.session_state.get("ms_knesset_filter", [])
+                sidebar_faction_filter_names = st.session_state.get("ms_faction_filter", [])
+                
+                actual_knesset_col = next((col for col in all_cols if col.lower() == "knessetnum"), None)
+                actual_faction_col = next((col for col in all_cols if col.lower() == "factionid"), None)
+
+                if actual_knesset_col and sidebar_knesset_filter:
+                    temp_where_clauses.append(f'"{actual_knesset_col}" IN ({", ".join(map(str, sidebar_knesset_filter))})')
+                if actual_faction_col and sidebar_faction_filter_names:
+                    sidebar_faction_ids = [faction_display_map_global[name] for name in sidebar_faction_filter_names if name in faction_display_map_global]
+                    if sidebar_faction_ids:
+                        temp_where_clauses.append(f'"{actual_faction_col}" IN ({", ".join(map(str, sidebar_faction_ids))})')
+                
+                if temp_where_clauses:
+                    temp_query += " WHERE " + " AND ".join(temp_where_clauses)
+                temp_query += f" LIMIT {MAX_ROWS_FOR_CHART_BUILDER}" # Limit for filter population too
+
+                st.session_state.builder_data_for_cs_filters = con.sql(temp_query).df()
+                ui_logger.info(f"Fetched {len(st.session_state.builder_data_for_cs_filters)} rows for chart-specific filter population from table {selectbox_output_table}.")
+
+            except Exception as e_filter_data:
+                ui_logger.error(f"Error fetching data for chart-specific filter options: {e_filter_data}", exc_info=True)
+                st.session_state.builder_data_for_cs_filters = pd.DataFrame()
+
+
         else: 
             ui_logger.info("Chart Builder: Placeholder selected for table. Resetting active table and dependent state.")
             st.session_state.builder_selected_table = None 
             st.session_state.builder_columns = [""]
             st.session_state.builder_numeric_columns = [""]
             st.session_state.builder_categorical_columns = [""]
+            st.session_state.builder_data_for_cs_filters = pd.DataFrame()
+
 
         st.session_state.builder_x_axis = None
         st.session_state.builder_y_axis = None
@@ -485,6 +522,8 @@ else:
         st.session_state.builder_names = None
         st.session_state.builder_values = None
         st.session_state.builder_generated_chart = None
+        st.session_state.builder_knesset_filter_cs = [] # Reset chart-specific filters
+        st.session_state.builder_faction_filter_cs = []
         
         st.session_state.builder_selected_table_previous_run = selectbox_output_table 
         st.rerun()
@@ -501,6 +540,38 @@ else:
             index=chart_types.index(current_chart_type) if current_chart_type in chart_types else 0,
             key="builder_chart_type_selector"
         )
+
+        # --- Chart-Specific Filters UI ---
+        st.markdown("##### 3. Apply Chart-Specific Filters (Optional):")
+        cs_filter_data = st.session_state.get("builder_data_for_cs_filters", pd.DataFrame())
+        
+        # Chart-specific Knesset Filter
+        if not cs_filter_data.empty and 'KnessetNum' in cs_filter_data.columns:
+            unique_knessets_in_data = sorted(cs_filter_data['KnessetNum'].dropna().unique().astype(int))
+            st.session_state.builder_knesset_filter_cs = st.multiselect(
+                "Filter by Knesset Number(s) (Chart Specific):",
+                options=unique_knessets_in_data,
+                default=st.session_state.get("builder_knesset_filter_cs", []),
+                key="builder_knesset_filter_cs_widget"
+            )
+        
+        # Chart-specific Faction Filter
+        if not cs_filter_data.empty and 'FactionID' in cs_filter_data.columns:
+            unique_faction_ids_in_data = cs_filter_data['FactionID'].dropna().unique()
+            # Create a map of FactionID to Display Name relevant ONLY to the current data
+            chart_specific_faction_display_map = {
+                display_name: f_id 
+                for display_name, f_id in faction_display_map_global.items() 
+                if f_id in unique_faction_ids_in_data
+            }
+            if chart_specific_faction_display_map:
+                st.session_state.builder_faction_filter_cs = st.multiselect(
+                    "Filter by Faction(s) (Chart Specific):",
+                    options=list(chart_specific_faction_display_map.keys()),
+                    default=st.session_state.get("builder_faction_filter_cs", []),
+                    key="builder_faction_filter_cs_widget"
+                )
+        # --- End Chart-Specific Filters UI ---
 
         if st.session_state.previous_builder_chart_type != st.session_state.builder_chart_type:
             ui_logger.info(f"Chart type changed from {st.session_state.previous_builder_chart_type} to {st.session_state.builder_chart_type}. Validating axes.")
@@ -525,7 +596,8 @@ else:
 
             if rerun_needed_for_chart_type_change:
                 st.rerun()
-
+        
+        st.markdown("##### 4. Configure Chart Aesthetics:")
         cols_c1, cols_c2 = st.columns(2)
         with cols_c1:
             def get_safe_index(options_list, current_value_key):
@@ -590,8 +662,27 @@ else:
             selected_facet_col = st.session_state.get('builder_facet_col') if st.session_state.get('builder_facet_col', "") != "" else None
             selected_hover_name = st.session_state.get('builder_hover_name') if st.session_state.get('builder_hover_name', "") != "" else None
             
-            ui_logger.debug(f"Chart Builder Selections: X='{selected_x}', Y='{selected_y}', Names='{selected_names}', Values='{selected_values}', Color='{selected_color}', ChartType='{st.session_state.builder_chart_type}'")
-            ui_logger.debug(f"Facet Row: '{selected_facet_row}', Facet Col: '{selected_facet_col}'")
+            # Get chart-specific filter selections
+            knesset_filter_cs_selected = st.session_state.get("builder_knesset_filter_cs", [])
+            faction_filter_cs_selected_names = st.session_state.get("builder_faction_filter_cs", [])
+            
+            # Map selected faction display names back to FactionIDs for chart-specific filtering
+            faction_filter_cs_selected_ids = []
+            if faction_filter_cs_selected_names:
+                # Rebuild the chart-specific map based on current data for safety, though it should be set
+                temp_cs_filter_data = st.session_state.get("builder_data_for_cs_filters", pd.DataFrame())
+                if not temp_cs_filter_data.empty and 'FactionID' in temp_cs_filter_data.columns:
+                    unique_faction_ids_in_cs_data = temp_cs_filter_data['FactionID'].dropna().unique()
+                    temp_chart_specific_faction_display_map = {
+                        display_name: f_id 
+                        for display_name, f_id in faction_display_map_global.items() 
+                        if f_id in unique_faction_ids_in_cs_data
+                    }
+                    faction_filter_cs_selected_ids = [temp_chart_specific_faction_display_map[name] for name in faction_filter_cs_selected_names if name in temp_chart_specific_faction_display_map]
+
+            ui_logger.debug(f"Chart Builder Selections: X='{selected_x}', Y='{selected_y}', ChartType='{st.session_state.builder_chart_type}'")
+            ui_logger.debug(f"Chart Specific Filters: Knessets={knesset_filter_cs_selected}, Factions={faction_filter_cs_selected_ids} (from names: {faction_filter_cs_selected_names})")
+
 
             valid_input = True
             active_table_for_chart = st.session_state.get("builder_selected_table") 
@@ -607,35 +698,31 @@ else:
             if valid_input:
                 ui_logger.info(f"Input validated for table '{active_table_for_chart}'. Proceeding to fetch data and generate chart.")
                 try:
-                    con = _connect(read_only=True)
-                    base_query = f'SELECT * FROM "{active_table_for_chart}"' 
-                    where_clauses = []
-                    table_all_columns_for_filter_check = st.session_state.get("builder_columns", []) 
-                    actual_knesset_col = next((col for col in table_all_columns_for_filter_check if col.lower() == "knessetnum"), None)
-                    actual_faction_col = next((col for col in table_all_columns_for_filter_check if col.lower() == "factionid"), None)
+                    # Start with the data already fetched for populating CS filters (which has global filters applied)
+                    df_for_chart = st.session_state.get("builder_data_for_cs_filters", pd.DataFrame()).copy()
+                    ui_logger.info(f"Starting with {len(df_for_chart)} rows after global filters (for chart-specific filter options).")
 
-                    if actual_knesset_col and st.session_state.ms_knesset_filter:
-                        where_clauses.append(f'"{actual_knesset_col}" IN ({", ".join(map(str, st.session_state.ms_knesset_filter))})')
-                    if actual_faction_col and st.session_state.ms_faction_filter:
-                        selected_faction_ids_builder = [faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
-                        if selected_faction_ids_builder: where_clauses.append(f'"{actual_faction_col}" IN ({", ".join(map(str, selected_faction_ids_builder))})')
-                    
-                    final_query = base_query
-                    if where_clauses: final_query += " WHERE " + " AND ".join(where_clauses)
-                    final_query += f" LIMIT {MAX_ROWS_FOR_CHART_BUILDER}"
-                    
-                    ui_logger.info(f"Executing chart builder query: {final_query}")
-                    df_full = con.sql(final_query).df()
-                    ui_logger.info(f"Data fetched for chart. df_full is empty: {df_full.empty}. Rows: {len(df_full)}")
 
-                    if df_full.empty:
-                        st.warning("No data in the selected table after applying filters and selection. Cannot generate chart.")
+                    # Apply Chart-Specific Filters
+                    if knesset_filter_cs_selected and 'KnessetNum' in df_for_chart.columns:
+                        df_for_chart = df_for_chart[df_for_chart['KnessetNum'].isin(knesset_filter_cs_selected)]
+                        ui_logger.info(f"After chart-specific Knesset filter: {len(df_for_chart)} rows.")
+                    
+                    if faction_filter_cs_selected_ids and 'FactionID' in df_for_chart.columns:
+                        df_for_chart = df_for_chart[df_for_chart['FactionID'].isin(faction_filter_cs_selected_ids)]
+                        ui_logger.info(f"After chart-specific Faction filter: {len(df_for_chart)} rows.")
+
+
+                    if df_for_chart.empty:
+                        st.warning("No data remains after applying all filters (global and chart-specific). Cannot generate chart.")
                         st.session_state.builder_generated_chart = None
                     else:
-                        if len(df_full) >= MAX_ROWS_FOR_CHART_BUILDER:
-                            st.warning(f"Chart data is limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Apply more specific filters for a complete dataset if needed.")
-                        
-                        chart_params = {"data_frame": df_full, 
+                        # MAX_ROWS_FOR_CHART_BUILDER limit was already applied when fetching builder_data_for_cs_filters
+                        # if len(df_for_chart) > MAX_ROWS_FOR_CHART_BUILDER: # This check might be redundant now
+                        #     st.warning(f"Chart data is limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Apply more specific filters for a complete dataset if needed.")
+                        #     df_for_chart = df_for_chart.head(MAX_ROWS_FOR_CHART_BUILDER)
+
+                        chart_params = {"data_frame": df_for_chart, 
                                         "title": f"{st.session_state.builder_chart_type.capitalize()} of {active_table_for_chart}"}
                         
                         if selected_x: chart_params["x"] = selected_x
@@ -648,8 +735,8 @@ else:
                         
                         facet_issue = False
                         if selected_facet_row:
-                            if selected_facet_row in df_full.columns:
-                                unique_facet_rows = df_full[selected_facet_row].nunique()
+                            if selected_facet_row in df_for_chart.columns:
+                                unique_facet_rows = df_for_chart[selected_facet_row].nunique()
                                 if unique_facet_rows > MAX_UNIQUE_VALUES_FOR_FACET:
                                     st.error(f"Cannot use '{selected_facet_row}' for Facet Row: Too many unique values ({unique_facet_rows}). Max allowed: {MAX_UNIQUE_VALUES_FOR_FACET}.")
                                     facet_issue = True
@@ -659,8 +746,8 @@ else:
                                 ui_logger.warning(f"Selected facet_row column '{selected_facet_row}' not found in fetched DataFrame for chart.")
                         
                         if selected_facet_col and not facet_issue: 
-                            if selected_facet_col in df_full.columns:
-                                unique_facet_cols = df_full[selected_facet_col].nunique()
+                            if selected_facet_col in df_for_chart.columns:
+                                unique_facet_cols = df_for_chart[selected_facet_col].nunique()
                                 if unique_facet_cols > MAX_UNIQUE_VALUES_FOR_FACET:
                                     st.error(f"Cannot use '{selected_facet_col}' for Facet Column: Too many unique values ({unique_facet_cols}). Max allowed: {MAX_UNIQUE_VALUES_FOR_FACET}.")
                                     facet_issue = True
@@ -699,7 +786,7 @@ else:
                 except Exception as e:
                     ui_logger.error(f"Error generating custom chart: {e}", exc_info=True)
                     st.error(f"Could not generate chart: {e}")
-                    st.code(f"Query attempt: {final_query if 'final_query' in locals() else 'N/A'}\n\nError: {str(e)}\n\nTraceback:\n{_format_exc()}")
+                    st.code(f"Query attempt: {'N/A' if 'df_for_chart' not in locals() else 'DataFrame was processed in Python.'}\n\nError: {str(e)}\n\nTraceback:\n{_format_exc()}") # Modified to avoid final_query if not applicable
                     st.session_state.builder_generated_chart = None
             else:
                  ui_logger.warning("Input validation failed for chart generation (before data fetch).")
