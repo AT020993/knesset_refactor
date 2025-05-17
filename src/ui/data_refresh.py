@@ -76,10 +76,13 @@ if "ms_faction_filter" not in st.session_state: st.session_state.ms_faction_filt
 # For Predefined Data Visualizations
 if "selected_plot_name" not in st.session_state: st.session_state.selected_plot_name = None
 if "generated_plot_figure" not in st.session_state: st.session_state.generated_plot_figure = None
+if "previous_predefined_plot_selection" not in st.session_state: st.session_state.previous_predefined_plot_selection = ""
+if "plot_specific_knesset_selection" not in st.session_state: st.session_state.plot_specific_knesset_selection = ""
+
 
 # For Interactive Chart Builder
-if "builder_selected_table" not in st.session_state: st.session_state.builder_selected_table = None # Actual table name or None
-if "builder_selected_table_previous_run" not in st.session_state: st.session_state.builder_selected_table_previous_run = None # Stores output of selectbox for change detection
+if "builder_selected_table" not in st.session_state: st.session_state.builder_selected_table = None 
+if "builder_selected_table_previous_run" not in st.session_state: st.session_state.builder_selected_table_previous_run = None 
 if "builder_chart_type" not in st.session_state: st.session_state.builder_chart_type = "bar"
 if "previous_builder_chart_type" not in st.session_state: st.session_state.previous_builder_chart_type = "bar" 
 if "builder_columns" not in st.session_state: st.session_state.builder_columns = []
@@ -271,9 +274,11 @@ EXPORTS = {
 AVAILABLE_PLOTS = {
     "Number of Queries per Year": pg.plot_queries_by_year,
     "Distribution of Query Types": pg.plot_query_types_distribution,
+    "Queries by Faction (Coalition/Opposition)": pg.plot_queries_by_faction_status, 
     "Number of Agenda Items per Year": pg.plot_agendas_by_year,
     "Distribution of Agenda Classifications": pg.plot_agenda_classifications_pie,
-    "Number of Factions per Knesset": pg.plot_factions_per_knesset,
+    "Agenda Item Status Distribution": pg.plot_agenda_status_distribution, 
+    # "Number of Factions per Knesset": pg.plot_factions_per_knesset, # This line is removed
 }
 
 sc.display_sidebar(
@@ -295,8 +300,8 @@ with st.expander("ℹ️ How This Works", expanded=False):
         * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses.
         * **Predefined Queries:** Select a query, apply filters, click "Run". Results appear below.
         * **Interactive Table Explorer:** Select a table, apply filters, click "Explore". Results appear below.
-        * **Predefined Visualizations:** Select a plot from the "Predefined Visualizations" section. Filters from the sidebar will be applied.
-        * **Interactive Chart Builder:** Dynamically create your own charts in the "Interactive Chart Builder" section. Data for charts is filtered by sidebar selections and limited to {MAX_ROWS_FOR_CHART_BUILDER} rows for performance. Faceting is limited to columns with fewer than {MAX_UNIQUE_VALUES_FOR_FACET} unique values.
+        * **Predefined Visualizations:** Select a plot. If your sidebar Knesset filter isn't for a single Knesset, a dropdown will appear to let you focus the plot on one Knesset.
+        * **Interactive Chart Builder:** Dynamically create your own charts. Data for charts is filtered by sidebar selections and limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Faceting is limited to columns with fewer than {MAX_UNIQUE_VALUES_FOR_FACET} unique values.
         * **Ad-hoc SQL:** Use the sandbox at the bottom to run custom SQL.
     """))
 
@@ -354,36 +359,82 @@ if not DB_PATH.exists():
     st.warning("Database not found. Visualizations cannot be generated. Please run a data refresh.")
 else:
     plot_options = [""] + list(AVAILABLE_PLOTS.keys())
-    current_selected_plot = st.session_state.get("selected_plot_name", "")
-    if current_selected_plot not in plot_options:
-        current_selected_plot = ""
-        st.session_state.selected_plot_name = ""
-    st.session_state.selected_plot_name = st.selectbox(
+    current_selected_plot_val = st.session_state.get("selected_plot_name", "")
+    plot_select_default_index = 0
+    if current_selected_plot_val in plot_options:
+        try:
+            plot_select_default_index = plot_options.index(current_selected_plot_val)
+        except ValueError:
+            plot_select_default_index = 0
+
+    selected_plot_name_widget = st.selectbox( 
         "Choose a predefined visualization:",
         options=plot_options,
-        index=plot_options.index(current_selected_plot),
-        key="sb_selected_plot",
+        index=plot_select_default_index,
+        key="sb_selected_plot_main_widget", 
     )
-    if st.session_state.selected_plot_name:
-        plot_function = AVAILABLE_PLOTS[st.session_state.selected_plot_name]
-        with st.spinner(f"Generating '{st.session_state.selected_plot_name}'..."):
-            try:
-                figure = plot_function(
-                    DB_PATH, 
-                    _connect, 
-                    ui_logger,
-                    knesset_filter=st.session_state.ms_knesset_filter,
-                    faction_filter=[faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
-                )
-                if figure:
-                    st.plotly_chart(figure, use_container_width=True)
-                    st.session_state.generated_plot_figure = figure
-            except Exception as e:
-                ui_logger.error(f"Error displaying plot '{st.session_state.selected_plot_name}': {e}", exc_info=True)
-                st.error(f"An error occurred while generating the plot: {e}")
-                st.code(str(e) + "\n\n" + _format_exc())
-    else:
+
+    if selected_plot_name_widget != st.session_state.get("selected_plot_name"):
+        st.session_state.selected_plot_name = selected_plot_name_widget
+        st.session_state.plot_specific_knesset_selection = "" 
+        st.rerun() 
+
+    final_knesset_filter_for_plot = None 
+    
+    if st.session_state.selected_plot_name and st.session_state.selected_plot_name != "": 
+        knesset_filter_from_sidebar = st.session_state.get("ms_knesset_filter", [])
+
+        if len(knesset_filter_from_sidebar) == 1:
+            final_knesset_filter_for_plot = knesset_filter_from_sidebar
+            ui_logger.info(f"Predefined plot '{st.session_state.selected_plot_name}': Using single Knesset from sidebar: {final_knesset_filter_for_plot}")
+        else:
+            plot_specific_knesset_options = [""] + knesset_nums_options_global 
+            current_plot_specific_knesset = st.session_state.get("plot_specific_knesset_selection", "")
+            
+            selected_knesset_widget_val = st.selectbox(
+                f"Focus '{st.session_state.selected_plot_name}' on a single Knesset:",
+                options=plot_specific_knesset_options,
+                index=plot_specific_knesset_options.index(current_plot_specific_knesset) if current_plot_specific_knesset in plot_specific_knesset_options else 0,
+                key=f"plot_specific_knesset_selector_for_{st.session_state.selected_plot_name.replace(' ', '_')}" 
+            )
+
+            if selected_knesset_widget_val != current_plot_specific_knesset:
+                 st.session_state.plot_specific_knesset_selection = selected_knesset_widget_val
+                 st.rerun() 
+
+            if st.session_state.plot_specific_knesset_selection and st.session_state.plot_specific_knesset_selection != "":
+                try:
+                    final_knesset_filter_for_plot = [int(st.session_state.plot_specific_knesset_selection)]
+                    ui_logger.info(f"Predefined plot '{st.session_state.selected_plot_name}': Using plot-specific Knesset: {final_knesset_filter_for_plot}")
+                except ValueError:
+                    ui_logger.error(f"Could not convert plot-specific Knesset selection '{st.session_state.plot_specific_knesset_selection}' to int.")
+                    st.error("Invalid Knesset number selected for plot focus.")
+                    final_knesset_filter_for_plot = None
+            else:
+                st.info(f"To view the '{st.session_state.selected_plot_name}' plot, please select a specific Knesset above or choose a single Knesset in the sidebar filters.")
+                final_knesset_filter_for_plot = None 
+
+        if final_knesset_filter_for_plot: 
+            plot_function = AVAILABLE_PLOTS[st.session_state.selected_plot_name]
+            with st.spinner(f"Generating '{st.session_state.selected_plot_name}' for Knesset(s) {final_knesset_filter_for_plot}..."):
+                try:
+                    figure = plot_function(
+                        DB_PATH, 
+                        _connect, 
+                        ui_logger,
+                        knesset_filter=final_knesset_filter_for_plot, 
+                        faction_filter=[faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
+                    )
+                    if figure:
+                        st.plotly_chart(figure, use_container_width=True)
+                        st.session_state.generated_plot_figure = figure
+                except Exception as e:
+                    ui_logger.error(f"Error displaying plot '{st.session_state.selected_plot_name}': {e}", exc_info=True)
+                    st.error(f"An error occurred while generating the plot: {e}")
+                    st.code(str(e) + "\n\n" + _format_exc())
+    else: 
         st.info("Select a predefined visualization from the dropdown to display it.")
+
 
 st.divider()
 st.header("🛠️ Interactive Chart Builder")
@@ -595,7 +646,6 @@ else:
                         if selected_color: chart_params["color"] = selected_color
                         if selected_size and st.session_state.builder_chart_type == "scatter": chart_params["size"] = selected_size
                         
-                        # Faceting Cardinality Check
                         facet_issue = False
                         if selected_facet_row:
                             if selected_facet_row in df_full.columns:
@@ -608,7 +658,7 @@ else:
                             else:
                                 ui_logger.warning(f"Selected facet_row column '{selected_facet_row}' not found in fetched DataFrame for chart.")
                         
-                        if selected_facet_col and not facet_issue: # Only add if no issue with facet_row
+                        if selected_facet_col and not facet_issue: 
                             if selected_facet_col in df_full.columns:
                                 unique_facet_cols = df_full[selected_facet_col].nunique()
                                 if unique_facet_cols > MAX_UNIQUE_VALUES_FOR_FACET:
@@ -620,9 +670,9 @@ else:
                                 ui_logger.warning(f"Selected facet_col column '{selected_facet_col}' not found in fetched DataFrame for chart.")
 
                         if facet_issue:
-                            st.session_state.builder_generated_chart = None # Do not generate chart
+                            st.session_state.builder_generated_chart = None 
                             ui_logger.warning("Chart generation halted due to facet cardinality issue.")
-                        else: # Proceed if no facet issue or no facets selected
+                        else: 
                             if selected_hover_name: chart_params["hover_name"] = selected_hover_name
                             if st.session_state.builder_chart_type not in ["pie"]: chart_params["log_x"] = st.session_state.get("builder_log_x", False)
                             if st.session_state.builder_chart_type not in ["pie", "histogram"]: chart_params["log_y"] = st.session_state.get("builder_log_y", False)
