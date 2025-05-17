@@ -17,6 +17,13 @@ from datetime import datetime
 KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly 
 COALITION_OPPOSITION_COLORS = {"Coalition": "#1f77b4", "Opposition": "#ff7f0e", "Unknown": "#7f7f7f", "": "#c7c7c7"} 
 ANSWER_STATUS_COLORS = {"Answered": "#2ca02c", "Not Answered": "#d62728", "Other/In Progress": "#ffbb78", "Unknown": "#c7c7c7"}
+# General status colors, can be expanded
+GENERAL_STATUS_COLORS = {
+    "Approved": "#2ca02c", "Passed": "#2ca02c", "נענתה": "#2ca02c",
+    "Rejected": "#d62728", "Failed": "#d62728", "לא נענתה": "#d62728", "נדחתה": "#d62728",
+    "In Progress": "#ffbb78", "בטיפול": "#ffbb78", "הועברה": "#ffbb78", "הוסרה": "#ffbb78",
+    "Unknown": "#c7c7c7"
+}
 
 
 def check_tables_exist(con: duckdb.DuckDBPyConnection, required_tables: list[str], logger_obj: logging.Logger) -> bool:
@@ -872,7 +879,7 @@ def plot_queries_by_ministry_and_status(
         df["TotalQueriesForMinistry"] = pd.to_numeric(df["TotalQueriesForMinistry"], errors='coerce').fillna(0)
         df["AnsweredQueriesForMinistry"] = pd.to_numeric(df["AnsweredQueriesForMinistry"], errors='coerce').fillna(0)
         
-        df["ReplyPercentage"] = ((df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100).round(1) # Avoid division by zero
+        df["ReplyPercentage"] = ((df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100).round(1) 
         df["ReplyPercentageText"] = df["ReplyPercentage"].apply(lambda x: f"{x}% replied" if pd.notna(x) else "N/A replied")
 
 
@@ -917,4 +924,207 @@ def plot_queries_by_ministry_and_status(
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_ministry_and_status': {e}", exc_info=True)
         st.error(f"Could not generate 'Query Performance by Ministry' plot: {e}")
+        return None
+
+# --- NEW PLOT: Agendas per Faction in a specific Knesset ---
+def plot_agendas_per_faction_in_knesset(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    knesset_filter: list | None = None, # Expected to be a single Knesset
+    faction_filter: list | None = None # For filtering specific factions within that Knesset
+):
+    """
+    Generates a bar chart of agenda items per initiating faction for a specific Knesset.
+    """
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate 'Agendas per Faction' visualization.")
+        return None
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset using the plot-specific filter to view 'Agendas per Faction'.")
+        return None
+    
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Agenda", "KNS_Person", "KNS_PersonToPosition", "KNS_Faction"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = f"""
+        SELECT
+            COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+            p2p.FactionID,
+            COUNT(DISTINCT a.AgendaID) AS AgendaCount
+        FROM KNS_Agenda a
+        JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+        LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+            AND a.KnessetNum = p2p.KnessetNum
+            AND CAST(COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) AS TIMESTAMP) 
+                BETWEEN CAST(p2p.StartDate AS TIMESTAMP) 
+                AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+        LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND a.KnessetNum = f_fallback.KnessetNum
+        WHERE a.KnessetNum = {single_knesset_num} AND a.InitiatorPersonID IS NOT NULL AND p2p.FactionID IS NOT NULL
+        """
+        
+        if faction_filter:
+            sql_query += f" AND p2p.FactionID IN ({', '.join(map(str, faction_filter))})"
+        
+        sql_query += """
+        GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+        HAVING AgendaCount > 0
+        ORDER BY AgendaCount DESC;
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_agendas_per_faction_in_knesset (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No agenda data found for Knesset {single_knesset_num} with the current filters.")
+            return None
+
+        df["AgendaCount"] = pd.to_numeric(df["AgendaCount"], errors='coerce').fillna(0)
+        df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
+
+        fig = px.bar(df,
+                     x="FactionName",
+                     y="AgendaCount",
+                     color="FactionName",
+                     title=f"<b>Number of Agenda Items per Initiating Faction (Knesset {single_knesset_num})</b>",
+                     labels={"FactionName": "Faction", "AgendaCount": "Number of Agenda Items"},
+                     hover_name="FactionName",
+                     hover_data={"AgendaCount": True}
+                     )
+        
+        fig.update_layout(
+            xaxis_title="Initiating Faction",
+            yaxis_title="Number of Agenda Items",
+            title_x=0.5,
+            xaxis_tickangle=-45,
+            showlegend=False
+        )
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_agendas_per_faction_in_knesset': {e}", exc_info=True)
+        st.error(f"Could not generate 'Agendas per Faction' plot: {e}")
+        return None
+
+# --- NEW PLOT: Agendas by Coalition/Opposition and Status ---
+def plot_agendas_by_coalition_and_status(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    knesset_filter: list | None = None, # Expected to be a single Knesset
+    faction_filter: list | None = None 
+):
+    """
+    Generates a grouped bar chart of agenda items by initiator's coalition/opposition status, 
+    further grouped by agenda status, for a specific Knesset.
+    """
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate 'Agendas by Coalition & Status' visualization.")
+        return None
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset using the plot-specific filter to view 'Agendas by Coalition & Status'.")
+        return None
+    
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Agenda", "KNS_Person", "KNS_PersonToPosition", "UserFactionCoalitionStatus", "KNS_Status"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = f"""
+        WITH AgendaDetails AS (
+            SELECT
+                a.AgendaID,
+                a.KnessetNum,
+                p2p.FactionID,
+                COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) AS RelevantDate,
+                s.Desc AS AgendaStatusDescription
+            FROM KNS_Agenda a
+            JOIN KNS_Status s ON a.StatusID = s.StatusID
+            JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+            LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+                AND a.KnessetNum = p2p.KnessetNum
+                AND CAST(COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) AS TIMESTAMP) 
+                    BETWEEN CAST(p2p.StartDate AS TIMESTAMP) 
+                    AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+            WHERE a.KnessetNum = {single_knesset_num} AND a.InitiatorPersonID IS NOT NULL AND p2p.FactionID IS NOT NULL
+        )
+        SELECT
+            COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+            ad.AgendaStatusDescription,
+            COUNT(DISTINCT ad.AgendaID) AS AgendaCount
+        FROM AgendaDetails ad
+        LEFT JOIN UserFactionCoalitionStatus ufs ON ad.FactionID = ufs.FactionID AND ad.KnessetNum = ufs.KnessetNum
+        """
+        
+        faction_where_clause = ""
+        if faction_filter: 
+            faction_where_clause = f" WHERE ad.FactionID IN ({', '.join(map(str, faction_filter))})"
+        
+        sql_query += faction_where_clause
+        
+        sql_query += """
+        GROUP BY CoalitionStatus, ad.AgendaStatusDescription
+        HAVING AgendaCount > 0
+        ORDER BY CoalitionStatus, ad.AgendaStatusDescription;
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_agendas_by_coalition_and_status (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No agenda data found for Knesset {single_knesset_num} with the current filters for 'Agendas by Coalition & Status'.")
+            return None
+
+        df["AgendaCount"] = pd.to_numeric(df["AgendaCount"], errors='coerce').fillna(0)
+        df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+        df["AgendaStatusDescription"] = df["AgendaStatusDescription"].fillna("Unknown Status")
+        
+        all_coalition_statuses = ["Coalition", "Opposition", "Unknown"]
+        # Use unique statuses from data for ordering, or define a fixed order if preferred
+        all_agenda_statuses_ordered = sorted(df["AgendaStatusDescription"].unique()) 
+
+        # Create a complete grid of statuses for consistent plotting
+        present_coalition_statuses = df["CoalitionStatus"].unique()
+        present_agenda_statuses = df["AgendaStatusDescription"].unique()
+        idx = pd.MultiIndex.from_product([present_coalition_statuses, present_agenda_statuses], names=['CoalitionStatus', 'AgendaStatusDescription'])
+        df_complete = df.set_index(['CoalitionStatus', 'AgendaStatusDescription']).reindex(idx, fill_value=0).reset_index()
+
+
+        fig = px.bar(df_complete,
+                     x="CoalitionStatus",
+                     y="AgendaCount",
+                     color="AgendaStatusDescription",
+                     barmode="group",
+                     title=f"<b>Agendas by Initiator's Coalition/Opposition and Item Status (Knesset {single_knesset_num})</b>",
+                     labels={"CoalitionStatus": "Initiator's Coalition Status", 
+                             "AgendaCount": "Number of Agenda Items", 
+                             "AgendaStatusDescription": "Agenda Item Status"},
+                     color_discrete_map=GENERAL_STATUS_COLORS, # Use general status colors
+                     category_orders={
+                         "AgendaStatusDescription": all_agenda_statuses_ordered, 
+                         "CoalitionStatus": all_coalition_statuses
+                         } 
+                     )
+        
+        fig.update_layout(
+            xaxis_title="Initiator's Coalition Status",
+            yaxis_title="Number of Agenda Items",
+            legend_title_text='Agenda Item Status',
+            title_x=0.5
+        )
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_agendas_by_coalition_and_status': {e}", exc_info=True)
+        st.error(f"Could not generate 'Agendas by Coalition & Status' plot: {e}")
         return None

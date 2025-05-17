@@ -282,6 +282,8 @@ AVAILABLE_PLOTS_BY_TOPIC = {
         "Number of Agenda Items per Year": pg.plot_agendas_by_year,
         "Distribution of Agenda Classifications": pg.plot_agenda_classifications_pie,
         "Agenda Item Status Distribution": pg.plot_agenda_status_distribution, 
+        "Agendas per Faction (Single Knesset)": pg.plot_agendas_per_faction_in_knesset, # New
+        "Agendas by Coalition & Status (Single Knesset)": pg.plot_agendas_by_coalition_and_status, # New
     }
 }
 
