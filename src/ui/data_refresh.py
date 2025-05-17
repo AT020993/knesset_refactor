@@ -44,13 +44,26 @@ MAX_UNIQUE_VALUES_FOR_FACET = 50
 EXPORTS = {
     "Queries + Full Details": {
         "sql": """
-            SELECT Q.QueryID, Q.Number, Q.KnessetNum, Q.Name AS QueryName, Q.TypeID AS QueryTypeID, Q.TypeDesc AS QueryTypeDesc,
-                   S.Desc AS QueryStatusDesc, P.FirstName AS MKFirstName, P.LastName AS MKLastName, 
-                   P2P.FactionName AS MKFactionName, ufs.CoalitionStatus AS MKFactionCoalitionStatus, M.Name AS MinistryName,
-                   strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted
+            SELECT 
+                Q.QueryID, 
+                Q.Number, 
+                Q.KnessetNum, 
+                Q.Name AS QueryName, 
+                Q.TypeID AS QueryTypeID, 
+                Q.TypeDesc AS QueryTypeDesc,
+                S.Desc AS QueryStatusDesc, 
+                P.FirstName AS MKFirstName, 
+                P.LastName AS MKLastName,
+                P.GenderDesc AS MKGender, -- Added MK Gender
+                P2P.FactionName AS MKFactionName, 
+                ufs.CoalitionStatus AS MKFactionCoalitionStatus, 
+                M.Name AS MinistryName,
+                strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted
             FROM KNS_Query Q
             LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
-            LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID AND Q.KnessetNum = P2P.KnessetNum AND CAST(Q.SubmitDate AS TIMESTAMP) BETWEEN CAST(P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID 
+                AND Q.KnessetNum = P2P.KnessetNum 
+                AND CAST(Q.SubmitDate AS TIMESTAMP) BETWEEN CAST(P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
             LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
             LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
             LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum
@@ -61,14 +74,26 @@ EXPORTS = {
     },
     "Agenda Items + Full Details": {
         "sql": """
-            SELECT A.AgendaID, A.Number AS AgendaNumber, A.KnessetNum, A.Name AS AgendaName, A.ClassificationDesc AS AgendaClassification,
-                   S.Desc AS AgendaStatus, INIT_P.FirstName AS InitiatorFirstName, INIT_P.LastName AS InitiatorLastName,
-                   INIT_P2P.FactionName AS InitiatorFactionName, INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
-                   HC.Name AS HandlingCommitteeName, strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
+            SELECT 
+                A.AgendaID, 
+                A.Number AS AgendaNumber, 
+                A.KnessetNum, 
+                A.Name AS AgendaName, 
+                A.ClassificationDesc AS AgendaClassification,
+                S.Desc AS AgendaStatus, 
+                INIT_P.FirstName AS InitiatorFirstName, 
+                INIT_P.LastName AS InitiatorLastName,
+                INIT_P.GenderDesc AS InitiatorGender, -- Added Initiator Gender
+                INIT_P2P.FactionName AS InitiatorFactionName, 
+                INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
+                HC.Name AS HandlingCommitteeName, 
+                strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
             FROM KNS_Agenda A
             LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
             LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
-            LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID AND A.KnessetNum = INIT_P2P.KnessetNum AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) BETWEEN CAST(INIT_P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID 
+                AND A.KnessetNum = INIT_P2P.KnessetNum 
+                AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) BETWEEN CAST(INIT_P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
             LEFT JOIN UserFactionCoalitionStatus INIT_UFS ON INIT_P2P.FactionID = INIT_UFS.FactionID AND INIT_P2P.KnessetNum = INIT_UFS.KnessetNum
             LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
             ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
@@ -120,7 +145,7 @@ if "show_table_explorer_results" not in st.session_state:
     st.session_state.show_table_explorer_results = False
     ui_logger.debug("Initialized st.session_state.show_table_explorer_results to False")
 
-# For Sidebar Filters (primarily set by sidebar, but good to ensure existence)
+# For Sidebar Filters 
 if "ms_knesset_filter" not in st.session_state: st.session_state.ms_knesset_filter = []
 if "ms_faction_filter" not in st.session_state: st.session_state.ms_faction_filter = []
 
@@ -173,10 +198,10 @@ faction_display_map_global = {
 sc.display_sidebar(
     db_path_arg=DB_PATH,
     exports_arg=EXPORTS,
-    connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, ui_logger), 
-    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, ui_logger),
-    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(DB_PATH, table_name, ui_logger),
-    get_filter_options_func_arg=lambda: ui_utils.get_filter_options_from_db(DB_PATH, ui_logger), 
+    connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger), 
+    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, _logger_obj=ui_logger),
+    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(DB_PATH, table_name, _logger_obj=ui_logger),
+    get_filter_options_func_arg=lambda: ui_utils.get_filter_options_from_db(DB_PATH, _logger_obj=ui_logger), 
     faction_display_map_arg=faction_display_map_global, 
     ui_logger_arg=ui_logger,
     format_exc_func_arg=ui_utils.format_exception_for_ui
@@ -200,7 +225,6 @@ with st.expander("ℹ️ How This Works", expanded=False):
 # --- Predefined Query Results Area ---
 st.divider()
 st.header("📄 Predefined Query Results")
-# Use .get() for safer access, though initialization should prevent AttributeError
 if st.session_state.get("show_query_results", False) and st.session_state.get("executed_query_name"):
     subheader_text = f"Results for: **{st.session_state.executed_query_name}**"
     if st.session_state.get("applied_filters_info_query"):
@@ -340,7 +364,7 @@ else:
                 try:
                     figure = plot_function(
                         DB_PATH, 
-                        lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, ui_logger), 
+                        lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger), 
                         ui_logger,
                         knesset_filter=final_knesset_filter_for_plot, 
                         faction_filter=[faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
