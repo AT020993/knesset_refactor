@@ -40,6 +40,12 @@ A comprehensive platform designed to fetch, store, analyze, and visualize parlia
 * **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries directly against the DuckDB database.
 * **Data Export:** Download results from predefined queries and the table explorer in CSV and Excel formats.
 * **Table Update Status:** Displays the last updated timestamp for each table in the database.
+* **Predefined Visualizations:**
+    * Select and view various predefined plots and charts based on the Knesset data (e.g., queries per year, distribution of query types, agenda classifications).
+    * Interactive engagement with charts powered by Plotly.
+* **Interactive Chart Builder:**
+    * Dynamically construct custom visualizations (bar charts, scatter plots, etc.) directly from the data tables.
+    * Users can select tables, columns for axes, color encodings, and faceting to explore data patterns.
 
 ### Command-Line Interface (CLI)
 * **Backend CLI (`src/backend/fetch_table.py`):**
@@ -94,8 +100,10 @@ knesset_refactor/
   * **Streamlit:** For the user interface.
   * **aiohttp & backoff:** For robust asynchronous HTTP requests.
   * **OpenPyXL:** For Excel export functionality.
-  * **Typer:** For `src/cli.py`.
+  * **Plotly:** For generating interactive data visualizations.
   * **Pytest:** For unit testing.
+  * **tqdm:** For progress bar visualization during data fetching.
+  * **Typer:** For `src/cli.py`.
 
 ## 🚀 Getting Started
 
@@ -166,7 +174,7 @@ Access the UI via the local or network URL provided by Streamlit. Through the UI
 
 ### Command-Line Interface (CLI)
 
-The primary CLI is part of `Workspace_table.py`. You can use it for various backend operations.
+The primary CLI is part of `src/backend/fetch_table.py`. You can use it for various backend operations.
 
 **Show help and available commands:**
 
