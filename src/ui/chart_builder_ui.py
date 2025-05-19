@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # Standard Library Imports
 import logging
+import sys # Added import
 from pathlib import Path
 
 # Third-Party Imports
@@ -378,8 +379,8 @@ def display_chart_builder(
                                 st.toast(f"Chart '{chart_params['title']}' generated!", icon="🎉")
                 except Exception as e:
                     logger_obj.error(f"Error generating custom chart: {e}", exc_info=True)
-                    st.error(f"Could not generate chart: {e}")
-                    st.code(f"Query attempt: {'N/A' if 'df_for_chart' not in locals() else 'DataFrame was processed in Python.'}\n\nError: {str(e)}\n\nTraceback:\n{ui_utils.format_exception_for_ui(sys.exc_info())}") 
+                    st.error(f"Could not generate custom chart: {ui_utils.format_exception_for_ui(sys.exc_info())}")
+                    st.code(f"Query attempt: {'N/A' if 'df_for_chart' not in locals() else 'DataFrame was processed in Python.'}\n\nError: {str(e)}\n\nTraceback:\n{ui_utils.format_exception_for_ui(sys.exc_info())}")
                     st.session_state.builder_generated_chart = None
             else:
                  logger_obj.warning("Input validation failed for chart generation (before data fetch).")

@@ -25,10 +25,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 # Local Application Imports
 from utils.logger_setup import setup_logging  # type: ignore
 from backend.fetch_table import TABLES  # type: ignore # Import TABLES list
+from backend import config as backend_config # Import config
 import ui.plot_generators as pg
 import ui.sidebar_components as sc
-import ui.ui_utils as ui_utils 
-import ui.chart_builder_ui as cb_ui 
+import ui.ui_utils as ui_utils
+import ui.chart_builder_ui as cb_ui
 
 # Initialize logger for the UI module
 ui_logger = setup_logging("knesset.ui.data_refresh", console_output=True)
@@ -36,10 +37,10 @@ ui_logger.info("--- data_refresh.py script started ---")
 
 
 # --- Constants and Global-like Configurations ---
-DB_PATH = Path("data/warehouse.duckdb")
-PARQUET_DIR = Path("data/parquet")
-MAX_ROWS_FOR_CHART_BUILDER = 50000 
-MAX_UNIQUE_VALUES_FOR_FACET = 50 
+# DB_PATH = Path("data/warehouse.duckdb") # Removed
+# PARQUET_DIR = Path("data/parquet") # Removed
+MAX_ROWS_FOR_CHART_BUILDER = 50000
+MAX_UNIQUE_VALUES_FOR_FACET = 50
 
 EXPORTS = {
     "Queries + Full Details": {
@@ -186,7 +187,7 @@ ui_logger.info("--- Finished initializing session state ---")
 
 
 # Fetch global filter options once
-knesset_nums_options_global, factions_options_df_global = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
+knesset_nums_options_global, factions_options_df_global = ui_utils.get_filter_options_from_db(backend_config.DB_PATH, ui_logger)
 faction_display_map_global = {
     f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
     for _, row in factions_options_df_global.iterrows()
@@ -196,13 +197,13 @@ faction_display_map_global = {
 # Sidebar UI (Delegated)
 # ──────────────────────────────────────────────────────────────────────────────
 sc.display_sidebar(
-    db_path_arg=DB_PATH,
+    db_path_arg=backend_config.DB_PATH,
     exports_arg=EXPORTS,
-    connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger), 
-    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, _logger_obj=ui_logger),
-    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(DB_PATH, table_name, _logger_obj=ui_logger),
-    get_filter_options_func_arg=lambda: ui_utils.get_filter_options_from_db(DB_PATH, _logger_obj=ui_logger), 
-    faction_display_map_arg=faction_display_map_global, 
+    connect_func_arg=lambda read_only=True: ui_utils.connect_db(backend_config.DB_PATH, read_only, _logger_obj=ui_logger),
+    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(backend_config.DB_PATH, _logger_obj=ui_logger),
+    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(backend_config.DB_PATH, table_name, _logger_obj=ui_logger),
+    get_filter_options_func_arg=lambda: ui_utils.get_filter_options_from_db(backend_config.DB_PATH, _logger_obj=ui_logger),
+    faction_display_map_arg=faction_display_map_global,
     ui_logger_arg=ui_logger,
     format_exc_func_arg=ui_utils.format_exception_for_ui
 )
@@ -275,7 +276,7 @@ else:
 # --- Predefined Data Visualizations Section ---
 st.divider()
 st.header("📈 Predefined Visualizations")
-if not DB_PATH.exists():
+if not backend_config.DB_PATH.exists():
     st.warning("Database not found. Visualizations cannot be generated. Please run a data refresh.")
 else:
     plot_topic_options = [""] + list(AVAILABLE_PLOTS_BY_TOPIC.keys())
@@ -363,10 +364,10 @@ else:
             with st.spinner(f"Generating '{selected_plot_name_for_display}' for Knesset(s) {final_knesset_filter_for_plot}..."):
                 try:
                     figure = plot_function(
-                        DB_PATH, 
-                        lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger), 
+                        backend_config.DB_PATH,
+                        lambda read_only=True: ui_utils.connect_db(backend_config.DB_PATH, read_only, _logger_obj=ui_logger),
                         ui_logger,
-                        knesset_filter=final_knesset_filter_for_plot, 
+                        knesset_filter=final_knesset_filter_for_plot,
                         faction_filter=[faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
                     )
                     if figure:
@@ -374,9 +375,9 @@ else:
                         st.session_state.generated_plot_figure = figure
                 except Exception as e:
                     ui_logger.error(f"Error displaying plot '{selected_plot_name_for_display}': {e}", exc_info=True)
-                    st.error(f"An error occurred while generating the plot: {e}")
+                    st.error(f"An error occurred while generating the plot '{selected_plot_name_for_display}': {ui_utils.format_exception_for_ui(sys.exc_info())}")
                     st.code(str(e) + "\n\n" + ui_utils.format_exception_for_ui(sys.exc_info()))
-    elif st.session_state.get("selected_plot_topic"): 
+    elif st.session_state.get("selected_plot_topic"):
         st.info("Please choose a specific visualization from the dropdown above.")
     else: 
         st.info("Select a plot topic to see available visualizations.")
@@ -384,7 +385,7 @@ else:
 # --- Interactive Chart Builder Section (Delegated) ---
 st.divider()
 cb_ui.display_chart_builder(
-    db_path=DB_PATH,
+    db_path=backend_config.DB_PATH,
     max_rows_for_chart_builder=MAX_ROWS_FOR_CHART_BUILDER,
     max_unique_values_for_facet=MAX_UNIQUE_VALUES_FOR_FACET,
     faction_display_map_global=faction_display_map_global,
@@ -394,7 +395,7 @@ cb_ui.display_chart_builder(
 # --- Ad-hoc SQL Query Section ---
 st.divider()
 with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=False):
-    if not DB_PATH.exists(): st.warning("Database not found. Cannot run SQL queries.")
+    if not backend_config.DB_PATH.exists(): st.warning("Database not found. Cannot run SQL queries.")
     else:
         st.markdown("Construct your SQL query. Sidebar filters are **not** automatically applied here. Include them in your `WHERE` clause if needed.")
         default_sql_query = "SELECT t.table_name, t.row_count FROM duckdb_tables() t WHERE t.schema_name = 'main' ORDER BY t.table_name;"
@@ -402,7 +403,7 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
         if st.button("▶︎ Run Ad-hoc SQL", key="run_adhoc_sql"):
             if sql_query_input.strip():
                 try:
-                    con = ui_utils.connect_db(DB_PATH, read_only=True, _logger_obj=ui_logger)
+                    con = ui_utils.connect_db(backend_config.DB_PATH, read_only=True, _logger_obj=ui_logger)
                     adhoc_result_df = ui_utils.safe_execute_query(con, sql_query_input, _logger_obj=ui_logger)
                     con.close()
                     st.dataframe(adhoc_result_df, use_container_width=True)
@@ -417,9 +418,9 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
 # --- Table Update Status ---
 st.divider()
 with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False):
-    if DB_PATH.exists():
-        tables_to_check_status_main = sorted(list(set(TABLES))) 
-        status_data_main = [{"Table": t_name, "Last Updated (Parquet Mod Time)": ui_utils.get_last_updated_for_table(PARQUET_DIR, t_name, ui_logger)} for t_name in tables_to_check_status_main]
+    if backend_config.DB_PATH.exists():
+        tables_to_check_status_main = sorted(list(set(TABLES)))
+        status_data_main = [{"Table": t_name, "Last Updated (Parquet Mod Time)": ui_utils.get_last_updated_for_table(backend_config.PARQUET_DIR, t_name, ui_logger)} for t_name in tables_to_check_status_main]
         if status_data_main: st.dataframe(pd.DataFrame(status_data_main), hide_index=True, use_container_width=True)
         else: st.info("No tables found to display status, or TABLES list is empty.")
     else: st.info("Database not found. Table status cannot be displayed.")

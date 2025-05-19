@@ -47,7 +47,7 @@ def safe_execute_query(con: duckdb.DuckDBPyConnection, query: str, _logger_obj: 
         return con.execute(query).df()
     except Exception as e:
         if _logger_obj: _logger_obj.error(f"Query execution error: {e}\nQuery: {query}", exc_info=True)
-        st.error(f"Query execution error: {e}")
+        st.error(f"Database query error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)

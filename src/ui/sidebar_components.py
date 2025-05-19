@@ -91,10 +91,10 @@ def _handle_data_refresh_button_click(
         st.rerun() # Rerun to update UI state, like table lists
     except Exception as e:
         ui_logger.error(f"❌ Data Refresh Error: {e}", exc_info=True)
-        st.sidebar.error(f"❌ Data Refresh Error: {e}")
-        st.sidebar.code(f"Error: {str(e)}\n\nTraceback:\n{format_exc_func()}")
-        status_text_sidebar.error(f"Error during refresh: {e}")
-        progress_bar_sidebar.progress(0, text=f"Error: {e}")
+        st.sidebar.error(f"❌ Data Refresh Error: {format_exc_func_arg(sys.exc_info())}")
+        st.sidebar.code(f"Error: {str(e)}\n\nTraceback:\n{format_exc_func_arg(sys.exc_info())}") # format_exc_func_arg already includes sys.exc_info() if passed correctly
+        status_text_sidebar.error(f"Error during refresh: {e}") # This is a more detailed text area, keeping original 'e'
+        progress_bar_sidebar.progress(0, text=f"Error: {e}") # Progress bar text, keeping original 'e'
     finally:
         st.session_state.data_refresh_process_running = False
         if "completed_tables_count" in st.session_state:
@@ -176,8 +176,8 @@ def _handle_run_query_button_click(
         except Exception as e:
             ui_logger.error(f"Error executing query '{st.session_state.selected_query_name}': {e}", exc_info=True)
             ui_logger.error(f"Failed SQL for '{st.session_state.selected_query_name}':\n{modified_sql if 'modified_sql' in locals() else base_sql}")
-            st.error(f"Error executing query '{st.session_state.selected_query_name}': {e}")
-            st.code(str(e) + "\n\n" + format_exc_func())
+            st.error(f"Error executing query '{st.session_state.selected_query_name}': {format_exc_func_arg(sys.exc_info())}")
+            st.code(str(e) + "\n\n" + format_exc_func_arg(sys.exc_info())) # format_exc_func_arg already includes sys.exc_info() if passed correctly
             st.session_state.show_query_results = False
             st.session_state.query_results_df = pd.DataFrame()
     elif not db_path.exists():
@@ -274,8 +274,8 @@ def _handle_explore_table_button_click(
             st.toast(f"🔍 Explored table: {table_to_explore}", icon="📖")
         except Exception as e:
             ui_logger.error(f"Error exploring table '{table_to_explore}': {e}", exc_info=True)
-            st.error(f"Error exploring table '{table_to_explore}': {e}")
-            st.code(f"Query attempt: {final_query if 'final_query' in locals() else 'N/A'}\n\nError: {str(e)}\n\nTraceback:\n{format_exc_func()}")
+            st.error(f"Error exploring table '{table_to_explore}': {format_exc_func_arg(sys.exc_info())}")
+            st.code(f"Query attempt: {final_query if 'final_query' in locals() else 'N/A'}\n\nError: {str(e)}\n\nTraceback:\n{format_exc_func_arg(sys.exc_info())}") # format_exc_func_arg already includes sys.exc_info()
             st.session_state.show_table_explorer_results = False
             st.session_state.table_explorer_df = pd.DataFrame()
     elif not st.session_state.selected_table_for_explorer:

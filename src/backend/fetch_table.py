@@ -107,7 +107,7 @@ import json
 import sys
 from math import ceil
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Optional # Dict, List, Tuple removed
 from utils.logger_setup import setup_logging  # Logging utility
 
 # Initialize logger for this module
@@ -120,73 +120,31 @@ import pandas as pd # Dependency for data manipulation
 from tqdm import tqdm # Dependency for progress bars
 
 # -----------------------------------------------------------------------------
-# Basic constants / paths
-# -----------------------------------------------------------------------------
-BASE_URL = "http://knesset.gov.il/Odata/ParliamentInfo.svc"
-DEFAULT_DB = Path("data/warehouse.duckdb")
-PAGE_SIZE = 100  # Number of records to fetch per API request for non-cursor tables
-MAX_RETRIES = 8  # Maximum number of retries for failed HTTP requests
-PARQUET_DIR = Path("data/parquet") # Directory to store Parquet files
-RESUME_FILE = Path("data/.resume_state.json") # File to store resume state for cursor-paged tables
-CONCURRENCY = 8  # Number of concurrent page fetches for skip-based paging
-
-# Path to the user-maintained faction coalition status CSV
-FACTION_COALITION_STATUS_FILE = Path("data/faction_coalition_status.csv")
-
-# List of tables to be fetched from the OData API
-TABLES = [
-    "KNS_Person",
-    "KNS_Faction",
-    "KNS_GovMinistry",
-    "KNS_Status",
-    "KNS_PersonToPosition",
-    "KNS_Query",
-    "KNS_Agenda",
-    "KNS_Committee",
-    "KNS_CommitteeSession",
-    "KNS_PlenumSession",
-    "KNS_KnessetDates", 
-    "KNS_Bill",
-    "KNS_Law",
-    "KNS_IsraelLaw"
-    # Add other tables as needed
-]
-
-# Dictionary defining tables that require cursor-based paging and their primary key / chunk size
-CURSOR_TABLES: Dict[str, Tuple[str, int]] = {
-    "KNS_Person": ("PersonID", 100),
-    "KNS_CommitteeSession": ("CommitteeSessionID", 100),
-    "KNS_PlenumSession": ("PlenumSessionID", 100),
-    "KNS_Bill": ("BillID", 100), 
-    "KNS_Query": ("QueryID", 100), 
-}
-
-# -----------------------------------------------------------------------------
 # Resume‑state helpers (for cursor-based paging)
 # -----------------------------------------------------------------------------
-def _load_resume() -> Dict[str, int]:
+def _load_resume() -> dict[str, int]: # Changed Dict to dict
     """Loads the resume state from a JSON file for cursor-paged tables."""
-    if RESUME_FILE.exists():
+    if config.RESUME_FILE.exists():
         try:
-            return json.loads(RESUME_FILE.read_text())
+            return json.loads(config.RESUME_FILE.read_text())
         except json.JSONDecodeError: # Handle empty or malformed JSON
-            logger.warning(f"Could not decode resume file {RESUME_FILE}. Starting fresh for cursor tables.")
-            pass 
+            logger.warning(f"Could not decode resume file {config.RESUME_FILE}. Starting fresh for cursor tables.")
+            pass
         except Exception as e:
-            logger.warning(f"Error loading resume file {RESUME_FILE}: {e}. Starting fresh for cursor tables.", exc_info=True)
+            logger.warning(f"Error loading resume file {config.RESUME_FILE}: {e}. Starting fresh for cursor tables.", exc_info=True)
             pass
     return {}
 
-def _save_resume(state: Dict[str, int]):
+def _save_resume(state: dict[str, int]): # Changed Dict to dict
     """Saves the current resume state to a JSON file."""
     try:
-        RESUME_FILE.parent.mkdir(parents=True, exist_ok=True)
-        RESUME_FILE.write_text(json.dumps(state, indent=4))
+        config.RESUME_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.RESUME_FILE.write_text(json.dumps(state, indent=4))
     except Exception as e:
-        logger.warning(f"Could not save resume state to {RESUME_FILE}: {e}", exc_info=True)
+        logger.warning(f"Could not save resume state to {config.RESUME_FILE}: {e}", exc_info=True)
 
 
-resume_state: Dict[str, int] = _load_resume()
+resume_state: dict[str, int] = _load_resume() # Changed Dict to dict
 
 # -----------------------------------------------------------------------------
 # Retry helper for HTTP requests
@@ -198,7 +156,7 @@ def _backoff_hdlr(details):
 @backoff.on_exception(
     backoff.expo, # Use exponential backoff strategy
     (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError), # Retry on these exceptions
-    max_tries=MAX_RETRIES,
+    max_tries=config.MAX_RETRIES,
     on_backoff=_backoff_hdlr, # Log when a backoff occurs
 )
 async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
@@ -215,17 +173,17 @@ async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
 async def download_table(table: str) -> pd.DataFrame:
     """
     Downloads a specific table from the OData API into a pandas DataFrame.
-    Uses cursor-based paging for tables defined in CURSOR_TABLES.
+    Uses cursor-based paging for tables defined in config.CURSOR_TABLES.
     Uses parallel skip-based paging for other tables.
     """
     entity = f"{table}()" # OData entity usually ends with ()
     logger.info(f"Starting download for table: {table}")
-    dfs: List[pd.DataFrame] = [] # List to hold DataFrames from paged results
+    dfs: list[pd.DataFrame] = [] # Changed List to list, List to hold DataFrames from paged results
 
     async with aiohttp.ClientSession() as session:
         # --- Cursor-paged tables (with checkpoint resume) ---
-        if table in CURSOR_TABLES:
-            pk, chunk_size = CURSOR_TABLES[table]
+        if table in config.CURSOR_TABLES:
+            pk, chunk_size = config.CURSOR_TABLES[table]
             last_val: int = resume_state.get(table, -1) # Default to -1 if no resume state
             total_rows_fetched = 0
             # Progress bar for cursor-paged tables
@@ -233,7 +191,7 @@ async def download_table(table: str) -> pd.DataFrame:
                 while True:
                     # Construct URL for cursor-based paging
                     url = (
-                        f"{BASE_URL}/{entity}"
+                        f"{config.BASE_URL}/{entity}"
                         f"?$format=json&$top={chunk_size}"
                         f"&$filter={pk}%20gt%20{last_val}" # URL encode space for >
                         f"&$orderby={pk}%20asc" # URL encode space for orderby
@@ -244,7 +202,7 @@ async def download_table(table: str) -> pd.DataFrame:
                         # This exception is after backoff retries have been exhausted for this specific call
                         print(
                             f"⚠️ Error fetching chunk for {table} (PK > {last_val}): {e}. "
-                            f"The script has an outer retry loop for 'still failing after {MAX_RETRIES} retries'. "
+                            f"The script has an outer retry loop for 'still failing after {config.MAX_RETRIES} retries'. "
                             f"Sleeping 5s before that outer retry..."
                         )
                         await asyncio.sleep(5) # Additional sleep before the script's own retry logic
@@ -288,7 +246,7 @@ async def download_table(table: str) -> pd.DataFrame:
         # --- Default $skip paging – now parallel ---
         try:
             # Get the total count of records for progress bar and page calculation
-            count_url = f"{BASE_URL}/{entity}/$count"
+            count_url = f"{config.BASE_URL}/{entity}/$count"
             # OData $count often returns plain text, not JSON
             total_records_str = await session.get(count_url, timeout=aiohttp.ClientTimeout(total=30))
             total_records_str.raise_for_status()
@@ -301,16 +259,16 @@ async def download_table(table: str) -> pd.DataFrame:
             logger.info(f"Table {table} has 0 records according to $count.")
             return pd.DataFrame()
 
-        num_pages = ceil(total_records / PAGE_SIZE)
+        num_pages = ceil(total_records / config.PAGE_SIZE)
         # Progress bar for skip-based paging
         with tqdm(total=total_records, desc=f"Fetching {table} (skip)", unit="rows", leave=False) as pbar:
-            semaphore = asyncio.Semaphore(CONCURRENCY) # Limit concurrent requests
+            semaphore = asyncio.Semaphore(config.CONCURRENCY) # Limit concurrent requests
 
             async def fetch_page_skip(page_index: int):
                 """Fetches a single page of data using $skip and $top."""
                 async with semaphore: # Acquire semaphore before proceeding
-                    skip_val = page_index * PAGE_SIZE
-                    page_url = f"{BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={PAGE_SIZE}"
+                    skip_val = page_index * config.PAGE_SIZE
+                    page_url = f"{config.BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={config.PAGE_SIZE}"
                     try:
                         page_data = await fetch_json(session, page_url) # Uses backoff internally
                         page_rows = page_data.get("value", [])
@@ -343,12 +301,12 @@ async def _download_sequential(session: aiohttp.ClientSession, entity: str) -> p
     """Fallback to download a table sequentially if count or parallel download fails."""
     table_name = entity.replace('()','')
     logger.info(f"Using sequential download for {table_name}.")
-    dfs: List[pd.DataFrame] = []
+    dfs: list[pd.DataFrame] = [] # Changed List to list
     page_index = 0
     with tqdm(desc=f"Fetching {table_name} (sequential)", unit="rows", leave=False) as pbar:
         while True:
-            skip_val = page_index * PAGE_SIZE
-            url = f"{BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={PAGE_SIZE}"
+            skip_val = page_index * config.PAGE_SIZE
+            url = f"{config.BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={config.PAGE_SIZE}"
             try:
                 data = await fetch_json(session, url) # Uses backoff internally
             except Exception as e:
@@ -368,7 +326,7 @@ async def _download_sequential(session: aiohttp.ClientSession, entity: str) -> p
 # -----------------------------------------------------------------------------
 # Storage helper (to DuckDB and Parquet)
 # -----------------------------------------------------------------------------
-def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB):
+def store(df: pd.DataFrame, table: str, db_path: Path = config.DB_PATH): # Changed DEFAULT_DB to config.DB_PATH
     """Stores a DataFrame into a DuckDB table and as a Parquet file."""
     if df.empty:
         logger.info(f"Table '{table}' is empty, skipping storage.")
@@ -387,8 +345,8 @@ def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB):
         return # Stop if DB storage fails, to prevent inconsistent Parquet
 
     # Store as Parquet file
-    PARQUET_DIR.mkdir(parents=True, exist_ok=True) # Ensure parquet directory exists
-    parquet_path = PARQUET_DIR / f"{table}.parquet"
+    config.PARQUET_DIR.mkdir(parents=True, exist_ok=True) # Ensure parquet directory exists
+    parquet_path = config.PARQUET_DIR / f"{table}.parquet"
     try:
         df.to_parquet(parquet_path, compression="zstd", index=False)
         # Try to get a relative path for cleaner logging
@@ -403,10 +361,10 @@ def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB):
 # -----------------------------------------------------------------------------
 # Load and Store User-Managed Faction Coalition Status from CSV
 # -----------------------------------------------------------------------------
-def load_and_store_faction_statuses(db_path: Path = DEFAULT_DB):
+def load_and_store_faction_statuses(db_path: Path = config.DB_PATH): # Changed DEFAULT_DB to config.DB_PATH
     """
     Loads faction coalition statuses from a user-maintained CSV file
-    (`data/faction_coalition_status.csv`) and stores it into a dedicated table
+    (config.FACTION_COALITION_STATUS_FILE) and stores it into a dedicated table
     (`UserFactionCoalitionStatus`) in DuckDB.
     """
     status_table_name = "UserFactionCoalitionStatus"
@@ -432,8 +390,8 @@ def load_and_store_faction_statuses(db_path: Path = DEFAULT_DB):
         )
     """
 
-    if not FACTION_COALITION_STATUS_FILE.exists():
-        logger.info(f"Faction coalition status file not found: {FACTION_COALITION_STATUS_FILE}. Ensuring empty '{status_table_name}' table exists.")
+    if not config.FACTION_COALITION_STATUS_FILE.exists():
+        logger.info(f"Faction coalition status file not found: {config.FACTION_COALITION_STATUS_FILE}. Ensuring empty '{status_table_name}' table exists.")
         try:
             with duckdb.connect(db_path.as_posix()) as con:
                 con.execute(db_table_schema)
@@ -442,22 +400,22 @@ def load_and_store_faction_statuses(db_path: Path = DEFAULT_DB):
             logger.error(f"Error ensuring empty '{status_table_name}' table exists: {e}", exc_info=True)
         return
 
-    logger.info(f"Loading faction coalition statuses from: {FACTION_COALITION_STATUS_FILE}")
+    logger.info(f"Loading faction coalition statuses from: {config.FACTION_COALITION_STATUS_FILE}")
     try:
         status_df = pd.read_csv(
-            FACTION_COALITION_STATUS_FILE,
+            config.FACTION_COALITION_STATUS_FILE,
             dtype=col_dtypes,
-            keep_default_na=True, 
-            na_values=['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan', 
-                       '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NULL', 'NaN', 'n/a', 
+            keep_default_na=True,
+            na_values=['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan',
+                       '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NULL', 'NaN', 'n/a',
                        'nan', 'null']
         )
-        
+
         if not all(col in status_df.columns for col in expected_cols):
             missing_cols = [col for col in expected_cols if col not in status_df.columns]
-            logger.error(f"{FACTION_COALITION_STATUS_FILE} is missing required columns: {missing_cols}. Expected: {expected_cols}, Found: {list(status_df.columns)}")
-            
-            
+            logger.error(f"{config.FACTION_COALITION_STATUS_FILE} is missing required columns: {missing_cols}. Expected: {expected_cols}, Found: {list(status_df.columns)}")
+
+
             return
 
         status_df['DateJoinedCoalition'] = pd.to_datetime(status_df['DateJoinedCoalition'], errors='coerce')
@@ -465,21 +423,21 @@ def load_and_store_faction_statuses(db_path: Path = DEFAULT_DB):
         status_df['FactionName'] = status_df['FactionName'].astype('string')
         status_df['CoalitionStatus'] = status_df['CoalitionStatus'].astype('string')
 
-        if status_df.empty and FACTION_COALITION_STATUS_FILE.stat().st_size > 0:
-            logger.warning(f"Faction coalition status file {FACTION_COALITION_STATUS_FILE} is not empty but resulted in an empty DataFrame after parsing.")
+        if status_df.empty and config.FACTION_COALITION_STATUS_FILE.stat().st_size > 0:
+            logger.warning(f"Faction coalition status file {config.FACTION_COALITION_STATUS_FILE} is not empty but resulted in an empty DataFrame after parsing.")
         elif status_df.empty:
-             logger.info(f"Faction coalition status file {FACTION_COALITION_STATUS_FILE} is empty.")
-        
+             logger.info(f"Faction coalition status file {config.FACTION_COALITION_STATUS_FILE} is empty.")
+
         with duckdb.connect(db_path.as_posix()) as con:
             con.execute(f"CREATE OR REPLACE TABLE \"{status_table_name}\" AS SELECT * FROM status_df")
         logger.info(f"Successfully loaded {len(status_df)} faction statuses into DuckDB table '{status_table_name}' in {db_path}.")
 
     except pd.errors.EmptyDataError:
-        logger.info(f"Faction coalition status file {FACTION_COALITION_STATUS_FILE} is completely empty. Ensuring empty table.")
+        logger.info(f"Faction coalition status file {config.FACTION_COALITION_STATUS_FILE} is completely empty. Ensuring empty table.")
         try:
             with duckdb.connect(db_path.as_posix()) as con:
-                con.execute(db_table_schema) 
-                con.execute(f"DELETE FROM \"{status_table_name}\"") 
+                con.execute(db_table_schema)
+                con.execute(f"DELETE FROM \"{status_table_name}\"")
             logger.info(f"Ensured empty table '{status_table_name}' after processing empty CSV.")
         except Exception as e:
             logger.error(f"Error ensuring empty '{status_table_name}' table after empty CSV: {e}", exc_info=True)
@@ -510,8 +468,8 @@ def map_mk_site_code(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 async def _fetch_single_table(
     table: str,
     progress_cb: Optional[Callable[[str, int], None]] = None,
-    db_path: Path = DEFAULT_DB,
-    **kwargs, 
+    db_path: Path = config.DB_PATH, # Changed DEFAULT_DB to config.DB_PATH
+    **kwargs,
 ) -> pd.DataFrame:
     """Internal helper to download and store a single OData table, with progress callback."""
     df = await download_table(table)
@@ -521,18 +479,18 @@ async def _fetch_single_table(
     return df
 
 async def refresh_tables(
-    tables: List[str] | None = None,
+    tables: list[str] | None = None, # Changed List to list
     progress_cb: Optional[Callable[[str, int], None]] = None,
-    db_path: Path = DEFAULT_DB,
+    db_path: Path = config.DB_PATH, # Changed DEFAULT_DB to config.DB_PATH
 ):
     """
     Downloads specified OData tables (or all predefined) into DuckDB.
     Calls progress_cb(table_name, num_rows_fetched) after each table.
     Also loads the user-managed faction coalition statuses from CSV.
     """
-    tables_to_fetch = tables if tables is not None else TABLES 
-    
-    valid_fetch_tables = list(set(TABLES + list(CURSOR_TABLES.keys())))
+    tables_to_fetch = tables if tables is not None else config.TABLES
+
+    valid_fetch_tables = list(set(config.TABLES + list(config.CURSOR_TABLES.keys())))
     invalid_tables = [t for t in tables_to_fetch if t not in valid_fetch_tables]
     if invalid_tables:
         raise ValueError(f"Invalid table(s) specified: {invalid_tables}. Must be in defined system tables.")
@@ -546,7 +504,7 @@ async def refresh_tables(
     load_and_store_faction_statuses(db_path=db_path)
     logger.info("All data refresh tasks finished successfully.")
 
-def ensure_latest(tables: List[str] | None = None, db_path: Path = DEFAULT_DB):
+def ensure_latest(tables: list[str] | None = None, db_path: Path = config.DB_PATH): # Changed List to list and DEFAULT_DB to config.DB_PATH
     """Synchronous wrapper for refresh_tables. Useful for simple scripts or non-async contexts."""
     try:
         asyncio.run(refresh_tables(tables=tables, db_path=db_path))
@@ -559,9 +517,9 @@ def ensure_latest(tables: List[str] | None = None, db_path: Path = DEFAULT_DB):
 def list_tables_cli():
     """Prints the list of predefined tables that can be fetched via CLI."""
     output = ["Available predefined tables for fetching:"]
-    all_known_tables = sorted(list(set(TABLES + list(CURSOR_TABLES.keys()))))
+    all_known_tables = sorted(list(set(config.TABLES + list(config.CURSOR_TABLES.keys()))))
     for t in all_known_tables:
-        output.append(f"  - {t}{' (cursor-paged)' if t in CURSOR_TABLES else ''}")
+        output.append(f"  - {t}{' (cursor-paged)' if t in config.CURSOR_TABLES else ''}")
 
 def parse_args_cli(): # CORRECTED: This is the function definition
     """Parses command-line arguments for the script."""
@@ -578,10 +536,10 @@ def parse_args_cli(): # CORRECTED: This is the function definition
     action_group.add_argument(
         "--refresh-faction-status",
         action="store_true",
-        help=f"Only refresh the faction coalition status from {FACTION_COALITION_STATUS_FILE} into the database."
+        help=f"Only refresh the faction coalition status from {config.FACTION_COALITION_STATUS_FILE} into the database."
     )
 
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"Path to the DuckDB database file (default: {DEFAULT_DB}).")
+    parser.add_argument("--db", type=Path, default=config.DB_PATH, help=f"Path to the DuckDB database file (default: {config.DB_PATH}).") # Changed DEFAULT_DB to config.DB_PATH
     return parser.parse_args()
 
 def main_cli():
@@ -606,16 +564,16 @@ def main_cli():
         return
 
     if args.refresh_faction_status:
-        logger.info(f"Refreshing only faction coalition statuses from {FACTION_COALITION_STATUS_FILE} into {args.db}...")
+        logger.info(f"Refreshing only faction coalition statuses from {config.FACTION_COALITION_STATUS_FILE} into {args.db}...")
         load_and_store_faction_statuses(db_path=args.db)
         logger.info("Faction coalition status refresh complete (CLI trigger).")
         return
 
-    tables_to_process: List[str] | None = None
+    tables_to_process: list[str] | None = None # Changed List to list
     if args.all:
-        tables_to_process = TABLES 
+        tables_to_process = config.TABLES
     elif args.table:
-        all_known_tables = list(set(TABLES + list(CURSOR_TABLES.keys())))
+        all_known_tables = list(set(config.TABLES + list(config.CURSOR_TABLES.keys())))
         if args.table not in all_known_tables:
              logger.warning(f"Table '{args.table}' specified via CLI is not in the predefined list. Attempting to fetch anyway.")
              print(f"    Attempting to fetch '{args.table}' anyway. Ensure it's a valid OData entity name.")
@@ -641,4 +599,6 @@ def main_cli():
 
 if __name__ == "__main__":
     # This block ensures main_cli() is called only when the script is executed directly
+    # Add import for config
+    import src.backend.config as config
     main_cli()

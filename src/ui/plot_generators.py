@@ -4,14 +4,17 @@ Contains functions to generate Plotly visualizations for the Knesset Data Explor
 """
 from __future__ import annotations
 
+import sys # Added import
 from pathlib import Path
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go 
-import streamlit as st 
+import plotly.graph_objects as go
+import streamlit as st
 import duckdb
-import logging 
-from datetime import datetime 
+import logging
+from datetime import datetime
+
+from . import ui_utils # Added import
 
 # Define a consistent color sequence for categorical data if needed
 KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly 
@@ -118,7 +121,7 @@ def plot_queries_by_year(
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_year': {e}", exc_info=True)
-        st.error(f"Could not generate 'Queries by Year' plot: {e}")
+        st.error(f"Could not generate 'Queries by Year' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_query_types_distribution(
@@ -192,7 +195,7 @@ def plot_query_types_distribution(
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_query_types_distribution': {e}", exc_info=True)
-        st.error(f"Could not generate 'Query Types Distribution' plot: {e}")
+        st.error(f"Could not generate 'Query Types Distribution' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 
@@ -288,7 +291,7 @@ def plot_agendas_by_year(
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agendas_by_year': {e}", exc_info=True)
-        st.error(f"Could not generate 'Agendas by Year' plot: {e}")
+        st.error(f"Could not generate 'Agendas by Year' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_agenda_classifications_pie(
@@ -371,7 +374,7 @@ def plot_agenda_classifications_pie(
         return fig
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agenda_classifications_pie': {e}", exc_info=True)
-        st.error(f"Could not generate 'Agenda Classifications' plot: {e}")
+        st.error(f"Could not generate 'Agenda Classifications' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_queries_by_faction_status(
@@ -478,7 +481,7 @@ def plot_queries_by_faction_status(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_faction_status': {e}", exc_info=True)
-        st.error(f"Could not generate 'Queries by Faction Status' plot: {e}")
+        st.error(f"Could not generate 'Queries by Faction Status' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_agenda_status_distribution(
@@ -593,7 +596,7 @@ def plot_agenda_status_distribution(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agenda_status_distribution': {e}", exc_info=True)
-        st.error(f"Could not generate 'Agenda Item Status Distribution' plot: {e}")
+        st.error(f"Could not generate 'Agenda Item Status Distribution' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_queries_per_faction_in_knesset(
@@ -678,7 +681,7 @@ def plot_queries_per_faction_in_knesset(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_per_faction_in_knesset': {e}", exc_info=True)
-        st.error(f"Could not generate 'Queries per Faction' plot: {e}")
+        st.error(f"Could not generate 'Queries per Faction' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_queries_by_coalition_and_answer_status(
@@ -803,7 +806,7 @@ def plot_queries_by_coalition_and_answer_status(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_coalition_and_answer_status': {e}", exc_info=True)
-        st.error(f"Could not generate 'Queries by Coalition & Answer Status' plot: {e}")
+        st.error(f"Could not generate 'Queries by Coalition & Answer Status' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 def plot_queries_by_ministry_and_status(
@@ -923,7 +926,7 @@ def plot_queries_by_ministry_and_status(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_queries_by_ministry_and_status': {e}", exc_info=True)
-        st.error(f"Could not generate 'Query Performance by Ministry' plot: {e}")
+        st.error(f"Could not generate 'Query Performance by Ministry' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 # --- NEW PLOT: Agendas per Faction in a specific Knesset ---
@@ -1009,7 +1012,7 @@ def plot_agendas_per_faction_in_knesset(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agendas_per_faction_in_knesset': {e}", exc_info=True)
-        st.error(f"Could not generate 'Agendas per Faction' plot: {e}")
+        st.error(f"Could not generate 'Agendas per Faction' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None
 
 # --- NEW PLOT: Agendas by Coalition/Opposition and Status ---
@@ -1126,5 +1129,5 @@ def plot_agendas_by_coalition_and_status(
 
     except Exception as e:
         logger_obj.error(f"Error generating 'plot_agendas_by_coalition_and_status': {e}", exc_info=True)
-        st.error(f"Could not generate 'Agendas by Coalition & Status' plot: {e}")
+        st.error(f"Could not generate 'Agendas by Coalition & Status' plot: {ui_utils.format_exception_for_ui(sys.exc_info())}")
         return None

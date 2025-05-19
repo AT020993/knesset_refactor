@@ -17,6 +17,7 @@ A comprehensive platform designed to fetch, store, analyze, and visualize parlia
     * **Checkpoint-Resume:** For large, cursor-paged tables (e.g., `KNS_CommitteeSession`, `KNS_Bill`), download progress is saved, allowing resumption after interruptions.
     * **Parallel Downloads:** Utilizes `asyncio` for concurrent fetching of multiple pages for skip-based tables, significantly speeding up data acquisition.
     * **Automatic Retries:** Implements backoff strategies for transient network errors.
+* **Externalized Configuration:** Key parameters like API endpoints, data paths, and retry settings are managed in `src/backend/config.py` for easier modification.
 * **Efficient Data Storage:**
     * **DuckDB Warehouse:** Stores all fetched data in a local DuckDB database (`data/warehouse.duckdb`) for fast querying and analysis.
     * **Parquet Files:** Mirrors each table into compressed Parquet files (`data/parquet/`) for optimized storage and interoperability with other data tools.
@@ -74,6 +75,7 @@ knesset_refactor/
 │   └── refresh_all.sh         # Shell script for a full data refresh using the Typer CLI
 ├── src/
 │   ├── backend/
+│   │   ├── config.py          # Centralized configuration for backend
 │   │   ├── fetch_table.py     # Core module for fetching & storing data, includes argparse CLI
 │   │   └── __init__.py
 │   ├── ui/
@@ -220,6 +222,10 @@ pytest
 ```
 
 This will discover and run tests from the `tests/` directory. Test coverage reports can also be generated if `pytest-cov` is configured.
+
+## ⚙️ Configuration
+
+Core backend settings, such as API URLs, database paths, OData table lists, and retry parameters, are defined in `src/backend/config.py`. While the defaults are suitable for most users, this file can be modified if specific adjustments are needed (e.g., changing data storage locations or OData source).
 
 ## 參考資料 (References)
 
