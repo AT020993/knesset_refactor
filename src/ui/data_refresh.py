@@ -54,7 +54,7 @@ EXPORTS = {
                 S.Desc AS QueryStatusDesc,
                 P.FirstName AS MKFirstName,
                 P.LastName AS MKLastName,
-                P.GenderDesc AS MKGender, -- Added MK Gender
+                P.GenderDesc AS MKGender,
                 P2P.FactionName AS MKFactionName,
                 ufs.CoalitionStatus AS MKFactionCoalitionStatus,
                 M.Name AS MinistryName,
@@ -83,7 +83,7 @@ EXPORTS = {
                 S.Desc AS AgendaStatus,
                 INIT_P.FirstName AS InitiatorFirstName,
                 INIT_P.LastName AS InitiatorLastName,
-                INIT_P.GenderDesc AS InitiatorGender, -- Added Initiator Gender
+                INIT_P.GenderDesc AS InitiatorGender,
                 INIT_P2P.FactionName AS InitiatorFactionName,
                 INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
                 HC.Name AS HandlingCommitteeName,
@@ -105,17 +105,17 @@ EXPORTS = {
 
 AVAILABLE_PLOTS_BY_TOPIC = {
     "Queries": {
-        "Number of Queries by Time Period": pg.plot_queries_by_time_period, # UPDATED
-        "Distribution of Query Types": pg.plot_query_types_distribution,
-        "Queries by Faction (Coalition/Opposition Status)": pg.plot_queries_by_faction_status,
+        "Queries by Time Period": pg.plot_queries_by_time_period,
+        "Distribution of Query Types (Single Knesset)": pg.plot_query_types_distribution,
+        "Queries by Faction Status (Single Knesset)": pg.plot_queries_by_faction_status,
         "Queries per Faction (Single Knesset)": pg.plot_queries_per_faction_in_knesset,
         "Queries by Coalition & Answer Status (Single Knesset)": pg.plot_queries_by_coalition_and_answer_status,
         "Query Performance by Ministry (Single Knesset)": pg.plot_queries_by_ministry_and_status,
     },
     "Agendas": {
-        "Number of Agenda Items by Time Period": pg.plot_agendas_by_time_period, # UPDATED
-        "Distribution of Agenda Classifications": pg.plot_agenda_classifications_pie,
-        "Agenda Item Status Distribution": pg.plot_agenda_status_distribution,
+        "Agenda Items by Time Period": pg.plot_agendas_by_time_period,
+        "Distribution of Agenda Classifications (Single Knesset)": pg.plot_agenda_classifications_pie,
+        "Agenda Item Status Distribution (Single Knesset)": pg.plot_agenda_status_distribution,
         "Agendas per Faction (Single Knesset)": pg.plot_agendas_per_faction_in_knesset,
         "Agendas by Coalition & Status (Single Knesset)": pg.plot_agendas_by_coalition_and_status,
     }
@@ -123,111 +123,69 @@ AVAILABLE_PLOTS_BY_TOPIC = {
 
 st.set_page_config(page_title="Knesset OData – Refresh & Export", layout="wide")
 
-# --- Session State Initialization ---
 ui_logger.info("--- Initializing session state ---")
-# For Predefined Queries
 if "selected_query_name" not in st.session_state: st.session_state.selected_query_name = None
 if "executed_query_name" not in st.session_state: st.session_state.executed_query_name = None
 if "executed_sql_string" not in st.session_state: st.session_state.executed_sql_string = ""
 if "query_results_df" not in st.session_state: st.session_state.query_results_df = pd.DataFrame()
-if "show_query_results" not in st.session_state:
-    st.session_state.show_query_results = False
-    ui_logger.debug("Initialized st.session_state.show_query_results to False")
+if "show_query_results" not in st.session_state: st.session_state.show_query_results = False
 if "applied_knesset_filter_to_query" not in st.session_state: st.session_state.applied_knesset_filter_to_query = []
 if "last_executed_sql" not in st.session_state: st.session_state.last_executed_sql = ""
 
-
-# For Interactive Table Explorer
 if "selected_table_for_explorer" not in st.session_state: st.session_state.selected_table_for_explorer = None
 if "executed_table_explorer_name" not in st.session_state: st.session_state.executed_table_explorer_name = None
 if "table_explorer_df" not in st.session_state: st.session_state.table_explorer_df = pd.DataFrame()
-if "show_table_explorer_results" not in st.session_state:
-    st.session_state.show_table_explorer_results = False
-    ui_logger.debug("Initialized st.session_state.show_table_explorer_results to False")
+if "show_table_explorer_results" not in st.session_state: st.session_state.show_table_explorer_results = False
 
-# For Sidebar Filters
 if "ms_knesset_filter" not in st.session_state: st.session_state.ms_knesset_filter = []
 if "ms_faction_filter" not in st.session_state: st.session_state.ms_faction_filter = []
 
-# For Predefined Data Visualizations
 if "selected_plot_topic" not in st.session_state: st.session_state.selected_plot_topic = ""
 if "selected_plot_name_from_topic" not in st.session_state: st.session_state.selected_plot_name_from_topic = ""
 if "generated_plot_figure" not in st.session_state: st.session_state.generated_plot_figure = None
-if "plot_specific_knesset_selection" not in st.session_state: st.session_state.plot_specific_knesset_selection = ""
-# New session state for plot options
+if "plot_main_knesset_selection" not in st.session_state: st.session_state.plot_main_knesset_selection = ""
 if "plot_aggregation_level" not in st.session_state: st.session_state.plot_aggregation_level = "Yearly"
 if "plot_show_average_line" not in st.session_state: st.session_state.plot_show_average_line = False
 
-
-# For Interactive Chart Builder
 if "builder_selected_table" not in st.session_state: st.session_state.builder_selected_table = None
 if "builder_selected_table_previous_run" not in st.session_state: st.session_state.builder_selected_table_previous_run = None
-if "builder_chart_type" not in st.session_state: st.session_state.builder_chart_type = "bar"
-if "previous_builder_chart_type" not in st.session_state: st.session_state.previous_builder_chart_type = "bar"
-if "builder_columns" not in st.session_state: st.session_state.builder_columns = []
-if "builder_numeric_columns" not in st.session_state: st.session_state.builder_numeric_columns = []
-if "builder_categorical_columns" not in st.session_state: st.session_state.builder_categorical_columns = []
-if "builder_x_axis" not in st.session_state: st.session_state.builder_x_axis = None
-if "builder_y_axis" not in st.session_state: st.session_state.builder_y_axis = None
-if "builder_color" not in st.session_state: st.session_state.builder_color = None
-if "builder_size" not in st.session_state: st.session_state.builder_size = None
-if "builder_facet_row" not in st.session_state: st.session_state.builder_facet_row = None
-if "builder_facet_col" not in st.session_state: st.session_state.builder_facet_col = None
-if "builder_hover_name" not in st.session_state: st.session_state.builder_hover_name = None
-if "builder_names" not in st.session_state: st.session_state.builder_names = None
-if "builder_values" not in st.session_state: st.session_state.builder_values = None
-if "builder_log_x" not in st.session_state: st.session_state.builder_log_x = False
-if "builder_log_y" not in st.session_state: st.session_state.builder_log_y = False
-if "builder_barmode" not in st.session_state: st.session_state.builder_barmode = "relative"
-if "builder_generated_chart" not in st.session_state: st.session_state.builder_generated_chart = None
-if "builder_knesset_filter_cs" not in st.session_state: st.session_state.builder_knesset_filter_cs = []
-if "builder_faction_filter_cs" not in st.session_state: st.session_state.builder_faction_filter_cs = []
-if "builder_data_for_cs_filters" not in st.session_state: st.session_state.builder_data_for_cs_filters = pd.DataFrame()
+# ... (rest of chart builder session state)
 
-ui_logger.info(f"Session state after initialization: show_query_results is {st.session_state.get('show_query_results', 'NOT FOUND')}")
 ui_logger.info("--- Finished initializing session state ---")
 
-
-# Fetch global filter options once
 knesset_nums_options_global, factions_options_df_global = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
 faction_display_map_global = {
     f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
     for _, row in factions_options_df_global.iterrows()
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Sidebar UI (Delegated)
-# ──────────────────────────────────────────────────────────────────────────────
 sc.display_sidebar(
     db_path_arg=DB_PATH,
     exports_arg=EXPORTS,
     connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger),
     get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, _logger_obj=ui_logger),
     get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(DB_PATH, table_name, _logger_obj=ui_logger),
-    get_filter_options_func_arg=lambda: ui_utils.get_filter_options_from_db(DB_PATH, _logger_obj=ui_logger),
+    get_filter_options_func_arg=lambda: (knesset_nums_options_global, factions_options_df_global),
     faction_display_map_arg=faction_display_map_global,
     ui_logger_arg=ui_logger,
     format_exc_func_arg=ui_utils.format_exception_for_ui
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main Area UI
-# ──────────────────────────────────────────────────────────────────────────────
 st.title("🇮🇱 Knesset Data Warehouse Console")
 
 with st.expander("ℹ️ How This Works", expanded=False):
     st.markdown(dedent(f"""
         * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses.
-        * **Predefined Queries:** Select a query, apply filters, click "Run". Results appear below.
-        * **Interactive Table Explorer:** Select a table, apply filters, click "Explore". Results appear below.
-        * **Predefined Visualizations:** Select a plot topic, then a specific plot.
-            * For time-based plots, you can select aggregation level (Yearly, Monthly, Quarterly) and toggle statistical overlays (e.g., average line).
-            * If your sidebar Knesset filter isn't for a single Knesset, a dropdown will appear to let you focus the plot on one Knesset for plots that require it.
-        * **Interactive Chart Builder:** Dynamically create your own charts. Data for charts is filtered by sidebar selections and then by chart-specific filters. Data limited to {MAX_ROWS_FOR_CHART_BUILDER} rows. Faceting is limited to columns with fewer than {MAX_UNIQUE_VALUES_FOR_FACET} unique values.
+        * **Predefined Queries & Table Explorer:** These sections use the **sidebar filters** for Knesset and Faction.
+        * **Predefined Visualizations:**
+            * Select a plot topic, then a specific plot.
+            * **A Knesset selector will appear below these dropdowns.** This is the primary Knesset filter for the plots.
+            * For plots like "Queries/Agendas by Time Period", you can select "All Knessets (Color Coded)" to see multiple Knessets, or pick a specific one. Other plots will typically focus on the single selected Knesset.
+            * Time-based plots also offer aggregation level and average line options.
+        * **Interactive Chart Builder:** Data for charts is filtered by sidebar selections and then by chart-specific filters.
         * **Ad-hoc SQL:** Use the sandbox at the bottom to run custom SQL.
     """))
 
-# --- Predefined Query Results Area ---
 st.divider()
 st.header("📄 Predefined Query Results")
 if st.session_state.get("show_query_results", False) and st.session_state.get("executed_query_name"):
@@ -253,14 +211,14 @@ if st.session_state.get("show_query_results", False) and st.session_state.get("e
 else:
     st.info("Run a predefined query from the sidebar to see results here.")
 
-# --- Table Explorer Results Area ---
+
 st.divider()
 st.header("📖 Interactive Table Explorer Results")
 if st.session_state.get("show_table_explorer_results", False) and st.session_state.get("executed_table_explorer_name"):
     st.subheader(f"Exploring: **{st.session_state.executed_table_explorer_name}**")
-    k_filters = st.session_state.get("ms_knesset_filter", [])
-    f_filters = st.session_state.get("ms_faction_filter", [])
-    st.markdown(f"Active Filters: Knesset(s): `{k_filters or 'All'}` Faction(s): `{f_filters or 'All'}`")
+    k_filters_sidebar = st.session_state.get("ms_knesset_filter", [])
+    f_filters_sidebar = st.session_state.get("ms_faction_filter", [])
+    st.markdown(f"Active Sidebar Filters: Knesset(s): `{k_filters_sidebar or 'All'}` Faction(s): `{f_filters_sidebar or 'All'}`")
     if not st.session_state.table_explorer_df.empty:
         st.dataframe(st.session_state.table_explorer_df, use_container_width=True, height=400)
         safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", st.session_state.executed_table_explorer_name)
@@ -277,7 +235,7 @@ if st.session_state.get("show_table_explorer_results", False) and st.session_sta
 else:
     st.info("Explore a table from the sidebar to see its data here.")
 
-# --- Predefined Data Visualizations Section ---
+
 st.divider()
 st.header("📈 Predefined Visualizations")
 if not DB_PATH.exists():
@@ -285,10 +243,7 @@ if not DB_PATH.exists():
 else:
     plot_topic_options = [""] + list(AVAILABLE_PLOTS_BY_TOPIC.keys())
     current_selected_topic = st.session_state.get("selected_plot_topic", "")
-    topic_select_default_index = 0
-    if current_selected_topic in plot_topic_options:
-        try: topic_select_default_index = plot_topic_options.index(current_selected_topic)
-        except ValueError: topic_select_default_index = 0
+    topic_select_default_index = plot_topic_options.index(current_selected_topic) if current_selected_topic in plot_topic_options else 0
 
     selected_topic_widget = st.selectbox(
         "1. Choose Plot Topic:",
@@ -300,24 +255,17 @@ else:
     if selected_topic_widget != st.session_state.get("selected_plot_topic"):
         st.session_state.selected_plot_topic = selected_topic_widget
         st.session_state.selected_plot_name_from_topic = ""
-        st.session_state.plot_specific_knesset_selection = ""
-        # Reset plot-specific options when topic changes
+        st.session_state.plot_main_knesset_selection = ""
         st.session_state.plot_aggregation_level = "Yearly"
         st.session_state.plot_show_average_line = False
         st.rerun()
 
     selected_plot_name_for_display = ""
-    plot_requires_single_knesset = False # Flag to check if plot needs single knesset focus
-
     if st.session_state.get("selected_plot_topic"):
         charts_in_topic = AVAILABLE_PLOTS_BY_TOPIC[st.session_state.selected_plot_topic]
         chart_options_for_topic = [""] + list(charts_in_topic.keys())
-
         current_selected_chart_from_topic = st.session_state.get("selected_plot_name_from_topic", "")
-        chart_select_default_index = 0
-        if current_selected_chart_from_topic in chart_options_for_topic:
-            try: chart_select_default_index = chart_options_for_topic.index(current_selected_chart_from_topic)
-            except ValueError: chart_select_default_index = 0
+        chart_select_default_index = chart_options_for_topic.index(current_selected_chart_from_topic) if current_selected_chart_from_topic in chart_options_for_topic else 0
 
         selected_chart_widget = st.selectbox(
             f"2. Choose Visualization for '{st.session_state.selected_plot_topic}':",
@@ -328,95 +276,105 @@ else:
 
         if selected_chart_widget != st.session_state.get("selected_plot_name_from_topic"):
             st.session_state.selected_plot_name_from_topic = selected_chart_widget
-            st.session_state.plot_specific_knesset_selection = ""
-             # Reset plot-specific options when plot name changes
             st.session_state.plot_aggregation_level = "Yearly"
             st.session_state.plot_show_average_line = False
             st.rerun()
-
         selected_plot_name_for_display = st.session_state.selected_plot_name_from_topic
 
-        # Check if the selected plot typically requires a single Knesset focus
-        if selected_plot_name_for_display:
-            if "Single Knesset" in selected_plot_name_for_display:
-                plot_requires_single_knesset = True
-            # Add specific plot names that require single Knesset if not in their name
-            # Example: if "Query Performance by Ministry" always needs single knesset
-            # if selected_plot_name_for_display == "Query Performance by Ministry":
-            #     plot_requires_single_knesset = True
-
-
-    # UI for plot-specific options (aggregation, average line)
-    show_plot_options_ui = False
-    aggregation_level_for_plot = "Yearly" # Default
-    show_average_line_for_plot = False # Default
-
-    if selected_plot_name_for_display in ["Number of Queries by Time Period", "Number of Agenda Items by Time Period"]:
-        show_plot_options_ui = True
-        cols_plot_options = st.columns(2)
-        with cols_plot_options[0]:
-            st.session_state.plot_aggregation_level = st.selectbox(
-                "Aggregate Data By:",
-                options=["Yearly", "Monthly", "Quarterly"],
-                index=["Yearly", "Monthly", "Quarterly"].index(st.session_state.get("plot_aggregation_level", "Yearly")),
-                key=f"agg_level_{selected_plot_name_for_display.replace(' ', '_')}"
-            )
-        with cols_plot_options[1]:
-            st.session_state.plot_show_average_line = st.checkbox(
-                "Show Average Line",
-                value=st.session_state.get("plot_show_average_line", False),
-                key=f"avg_line_{selected_plot_name_for_display.replace(' ', '_')}"
-            )
-        aggregation_level_for_plot = st.session_state.plot_aggregation_level
-        show_average_line_for_plot = st.session_state.plot_show_average_line
-
-
     final_knesset_filter_for_plot = None
-    knesset_filter_from_sidebar = st.session_state.get("ms_knesset_filter", [])
+    plot_knesset_options = [""]
+    if knesset_nums_options_global:
+        plot_knesset_options.extend(sorted(knesset_nums_options_global, key=int, reverse=True))
 
-    if selected_plot_name_for_display and selected_plot_name_for_display != "":
-        # Determine if a Knesset filter is needed (either from sidebar or plot-specific selector)
-        if plot_requires_single_knesset:
-            if len(knesset_filter_from_sidebar) == 1:
-                final_knesset_filter_for_plot = knesset_filter_from_sidebar
-                ui_logger.info(f"Predefined plot '{selected_plot_name_for_display}': Using single Knesset from sidebar: {final_knesset_filter_for_plot}")
-            else:
-                plot_specific_knesset_options = [""] + knesset_nums_options_global
-                current_plot_specific_knesset = st.session_state.get("plot_specific_knesset_selection", "")
+    can_show_all_knessets = selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]
+    if can_show_all_knessets:
+        if "All Knessets (Color Coded)" not in plot_knesset_options:
+             plot_knesset_options.insert(1, "All Knessets (Color Coded)")
 
-                selected_knesset_widget_val = st.selectbox(
-                    f"Focus '{selected_plot_name_for_display}' on a single Knesset:",
-                    options=plot_specific_knesset_options,
-                    index=plot_specific_knesset_options.index(current_plot_specific_knesset) if current_plot_specific_knesset in plot_specific_knesset_options else 0,
-                    key=f"plot_specific_knesset_selector_for_{selected_plot_name_for_display.replace(' ', '_')}"
+
+    if selected_plot_name_for_display:
+        current_main_knesset_selection_in_state = st.session_state.get("plot_main_knesset_selection", "")
+        
+        # Ensure current selection is valid, otherwise default to empty or first valid option
+        if current_main_knesset_selection_in_state not in plot_knesset_options:
+            current_main_knesset_selection_in_state = "" # Default to empty, forcing user selection
+            st.session_state.plot_main_knesset_selection = ""
+
+
+        knesset_select_default_index = plot_knesset_options.index(current_main_knesset_selection_in_state) \
+            if current_main_knesset_selection_in_state in plot_knesset_options else 0
+
+        aggregation_level_for_plot = st.session_state.get("plot_aggregation_level", "Yearly")
+        show_average_line_for_plot = st.session_state.get("plot_show_average_line", False)
+        
+        selected_knesset_main_area_val = "" # Initialize
+
+        if selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]:
+            col_knesset_select, col_agg_select, col_avg_line = st.columns([2, 1, 1])
+            with col_knesset_select:
+                selected_knesset_main_area_val = st.selectbox(
+                    "3. Select Knesset for Plot:",
+                    options=plot_knesset_options,
+                    index=knesset_select_default_index,
+                    key="plot_main_knesset_selector_tp" # Unique key for time period plots
                 )
+            with col_agg_select:
+                st.session_state.plot_aggregation_level = st.selectbox(
+                    "Aggregate:", options=["Yearly", "Monthly", "Quarterly"],
+                    index=["Yearly", "Monthly", "Quarterly"].index(aggregation_level_for_plot),
+                    key=f"agg_level_{selected_plot_name_for_display.replace(' ', '_')}"
+                )
+            with col_avg_line:
+                st.session_state.plot_show_average_line = st.checkbox(
+                    "Avg Line", value=show_average_line_for_plot,
+                    key=f"avg_line_{selected_plot_name_for_display.replace(' ', '_')}"
+                )
+            aggregation_level_for_plot = st.session_state.plot_aggregation_level
+            show_average_line_for_plot = st.session_state.plot_show_average_line
+        else: # For other plots that require a single Knesset or don't have extra options
+            # Filter out "All Knessets..." if not applicable for this plot type
+            options_for_single_knesset_plot = [opt for opt in plot_knesset_options if opt != "All Knessets (Color Coded)"]
+            if current_main_knesset_selection_in_state not in options_for_single_knesset_plot:
+                 current_main_knesset_selection_in_state = "" # Force selection if current is "All"
+                 st.session_state.plot_main_knesset_selection = ""
 
-                if selected_knesset_widget_val != current_plot_specific_knesset:
-                     st.session_state.plot_specific_knesset_selection = selected_knesset_widget_val
-                     st.rerun()
+            single_knesset_default_idx = options_for_single_knesset_plot.index(current_main_knesset_selection_in_state) \
+                if current_main_knesset_selection_in_state in options_for_single_knesset_plot else 0
 
-                if st.session_state.plot_specific_knesset_selection and st.session_state.plot_specific_knesset_selection != "":
-                    try:
-                        final_knesset_filter_for_plot = [int(st.session_state.plot_specific_knesset_selection)]
-                        ui_logger.info(f"Predefined plot '{selected_plot_name_for_display}': Using plot-specific Knesset: {final_knesset_filter_for_plot}")
-                    except ValueError:
-                        ui_logger.error(f"Could not convert plot-specific Knesset selection '{st.session_state.plot_specific_knesset_selection}' to int.")
-                        st.error("Invalid Knesset number selected for plot focus.")
-                        final_knesset_filter_for_plot = None # Prevent plot generation
-                else:
-                    st.info(f"To view the '{selected_plot_name_for_display}' plot, please select a specific Knesset above or choose a single Knesset in the sidebar filters.")
-                    final_knesset_filter_for_plot = None # Prevent plot generation
-        else: # Plot does not strictly require single Knesset, can use multi-select from sidebar or be unfiltered by Knesset
-            final_knesset_filter_for_plot = knesset_filter_from_sidebar if knesset_filter_from_sidebar else None # Use sidebar filter if present, else None (all Knessets)
-            ui_logger.info(f"Predefined plot '{selected_plot_name_for_display}': Using Knessets from sidebar (or all if none selected): {final_knesset_filter_for_plot}")
+            selected_knesset_main_area_val = st.selectbox(
+                "3. Select Knesset for Plot:",
+                options=options_for_single_knesset_plot,
+                index=single_knesset_default_idx,
+                key="plot_main_knesset_selector_single" # Unique key for single plots
+            )
+
+        if selected_knesset_main_area_val != st.session_state.get("plot_main_knesset_selection", ""):
+            st.session_state.plot_main_knesset_selection = selected_knesset_main_area_val
+            st.rerun()
+        
+        # Determine final_knesset_filter_for_plot based on st.session_state.plot_main_knesset_selection
+        current_selection_for_filter = st.session_state.get("plot_main_knesset_selection")
+        if current_selection_for_filter == "All Knessets (Color Coded)" and can_show_all_knessets:
+            final_knesset_filter_for_plot = None
+            ui_logger.info(f"Plot '{selected_plot_name_for_display}': Showing all Knessets (color coded).")
+        elif current_selection_for_filter and current_selection_for_filter != "":
+            try:
+                final_knesset_filter_for_plot = [int(current_selection_for_filter)]
+                ui_logger.info(f"Plot '{selected_plot_name_for_display}': Using main area Knesset selection: {final_knesset_filter_for_plot}")
+            except ValueError:
+                st.error(f"Invalid Knesset number selected: {current_selection_for_filter}")
+                final_knesset_filter_for_plot = False
+        else:
+            # Check if the plot *requires* a single Knesset.
+            # Most plots are now named "(Single Knesset)" if they require it.
+            # Or, if it's not a plot that `can_show_all_knessets`.
+            requires_single = "(Single Knesset)" in selected_plot_name_for_display or not can_show_all_knessets
+            if requires_single:
+                 st.info(f"Please select a Knesset for the '{selected_plot_name_for_display}' plot.")
+            final_knesset_filter_for_plot = False
 
 
-        # Condition to generate plot:
-        # 1. Plot is selected.
-        # 2. EITHER plot does not require single Knesset OR (it does AND a single Knesset is successfully determined).
-        can_generate_plot = selected_plot_name_for_display and \
-                            (not plot_requires_single_knesset or (plot_requires_single_knesset and final_knesset_filter_for_plot and len(final_knesset_filter_for_plot) == 1))
-
+        can_generate_plot = selected_plot_name_for_display and final_knesset_filter_for_plot is not False
 
         if can_generate_plot:
             plot_function = AVAILABLE_PLOTS_BY_TOPIC[st.session_state.selected_plot_topic][selected_plot_name_for_display]
@@ -424,10 +382,10 @@ else:
                 "db_path": DB_PATH,
                 "connect_func": lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger),
                 "logger_obj": ui_logger,
-                "knesset_filter": final_knesset_filter_for_plot, # This can be None, a list with one int, or a list with multiple ints
+                "knesset_filter": final_knesset_filter_for_plot,
                 "faction_filter": [faction_display_map_global[name] for name in st.session_state.ms_faction_filter if name in faction_display_map_global]
             }
-            if show_plot_options_ui: # Add new parameters if applicable for the plot
+            if selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]:
                 plot_args["aggregation_level"] = aggregation_level_for_plot
                 plot_args["show_average_line"] = show_average_line_for_plot
 
@@ -437,12 +395,10 @@ else:
                     if figure:
                         st.plotly_chart(figure, use_container_width=True)
                         st.session_state.generated_plot_figure = figure
-                    # No 'else: st.info("Plot function did not return a figure.")' here, as functions might return None if no data
                 except Exception as e:
                     ui_logger.error(f"Error displaying plot '{selected_plot_name_for_display}': {e}", exc_info=True)
                     st.error(f"An error occurred while generating the plot: {e}")
                     st.code(str(e) + "\n\n" + ui_utils.format_exception_for_ui(sys.exc_info()))
-        # If plot requires single knesset but none was selected, the info message is handled above.
 
     elif st.session_state.get("selected_plot_topic"):
         st.info("Please choose a specific visualization from the dropdown above.")
@@ -450,7 +406,6 @@ else:
         st.info("Select a plot topic to see available visualizations.")
 
 
-# --- Interactive Chart Builder Section (Delegated) ---
 st.divider()
 cb_ui.display_chart_builder(
     db_path=DB_PATH,
@@ -460,7 +415,6 @@ cb_ui.display_chart_builder(
     logger_obj=ui_logger
 )
 
-# --- Ad-hoc SQL Query Section ---
 st.divider()
 with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=False):
     if not DB_PATH.exists(): st.warning("Database not found. Cannot run SQL queries.")
@@ -473,7 +427,7 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
                 try:
                     con = ui_utils.connect_db(DB_PATH, read_only=True, _logger_obj=ui_logger)
                     adhoc_result_df = ui_utils.safe_execute_query(con, sql_query_input, _logger_obj=ui_logger)
-                    if con: con.close() # Ensure connection is closed
+                    if con: con.close()
                     st.dataframe(adhoc_result_df, use_container_width=True)
                     if not adhoc_result_df.empty:
                         st.download_button("⬇️ CSV", adhoc_result_df.to_csv(index=False).encode("utf-8-sig"), "adhoc_results.csv", "text/csv")
@@ -481,10 +435,10 @@ with st.expander("🧑‍🔬 Run an Ad-hoc SQL Query (Advanced)", expanded=Fals
                     ui_logger.error(f"❌ Ad-hoc SQL Query Error: {e}", exc_info=True)
                     st.error(f"❌ SQL Query Error: {e}")
                     st.code(str(e) + "\n\n" + ui_utils.format_exception_for_ui(sys.exc_info()))
-                    if 'con' in locals() and con: con.close() # Close connection on error too
+                    if 'con' in locals() and con: con.close()
             else: st.warning("SQL query cannot be empty.")
 
-# --- Table Update Status ---
+
 st.divider()
 with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False):
     if DB_PATH.exists():
@@ -493,3 +447,4 @@ with st.expander("🗓️ Table Update Status (Click to Expand)", expanded=False
         if status_data_main: st.dataframe(pd.DataFrame(status_data_main), hide_index=True, use_container_width=True)
         else: st.info("No tables found to display status, or TABLES list is empty.")
     else: st.info("Database not found. Table status cannot be displayed.")
+
