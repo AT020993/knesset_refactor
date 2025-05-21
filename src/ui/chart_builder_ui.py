@@ -53,9 +53,9 @@ def display_chart_builder(
     if "builder_legend_orientation" not in st.session_state:
         st.session_state.builder_legend_orientation = "v" # Vertical
     if "builder_legend_x" not in st.session_state:
-        st.session_state.builder_legend_x = 1.02 # Default x position (right of plot)
+        st.session_state.builder_legend_x = 1.02 # Default x position (right of plot) - float
     if "builder_legend_y" not in st.session_state:
-        st.session_state.builder_legend_y = 1 # Default y position (top)
+        st.session_state.builder_legend_y = 1.0 # Default y position (top) - FIXED TO FLOAT
     if "builder_color_palette" not in st.session_state:
         st.session_state.builder_color_palette = "Plotly" # Default palette
     if "builder_marker_opacity" not in st.session_state:
@@ -272,7 +272,7 @@ def display_chart_builder(
                     st.session_state.builder_log_y = st.checkbox("Logarithmic Y-axis", value=st.session_state.get("builder_log_y", False), key="cb_log_y")
 
             if st.session_state.builder_chart_type == "bar":
-                barmode_options = ["relative", "group", "overlay", "stack"] # stack is default for px.bar if color is used, relative is often better
+                barmode_options = ["relative", "group", "overlay", "stack"]
                 current_barmode = st.session_state.get("builder_barmode", "stack")
                 st.session_state.builder_barmode = st.selectbox("Bar Mode:", options=barmode_options, index=barmode_options.index(current_barmode) if current_barmode in barmode_options else 0, key="cb_barmode")
 
@@ -287,12 +287,12 @@ def display_chart_builder(
             )
             st.session_state.builder_title_font_size = st.slider(
                 "Title Font Size:", min_value=10, max_value=40,
-                value=st.session_state.get("builder_title_font_size", 20),
+                value=st.session_state.get("builder_title_font_size", 20), # Integer value is fine here
                 key="cb_title_font_size"
             )
             st.session_state.builder_axis_label_font_size = st.slider(
                 "Axis Label Font Size:", min_value=8, max_value=30,
-                value=st.session_state.get("builder_axis_label_font_size", 14),
+                value=st.session_state.get("builder_axis_label_font_size", 14), # Integer value is fine
                 key="cb_axis_label_font_size"
             )
             st.session_state.builder_color_palette = st.selectbox(
@@ -309,19 +309,19 @@ def display_chart_builder(
                 key="cb_legend_orientation"
             )
             st.session_state.builder_legend_x = st.number_input(
-                "Legend X Position (0-1):", min_value=0.0, max_value=1.5, step=0.01,
-                value=st.session_state.get("builder_legend_x", 1.02),
+                "Legend X Position (0-1.5):", min_value=0.0, max_value=1.5, step=0.01,
+                value=float(st.session_state.get("builder_legend_x", 1.02)), # Ensure value is float
                 key="cb_legend_x"
             )
             st.session_state.builder_legend_y = st.number_input(
-                "Legend Y Position (0-1):", min_value=0.0, max_value=1.5, step=0.01,
-                value=st.session_state.get("builder_legend_y", 1.0),
+                "Legend Y Position (0-1.5):", min_value=0.0, max_value=1.5, step=0.01,
+                value=float(st.session_state.get("builder_legend_y", 1.0)), # Ensure value is float
                 key="cb_legend_y"
             )
             if st.session_state.builder_chart_type == "scatter":
                 st.session_state.builder_marker_opacity = st.slider(
-                    "Marker Opacity (for scatter):", min_value=0.1, max_value=1.0, step=0.1,
-                    value=st.session_state.get("builder_marker_opacity", 1.0),
+                    "Marker Opacity (for scatter):", min_value=0.1, max_value=1.0, step=0.1, # Floats
+                    value=st.session_state.get("builder_marker_opacity", 1.0), # Float
                     key="cb_marker_opacity"
                 )
 
@@ -364,7 +364,8 @@ def display_chart_builder(
             elif st.session_state.builder_chart_type not in ["pie", "histogram", "box"] and (not selected_x or not selected_y):
                 st.error("Please select valid X-axis and Y-axis columns for this chart type."); valid_input = False
             elif st.session_state.builder_chart_type in ["histogram", "box"] and not selected_x :
-                st.error(f"Please select a valid X-axis for the {st.session_state.builder_chart_type} chart."); valid_input = False
+                if not (st.session_state.builder_chart_type == "box" and selected_x and selected_y): # Allow box with X and Y
+                     st.error(f"Please select a valid X-axis for the {st.session_state.builder_chart_type} chart (and optionally Y for box)."); valid_input = False
             elif st.session_state.builder_chart_type == "pie" and (not selected_names or not selected_values):
                 st.error("Please select valid 'Names' and 'Values' columns for the Pie chart."); valid_input = False
 
@@ -374,7 +375,6 @@ def display_chart_builder(
                     df_for_chart = st.session_state.get("builder_data_for_cs_filters", pd.DataFrame()).copy()
                     logger_obj.info(f"Starting with {len(df_for_chart)} rows for chart (data already globally filtered).")
 
-                    # Apply Chart-Specific Filters
                     if knesset_filter_cs_selected and 'KnessetNum' in df_for_chart.columns:
                         if not pd.api.types.is_integer_dtype(df_for_chart['KnessetNum']) and df_for_chart['KnessetNum'].notna().any():
                             try:
@@ -403,7 +403,7 @@ def display_chart_builder(
 
                         if selected_x: chart_params["x"] = selected_x
                         if selected_y and st.session_state.builder_chart_type not in ["histogram", "box"]: chart_params["y"] = selected_y
-                        elif selected_y and st.session_state.builder_chart_type == "box": chart_params["y"] = selected_y # Box plot uses y if x is categorical
+                        elif selected_y and st.session_state.builder_chart_type == "box": chart_params["y"] = selected_y
 
                         if st.session_state.builder_chart_type == "pie":
                             if selected_names: chart_params["names"] = selected_names
@@ -439,7 +439,6 @@ def display_chart_builder(
                             if st.session_state.builder_chart_type not in ["pie", "histogram"]: chart_params["log_y"] = st.session_state.get("builder_log_y", False)
                             if st.session_state.builder_chart_type == "bar" and st.session_state.get("builder_barmode"): chart_params["barmode"] = st.session_state.builder_barmode
                             
-                            # Apply color palette
                             selected_palette_name = st.session_state.get("builder_color_palette", "Plotly")
                             chart_params["color_discrete_sequence"] = PLOTLY_COLOR_SCALES.get(selected_palette_name, px.colors.qualitative.Plotly)
 
@@ -450,11 +449,13 @@ def display_chart_builder(
                             current_chart_type = st.session_state.builder_chart_type
                             if current_chart_type == "pie" and (not chart_params.get("names") or not chart_params.get("values")):
                                 st.error("For Pie chart, 'Names' and 'Values' must be selected with valid columns."); essential_missing = True
-                            elif current_chart_type in ["histogram", "box"] and not chart_params.get("x"): # Box can also have Y if X is categorical
-                                if not (current_chart_type == "box" and chart_params.get("x") and chart_params.get("y")): # Allow box with X and Y
-                                     st.error(f"For {current_chart_type} chart, 'X-axis' (and optionally 'Y-axis' for box) must be selected with a valid column."); essential_missing = True
+                            elif current_chart_type == "histogram" and not chart_params.get("x"):
+                                st.error(f"For {current_chart_type} chart, 'X-axis' must be selected."); essential_missing = True
+                            elif current_chart_type == "box" and not chart_params.get("x") and not chart_params.get("y"): # Box needs at least x or y
+                                st.error(f"For Box chart, at least 'X-axis' or 'Y-axis' must be selected."); essential_missing = True
                             elif current_chart_type not in ["pie", "histogram", "box"] and (not chart_params.get("x") or not chart_params.get("y")):
                                 st.error(f"For {current_chart_type} chart, 'X-axis' and 'Y-axis' must be selected with valid columns."); essential_missing = True
+
 
                             if essential_missing:
                                 logger_obj.warning("Essential parameters missing for chart generation right before Plotly call.")
@@ -462,16 +463,15 @@ def display_chart_builder(
                             else:
                                 fig_builder = getattr(px, current_chart_type)(**chart_params)
 
-                                # Apply advanced layout options
                                 fig_builder.update_layout(
                                     title_font_family=st.session_state.get("builder_title_font_family"),
                                     title_font_size=st.session_state.get("builder_title_font_size"),
                                     xaxis_title_font_size=st.session_state.get("builder_axis_label_font_size"),
                                     yaxis_title_font_size=st.session_state.get("builder_axis_label_font_size"),
                                     legend_orientation=st.session_state.get("builder_legend_orientation"),
-                                    legend_x=st.session_state.get("builder_legend_x"),
-                                    legend_y=st.session_state.get("builder_legend_y"),
-                                    legend_font_size=st.session_state.get("builder_axis_label_font_size") # Use axis label size for legend too, or add separate control
+                                    legend_x=float(st.session_state.get("builder_legend_x", 1.02)), # Ensure float
+                                    legend_y=float(st.session_state.get("builder_legend_y", 1.0)),  # Ensure float
+                                    legend_font_size=st.session_state.get("builder_axis_label_font_size")
                                 )
                                 if st.session_state.builder_chart_type == "scatter" and "builder_marker_opacity" in st.session_state:
                                     fig_builder.update_traces(marker=dict(opacity=st.session_state.builder_marker_opacity))
@@ -492,7 +492,6 @@ def display_chart_builder(
     else:
         logger_obj.debug("Chart Builder: No valid table selected in st.session_state.builder_selected_table, so chart options are not rendered.")
 
-    # Ensure previous_builder_chart_type is initialized for the next run's comparison
     if "builder_chart_type" not in st.session_state:
         st.session_state.previous_builder_chart_type = None
     else:
