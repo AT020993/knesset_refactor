@@ -95,7 +95,7 @@ def plot_queries_by_time_period(
             x_axis_label = "Year"
 
         knesset_num_select_sql = "q.KnessetNum," if not is_single_knesset_view else ""
-        knesset_num_group_by_sql = "q.KnessetNum," if not is_single_knesset_view else ""
+        # knesset_num_group_by_sql = "q.KnessetNum," if not is_single_knesset_view else "" # Replaced by dynamic group_by_terms
 
 
         base_sql = f"""
@@ -120,7 +120,6 @@ def plot_queries_by_time_period(
         if where_clauses:
             base_sql += " WHERE " + " AND ".join(where_clauses)
 
-        # Corrected GROUP BY and ORDER BY clause construction
         group_by_terms = [time_period_alias]
         if not is_single_knesset_view:
             group_by_terms.append("q.KnessetNum")
@@ -137,7 +136,7 @@ def plot_queries_by_time_period(
             logger_obj.info(f"No data for 'Queries by {x_axis_label}' plot after filtering.")
             return None
 
-        if "KnessetNum" in df.columns: # Will only be present if not is_single_knesset_view
+        if "KnessetNum" in df.columns: 
             df["KnessetNum"] = df["KnessetNum"].astype(str)
         df[time_period_alias] = df[time_period_alias].astype(str)
 
@@ -145,7 +144,7 @@ def plot_queries_by_time_period(
         color_param = "KnessetNum" if "KnessetNum" in df.columns and len(df["KnessetNum"].unique()) > 1 else None
         
         custom_data_cols = [time_period_alias, "QueryCount"]
-        if "KnessetNum" in df.columns: # If KnessetNum is in df (i.e., not single_knesset_view or explicitly requested)
+        if "KnessetNum" in df.columns: 
             custom_data_cols.append("KnessetNum")
 
         fig = px.bar(df,
@@ -155,16 +154,16 @@ def plot_queries_by_time_period(
                      title=plot_title,
                      labels={time_period_alias: x_axis_label, "QueryCount": "Number of Queries", "KnessetNum": "Knesset Number"},
                      category_orders={time_period_alias: sorted(df[time_period_alias].unique())},
-                     custom_data=df[custom_data_cols],
-                     color_discrete_sequence=KNESSET_COLOR_SEQUENCE if color_param else px.colors.qualitative.Plotly # Default color if no coloring by Knesset
+                     custom_data=custom_data_cols, # Pass the list of column names
+                     color_discrete_sequence=KNESSET_COLOR_SEQUENCE if color_param else px.colors.qualitative.Plotly 
                     )
         
         hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
-                            "<b>Queries:</b> %{customdata[1]}"
-        if "KnessetNum" in df.columns and len(custom_data_cols) > 2: # KnessetNum is the 3rd item if present
+                            "<b>Queries:</b> %{y}" # Use %{y} for the bar segment's value
+        if "KnessetNum" in df.columns and len(custom_data_cols) > 2: 
             hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
                                 "<b>Knesset:</b> %{customdata[2]}<br>" + \
-                                "<b>Queries:</b> %{customdata[1]}"
+                                "<b>Queries:</b> %{y}"
         hovertemplate_str += "<extra></extra>"
         fig.update_traces(hovertemplate=hovertemplate_str)
 
@@ -202,7 +201,7 @@ def plot_query_types_distribution(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expecting a single Knesset number in the list
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None
     ):
     """Generates a bar chart of query types distribution for a single Knesset."""
@@ -233,7 +232,6 @@ def plot_query_types_distribution(
         sql_params = [single_knesset_num]
 
         if faction_filter:
-            # Ensure faction_filter contains valid integers
             valid_faction_ids = [int(fid) for fid in faction_filter if str(fid).isdigit()]
             if valid_faction_ids:
                 placeholders = ','.join('?' * len(valid_faction_ids))
@@ -244,7 +242,7 @@ def plot_query_types_distribution(
                         WHERE p2p.KnessetNum = ? AND p2p.FactionID IN ({placeholders})
                     )
                 """
-                sql_params.append(single_knesset_num) # KnessetNum for subquery
+                sql_params.append(single_knesset_num) 
                 sql_params.extend(valid_faction_ids)
             else:
                 logger_obj.warning("Faction filter provided but contained no valid numeric IDs.")
@@ -270,12 +268,12 @@ def plot_query_types_distribution(
                      title=f"<b>Distribution of Query Types for Knesset {single_knesset_num}</b>",
                      labels={"TypeDesc": "Query Type", "QueryCount": "Number of Queries"},
                      color_discrete_map=QUERY_TYPE_COLORS,
-                     custom_data=["TypeDesc", "QueryCount"]
+                     custom_data=["TypeDesc"] # Only TypeDesc needed as QueryCount is %{y}
                     )
 
         fig.update_traces(
             hovertemplate="<b>Query Type:</b> %{customdata[0]}<br>" +
-                          "<b>Count:</b> %{customdata[1]}<extra></extra>"
+                          "<b>Count:</b> %{y}<extra></extra>"
         )
 
         fig.update_layout(
@@ -298,7 +296,7 @@ def plot_agendas_by_time_period(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Can be None (all), single, or multiple Knessets
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None,
     aggregation_level: str = "Yearly",
     show_average_line: bool = False
@@ -345,8 +343,7 @@ def plot_agendas_by_time_period(
             x_axis_label = "Year"
 
         knesset_num_select_sql = "a.KnessetNum," if not is_single_knesset_view else ""
-        # knesset_num_group_by_sql = "a.KnessetNum," if not is_single_knesset_view else "" # Replaced by dynamic group_by_terms
-
+        
         base_sql = f"""
             SELECT
                 {time_period_sql_select} AS {time_period_alias},
@@ -417,16 +414,16 @@ def plot_agendas_by_time_period(
                      title=plot_title,
                      labels={time_period_alias: x_axis_label, "AgendaCount": "Number of Agenda Items", "KnessetNum": "Knesset Number"},
                      category_orders={time_period_alias: sorted(df[time_period_alias].unique())},
-                     custom_data=df[custom_data_cols],
+                     custom_data=custom_data_cols,
                      color_discrete_sequence=KNESSET_COLOR_SEQUENCE if color_param else px.colors.qualitative.Plotly
                     )
 
         hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
-                            "<b>Agenda Items:</b> %{customdata[1]}"
+                            "<b>Agenda Items:</b> %{y}"
         if "KnessetNum" in df.columns and len(custom_data_cols) > 2:
             hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
                                 "<b>Knesset:</b> %{customdata[2]}<br>" + \
-                                "<b>Agenda Items:</b> %{customdata[1]}"
+                                "<b>Agenda Items:</b> %{y}"
         hovertemplate_str += "<extra></extra>"
         fig.update_traces(hovertemplate=hovertemplate_str)
 
@@ -463,7 +460,7 @@ def plot_agenda_classifications_pie(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expecting a single Knesset number if provided
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None
     ):
     """Generates a pie chart of agenda classifications for a single Knesset."""
@@ -514,13 +511,13 @@ def plot_agenda_classifications_pie(
                             AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                     )
                 """
-                sql_params.append(single_knesset_num) # KnessetNum for subquery's p2p.KnessetNum
+                sql_params.append(single_knesset_num) 
                 sql_params.extend(valid_faction_ids)
             else:
                 logger_obj.warning("Faction filter provided for agenda classifications but contained no valid numeric IDs.")
 
 
-        base_sql += " GROUP BY a.ClassificationDesc;"
+        base_sql += " GROUP BY a.ClassificationDesc ORDER BY AgendaCount DESC;" # Order for better pie chart appearance
 
         logger_obj.debug(f"Executing SQL for plot_agenda_classifications_pie (Knesset {single_knesset_num}): {base_sql} with params {sql_params}")
         df = con.execute(base_sql, sql_params).df()
@@ -539,11 +536,11 @@ def plot_agenda_classifications_pie(
                      title=f"<b>Distribution of Agenda Classifications for Knesset {single_knesset_num}</b>",
                      labels={"ClassificationDesc": "Agenda Classification", "AgendaCount": "Number of Items"},
                      hole=0.3,
-                     custom_data=["ClassificationDesc", "AgendaCount"]
+                     custom_data=["ClassificationDesc"] # Only ClassificationDesc needed as AgendaCount is %{value}
                     )
         fig.update_traces(textposition='inside', textinfo='percent+label', insidetextorientation='radial',
                           hovertemplate="<b>Classification:</b> %{customdata[0]}<br>" +
-                                        "<b>Count:</b> %{customdata[1]}<br>" +
+                                        "<b>Count:</b> %{value}<br>" +
                                         "<b>Percentage:</b> %{percent}<extra></extra>")
         fig.update_layout(legend_title_text='Agenda Classification', title_x=0.5)
         return fig
@@ -559,7 +556,7 @@ def plot_queries_by_faction_status(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expecting a single Knesset number
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None
 ):
     """
@@ -584,8 +581,6 @@ def plot_queries_by_faction_status(
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
 
-        # CTE to get faction info for queries in the selected Knesset
-        # Apply faction_filter directly in this CTE if provided
         cte_sql = f"""
         WITH QueryFactionInfo AS (
             SELECT
@@ -602,7 +597,6 @@ def plot_queries_by_faction_status(
             {'AND p2p.FactionID IN (' + ', '.join(map(str, faction_filter)) + ')' if faction_filter else ''}
         )
         """
-        # Main query using the CTE
         sql_query = cte_sql + f"""
         SELECT
             qfi.FactionName,
@@ -611,11 +605,11 @@ def plot_queries_by_faction_status(
         FROM QueryFactionInfo qfi
         LEFT JOIN UserFactionCoalitionStatus ufs ON qfi.FactionID = ufs.FactionID AND ufs.KnessetNum = {single_knesset_num}
         GROUP BY
-            qfi.FactionName,  -- Added FactionName to GROUP BY
+            qfi.FactionName,
             ufs.CoalitionStatus
         HAVING QueryCount > 0
         ORDER BY
-            QueryCount DESC, qfi.FactionName; -- Added FactionName to ORDER BY for consistency
+            QueryCount DESC, qfi.FactionName;
         """
 
         logger_obj.debug(f"Executing SQL for plot_queries_by_faction_status (Knesset {single_knesset_num}): {sql_query}")
@@ -640,12 +634,12 @@ def plot_queries_by_faction_status(
                              "CoalitionStatus": "Status"},
                      color_discrete_map=COALITION_OPPOSITION_COLORS,
                      hover_name="FactionName",
-                     custom_data=["FactionName", "CoalitionStatus", "QueryCount"]
+                     custom_data=["CoalitionStatus", "QueryCount"] # FactionName is x
                      )
         fig.update_traces(
-            hovertemplate="<b>Faction:</b> %{customdata[0]}<br>" +
-                          "<b>Status:</b> %{customdata[1]}<br>" +
-                          "<b>Query Count:</b> %{customdata[2]}<extra></extra>"
+            hovertemplate="<b>Faction:</b> %{x}<br>" +
+                          "<b>Status:</b> %{customdata[0]}<br>" +
+                          "<b>Query Count:</b> %{customdata[1]}<extra></extra>"
         )
 
         fig.update_xaxes(categoryorder="total descending", tickangle=-45)
@@ -667,7 +661,7 @@ def plot_agenda_status_distribution(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
-    knesset_filter: list | None = None, # Expecting a single Knesset number
+    knesset_filter: list | None = None, 
     faction_filter: list | None = None
 ):
     """
@@ -719,7 +713,7 @@ def plot_agenda_status_distribution(
                             AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                     )
                 """
-                sql_params.append(single_knesset_num) # KnessetNum for subquery
+                sql_params.append(single_knesset_num) 
                 sql_params.extend(valid_faction_ids)
             else:
                 logger_obj.warning("Faction filter provided for agenda status but contained no valid numeric IDs.")
@@ -751,11 +745,12 @@ def plot_agenda_status_distribution(
                      title=f"<b>Distribution of Agenda Item Statuses for Knesset {single_knesset_num}</b>",
                      labels={"StatusDescription": "Status", "AgendaCount": "Number of Agenda Items"},
                      hole=0.3,
-                     custom_data=["StatusDescription", "AgendaCount"])
+                     custom_data=["StatusDescription"] # StatusDescription is names, AgendaCount is values
+                    ) 
 
         fig.update_traces(textposition='inside', textinfo='percent+label',
-                          hovertemplate="<b>Status:</b> %{customdata[0]}<br>" +
-                                        "<b>Count:</b> %{customdata[1]}<br>" +
+                          hovertemplate="<b>Status:</b> %{customdata[0]}<br>" + # %{label} also works
+                                        "<b>Count:</b> %{value}<br>" +
                                         "<b>Percentage:</b> %{percent}<extra></extra>")
         fig.update_layout(legend_title_text='Agenda Status', title_x=0.5)
         return fig
@@ -835,11 +830,11 @@ def plot_queries_per_faction_in_knesset(
                      title=f"<b>Number of Queries per Faction in Knesset {single_knesset_num}</b>",
                      labels={"FactionName": "Faction", "QueryCount": "Number of Queries"},
                      hover_name="FactionName",
-                     custom_data=["FactionName", "QueryCount"]
+                     custom_data=["QueryCount"] # FactionName is x
                      )
         fig.update_traces(
-            hovertemplate="<b>Faction:</b> %{customdata[0]}<br>" +
-                          "<b>Query Count:</b> %{customdata[1]}<extra></extra>"
+            hovertemplate="<b>Faction:</b> %{x}<br>" +
+                          "<b>Query Count:</b> %{customdata[0]}<extra></extra>"
         )
 
         fig.update_layout(
@@ -896,9 +891,7 @@ def plot_queries_by_coalition_and_answer_status(
                 ELSE 'Unknown'
             END AS AnswerStatus
         """
-
-        # CTE to get faction info and answer status for queries in the selected Knesset
-        # Apply faction_filter directly in this CTE if provided
+        
         cte_sql = f"""
         WITH QueryDetails AS (
             SELECT
@@ -917,7 +910,6 @@ def plot_queries_by_coalition_and_answer_status(
             {'AND p2p.FactionID IN (' + ', '.join(map(str, faction_filter)) + ')' if faction_filter else ''}
         )
         """
-        # Main query using the CTE
         sql_query = cte_sql + f"""
         SELECT
             COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
@@ -969,12 +961,12 @@ def plot_queries_by_coalition_and_answer_status(
                          "AnswerStatus": relevant_answer_statuses_ordered,
                          "CoalitionStatus": all_coalition_statuses
                          },
-                     custom_data=["CoalitionStatus", "AnswerStatus", "QueryCount"]
+                     custom_data=["AnswerStatus", "QueryCount"] # CoalitionStatus is x
                      )
         fig.update_traces(
-            hovertemplate="<b>Coalition Status:</b> %{customdata[0]}<br>" +
-                          "<b>Query Outcome:</b> %{customdata[1]}<br>" +
-                          "<b>Count:</b> %{customdata[2]}<extra></extra>"
+            hovertemplate="<b>Coalition Status:</b> %{x}<br>" +
+                          "<b>Query Outcome:</b> %{customdata[0]}<br>" + # This is AnswerStatus
+                          "<b>Count:</b> %{customdata[1]}<extra></extra>" # This is QueryCount
         )
 
         fig.update_layout(
@@ -1031,7 +1023,7 @@ def plot_queries_by_ministry_and_status(
             END AS AnswerStatus
         """
 
-        sql_query = f"""
+        sql_query_cte = f"""
         WITH MinistryQueryStats AS (
             SELECT
                 q.GovMinistryID,
@@ -1046,7 +1038,7 @@ def plot_queries_by_ministry_and_status(
         if faction_filter:
             valid_faction_ids = [int(fid) for fid in faction_filter if str(fid).isdigit()]
             if valid_faction_ids:
-                sql_query += f"""
+                sql_query_cte += f"""
                     AND q.PersonID IN (
                         SELECT DISTINCT p2p.PersonID
                         FROM KNS_PersonToPosition p2p
@@ -1056,9 +1048,11 @@ def plot_queries_by_ministry_and_status(
                 """
             else:
                 logger_obj.warning("Faction filter provided for ministry performance but contained no valid numeric IDs.")
-        sql_query += """
+        sql_query_cte += """
             GROUP BY q.GovMinistryID, m.Name, AnswerStatus
         )
+        """
+        sql_query_main = """
         SELECT
             MinistryName,
             AnswerStatus,
@@ -1068,6 +1062,7 @@ def plot_queries_by_ministry_and_status(
         FROM MinistryQueryStats
         ORDER BY TotalQueriesForMinistry DESC, MinistryName, AnswerStatus;
         """
+        sql_query = sql_query_cte + sql_query_main
 
 
         logger_obj.debug(f"Executing SQL for plot_queries_by_ministry_and_status (Knesset {single_knesset_num}): {sql_query}")
@@ -1082,11 +1077,9 @@ def plot_queries_by_ministry_and_status(
         df["AnsweredQueriesForMinistry"] = pd.to_numeric(df["AnsweredQueriesForMinistry"], errors='coerce').fillna(0)
 
         df["ReplyPercentage"] = ((df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100)
-        df["ReplyPercentageText"] = df["ReplyPercentage"].apply(lambda x: f"{x:.1f}% replied" if pd.notna(x) else "N/A replied")
-
+        # df["ReplyPercentageText"] = df["ReplyPercentage"].apply(lambda x: f"{x:.1f}% replied" if pd.notna(x) else "N/A replied") # Not directly used in hover
 
         df_annotations = df.drop_duplicates(subset=['MinistryName']).sort_values(by="TotalQueriesForMinistry", ascending=False)
-
 
         fig = px.bar(df,
                      x="MinistryName",
@@ -1100,18 +1093,19 @@ def plot_queries_by_ministry_and_status(
                      category_orders={
                          "AnswerStatus": ["Answered", "Not Answered", "Other/In Progress", "Unknown"],
                          "MinistryName": df_annotations["MinistryName"].tolist()
-                         }
-                     )
+                     },
+                     # Pass columns needed for hovertemplate that are not x, y, or color
+                     custom_data=['TotalQueriesForMinistry', 'ReplyPercentage']
+                    )
 
+        # Corrected hovertemplate
         fig.update_traces(
-            customdata=df[['MinistryName','AnswerStatus', 'QueryCount', 'TotalQueriesForMinistry', 'ReplyPercentage']],
-            hovertemplate="<b>Ministry:</b> %{customdata[0]}<br>" +
-                          "<b>Status:</b> %{customdata[1]}<br>" +
-                          "<b>Count (this status):</b> %{customdata[2]}<br>" +
-                          "<b>Total Queries (Ministry):</b> %{customdata[3]}<br>" +
-                          "<b>Reply Rate (Ministry):</b> %{customdata[4]:.1f}%<extra></extra>"
+            hovertemplate="<b>Ministry:</b> %{x}<br>" +
+                          "<b>Status:</b> %{fullMarker.name}<br>" + # fullMarker.name gives the value of the 'color' variable
+                          "<b>Count (this status):</b> %{y}<br>" +
+                          "<b>Total Queries (Ministry):</b> %{customdata[0]}<br>" + # Corresponds to TotalQueriesForMinistry
+                          "<b>Reply Rate (Ministry):</b> %{customdata[1]:.1f}%<extra></extra>"
         )
-
 
         fig.update_layout(
             xaxis_title="Ministry",
@@ -1199,11 +1193,11 @@ def plot_agendas_per_faction_in_knesset(
                      title=f"<b>Number of Agenda Items per Initiating Faction (Knesset {single_knesset_num})</b>",
                      labels={"FactionName": "Faction", "AgendaCount": "Number of Agenda Items"},
                      hover_name="FactionName",
-                     custom_data=["FactionName", "AgendaCount"]
+                     custom_data=["AgendaCount"]
                      )
         fig.update_traces(
-            hovertemplate="<b>Faction:</b> %{customdata[0]}<br>" +
-                          "<b>Agenda Items:</b> %{customdata[1]}<extra></extra>"
+            hovertemplate="<b>Faction:</b> %{x}<br>" +
+                          "<b>Agenda Items:</b> %{customdata[0]}<extra></extra>"
         )
 
         fig.update_layout(
@@ -1320,12 +1314,12 @@ def plot_agendas_by_coalition_and_status(
                          "AgendaStatusDescription": relevant_agenda_statuses_ordered,
                          "CoalitionStatus": all_coalition_statuses
                          },
-                     custom_data=["CoalitionStatus", "AgendaStatusDescription", "AgendaCount"]
+                     custom_data=["AgendaStatusDescription", "AgendaCount"] # CoalitionStatus is x
                      )
         fig.update_traces(
-            hovertemplate="<b>Coalition Status:</b> %{customdata[0]}<br>" +
-                          "<b>Agenda Status:</b> %{customdata[1]}<br>" +
-                          "<b>Count:</b> %{customdata[2]}<extra></extra>"
+            hovertemplate="<b>Coalition Status:</b> %{x}<br>" +
+                          "<b>Agenda Status:</b> %{customdata[0]}<br>" + # This is AgendaStatusDescription
+                          "<b>Count:</b> %{customdata[1]}<extra></extra>" # This is AgendaCount
         )
 
         fig.update_layout(
