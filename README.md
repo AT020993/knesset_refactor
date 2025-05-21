@@ -221,7 +221,7 @@ pytest
 
 This will discover and run tests from the `tests/` directory. Test coverage reports can also be generated if `pytest-cov` is configured.
 
-## 參考資料 (References)
+## (References)
 
   * The official Knesset OData service description can be found in `docs/KnessetOdataManual.pdf`.
 
