@@ -95,9 +95,7 @@ def plot_queries_by_time_period(
             x_axis_label = "Year"
 
         knesset_num_select_sql = "q.KnessetNum," if not is_single_knesset_view else ""
-        # knesset_num_group_by_sql = "q.KnessetNum," if not is_single_knesset_view else "" # Replaced by dynamic group_by_terms
-
-
+        
         base_sql = f"""
             SELECT
                 {time_period_sql_select} AS {time_period_alias},
@@ -154,12 +152,12 @@ def plot_queries_by_time_period(
                      title=plot_title,
                      labels={time_period_alias: x_axis_label, "QueryCount": "Number of Queries", "KnessetNum": "Knesset Number"},
                      category_orders={time_period_alias: sorted(df[time_period_alias].unique())},
-                     custom_data=custom_data_cols, # Pass the list of column names
+                     custom_data=custom_data_cols, 
                      color_discrete_sequence=KNESSET_COLOR_SEQUENCE if color_param else px.colors.qualitative.Plotly 
                     )
         
         hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
-                            "<b>Queries:</b> %{y}" # Use %{y} for the bar segment's value
+                            "<b>Queries:</b> %{y}" 
         if "KnessetNum" in df.columns and len(custom_data_cols) > 2: 
             hovertemplate_str = "<b>Period:</b> %{customdata[0]}<br>" + \
                                 "<b>Knesset:</b> %{customdata[2]}<br>" + \
@@ -268,7 +266,7 @@ def plot_query_types_distribution(
                      title=f"<b>Distribution of Query Types for Knesset {single_knesset_num}</b>",
                      labels={"TypeDesc": "Query Type", "QueryCount": "Number of Queries"},
                      color_discrete_map=QUERY_TYPE_COLORS,
-                     custom_data=["TypeDesc"] # Only TypeDesc needed as QueryCount is %{y}
+                     custom_data=["TypeDesc"] 
                     )
 
         fig.update_traces(
@@ -517,7 +515,7 @@ def plot_agenda_classifications_pie(
                 logger_obj.warning("Faction filter provided for agenda classifications but contained no valid numeric IDs.")
 
 
-        base_sql += " GROUP BY a.ClassificationDesc ORDER BY AgendaCount DESC;" # Order for better pie chart appearance
+        base_sql += " GROUP BY a.ClassificationDesc ORDER BY AgendaCount DESC;" 
 
         logger_obj.debug(f"Executing SQL for plot_agenda_classifications_pie (Knesset {single_knesset_num}): {base_sql} with params {sql_params}")
         df = con.execute(base_sql, sql_params).df()
@@ -536,10 +534,10 @@ def plot_agenda_classifications_pie(
                      title=f"<b>Distribution of Agenda Classifications for Knesset {single_knesset_num}</b>",
                      labels={"ClassificationDesc": "Agenda Classification", "AgendaCount": "Number of Items"},
                      hole=0.3,
-                     custom_data=["ClassificationDesc"] # Only ClassificationDesc needed as AgendaCount is %{value}
+                     custom_data=["ClassificationDesc"] 
                     )
         fig.update_traces(textposition='inside', textinfo='percent+label', insidetextorientation='radial',
-                          hovertemplate="<b>Classification:</b> %{customdata[0]}<br>" +
+                          hovertemplate="<b>Classification:</b> %{customdata[0]}<br>" + 
                                         "<b>Count:</b> %{value}<br>" +
                                         "<b>Percentage:</b> %{percent}<extra></extra>")
         fig.update_layout(legend_title_text='Agenda Classification', title_x=0.5)
@@ -634,7 +632,7 @@ def plot_queries_by_faction_status(
                              "CoalitionStatus": "Status"},
                      color_discrete_map=COALITION_OPPOSITION_COLORS,
                      hover_name="FactionName",
-                     custom_data=["CoalitionStatus", "QueryCount"] # FactionName is x
+                     custom_data=["CoalitionStatus", "QueryCount"] 
                      )
         fig.update_traces(
             hovertemplate="<b>Faction:</b> %{x}<br>" +
@@ -745,11 +743,11 @@ def plot_agenda_status_distribution(
                      title=f"<b>Distribution of Agenda Item Statuses for Knesset {single_knesset_num}</b>",
                      labels={"StatusDescription": "Status", "AgendaCount": "Number of Agenda Items"},
                      hole=0.3,
-                     custom_data=["StatusDescription"] # StatusDescription is names, AgendaCount is values
+                     custom_data=["StatusDescription"] 
                     ) 
 
         fig.update_traces(textposition='inside', textinfo='percent+label',
-                          hovertemplate="<b>Status:</b> %{customdata[0]}<br>" + # %{label} also works
+                          hovertemplate="<b>Status:</b> %{customdata[0]}<br>" + 
                                         "<b>Count:</b> %{value}<br>" +
                                         "<b>Percentage:</b> %{percent}<extra></extra>")
         fig.update_layout(legend_title_text='Agenda Status', title_x=0.5)
@@ -830,7 +828,7 @@ def plot_queries_per_faction_in_knesset(
                      title=f"<b>Number of Queries per Faction in Knesset {single_knesset_num}</b>",
                      labels={"FactionName": "Faction", "QueryCount": "Number of Queries"},
                      hover_name="FactionName",
-                     custom_data=["QueryCount"] # FactionName is x
+                     custom_data=["QueryCount"] 
                      )
         fig.update_traces(
             hovertemplate="<b>Faction:</b> %{x}<br>" +
@@ -961,12 +959,12 @@ def plot_queries_by_coalition_and_answer_status(
                          "AnswerStatus": relevant_answer_statuses_ordered,
                          "CoalitionStatus": all_coalition_statuses
                          },
-                     custom_data=["AnswerStatus", "QueryCount"] # CoalitionStatus is x
+                     custom_data=["AnswerStatus", "QueryCount"] 
                      )
         fig.update_traces(
             hovertemplate="<b>Coalition Status:</b> %{x}<br>" +
-                          "<b>Query Outcome:</b> %{customdata[0]}<br>" + # This is AnswerStatus
-                          "<b>Count:</b> %{customdata[1]}<extra></extra>" # This is QueryCount
+                          "<b>Query Outcome:</b> %{customdata[0]}<br>" + 
+                          "<b>Count:</b> %{customdata[1]}<extra></extra>" 
         )
 
         fig.update_layout(
@@ -1075,9 +1073,16 @@ def plot_queries_by_ministry_and_status(
         df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors='coerce').fillna(0)
         df["TotalQueriesForMinistry"] = pd.to_numeric(df["TotalQueriesForMinistry"], errors='coerce').fillna(0)
         df["AnsweredQueriesForMinistry"] = pd.to_numeric(df["AnsweredQueriesForMinistry"], errors='coerce').fillna(0)
-
         df["ReplyPercentage"] = ((df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100)
-        # df["ReplyPercentageText"] = df["ReplyPercentage"].apply(lambda x: f"{x:.1f}% replied" if pd.notna(x) else "N/A replied") # Not directly used in hover
+
+        # Create the pre-formatted hover text string
+        df['hover_text'] = (
+            "<b>Ministry:</b> " + df['MinistryName'] + "<br>" +
+            "<b>Status:</b> " + df['AnswerStatus'] + "<br>" +
+            "<b>Count (this status):</b> " + df['QueryCount'].astype(str) + "<br>" +
+            "<b>Total Queries (Ministry):</b> " + df['TotalQueriesForMinistry'].astype(str) + "<br>" +
+            "<b>Reply Rate (Ministry):</b> " + df['ReplyPercentage'].round(1).astype(str) + "%"
+        )
 
         df_annotations = df.drop_duplicates(subset=['MinistryName']).sort_values(by="TotalQueriesForMinistry", ascending=False)
 
@@ -1094,17 +1099,11 @@ def plot_queries_by_ministry_and_status(
                          "AnswerStatus": ["Answered", "Not Answered", "Other/In Progress", "Unknown"],
                          "MinistryName": df_annotations["MinistryName"].tolist()
                      },
-                     # Pass columns needed for hovertemplate that are not x, y, or color
-                     custom_data=['TotalQueriesForMinistry', 'ReplyPercentage']
+                     custom_data=['hover_text'] # Pass the pre-formatted hover text
                     )
 
-        # Corrected hovertemplate
         fig.update_traces(
-            hovertemplate="<b>Ministry:</b> %{x}<br>" +
-                          "<b>Status:</b> %{fullMarker.name}<br>" + # fullMarker.name gives the value of the 'color' variable
-                          "<b>Count (this status):</b> %{y}<br>" +
-                          "<b>Total Queries (Ministry):</b> %{customdata[0]}<br>" + # Corresponds to TotalQueriesForMinistry
-                          "<b>Reply Rate (Ministry):</b> %{customdata[1]:.1f}%<extra></extra>"
+            hovertemplate="%{customdata[0]}<extra></extra>" # Display the pre-formatted text
         )
 
         fig.update_layout(
@@ -1314,12 +1313,12 @@ def plot_agendas_by_coalition_and_status(
                          "AgendaStatusDescription": relevant_agenda_statuses_ordered,
                          "CoalitionStatus": all_coalition_statuses
                          },
-                     custom_data=["AgendaStatusDescription", "AgendaCount"] # CoalitionStatus is x
+                     custom_data=["AgendaStatusDescription", "AgendaCount"] 
                      )
         fig.update_traces(
             hovertemplate="<b>Coalition Status:</b> %{x}<br>" +
-                          "<b>Agenda Status:</b> %{customdata[0]}<br>" + # This is AgendaStatusDescription
-                          "<b>Count:</b> %{customdata[1]}<extra></extra>" # This is AgendaCount
+                          "<b>Agenda Status:</b> %{customdata[0]}<br>" + 
+                          "<b>Count:</b> %{customdata[1]}<extra></extra>" 
         )
 
         fig.update_layout(

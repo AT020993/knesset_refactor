@@ -170,7 +170,8 @@ def display_chart_builder(
              st.info(f"No data available for table '{st.session_state.builder_selected_table}' with the current global sidebar filters. Chart-specific filters cannot be populated.")
 
         if not cs_filter_data.empty and 'KnessetNum' in cs_filter_data.columns:
-            unique_knessets_in_data = sorted(cs_filter_data['KnessetNum'].dropna().unique().astype(int))
+            # Sort Knesset numbers in descending order
+            unique_knessets_in_data = sorted(cs_filter_data['KnessetNum'].dropna().unique().astype(int), reverse=True) # MODIFIED HERE
             if unique_knessets_in_data:
                 st.session_state.builder_knesset_filter_cs = st.multiselect(
                     "Filter by Knesset Number(s) (Chart Specific):",
@@ -183,15 +184,18 @@ def display_chart_builder(
 
         if not cs_filter_data.empty and 'FactionID' in cs_filter_data.columns:
             unique_faction_ids_in_data = cs_filter_data['FactionID'].dropna().unique()
-            chart_specific_faction_display_map = {
-                display_name: f_id
-                for display_name, f_id in faction_display_map_global.items()
-                if f_id in unique_faction_ids_in_data
-            }
-            if chart_specific_faction_display_map:
+            # Sort faction names alphabetically for the multiselect options
+            faction_options_sorted = sorted(
+                [
+                    display_name
+                    for display_name, f_id in faction_display_map_global.items()
+                    if f_id in unique_faction_ids_in_data
+                ]
+            )
+            if faction_options_sorted: # Check if there are any factions to show after filtering
                 st.session_state.builder_faction_filter_cs = st.multiselect(
                     "Filter by Faction(s) (Chart Specific):",
-                    options=list(chart_specific_faction_display_map.keys()),
+                    options=faction_options_sorted,
                     default=st.session_state.get("builder_faction_filter_cs", []),
                     key="builder_faction_filter_cs_widget"
                 )
@@ -287,12 +291,12 @@ def display_chart_builder(
             )
             st.session_state.builder_title_font_size = st.slider(
                 "Title Font Size:", min_value=10, max_value=40,
-                value=st.session_state.get("builder_title_font_size", 20), # Integer value is fine here
+                value=st.session_state.get("builder_title_font_size", 20),
                 key="cb_title_font_size"
             )
             st.session_state.builder_axis_label_font_size = st.slider(
                 "Axis Label Font Size:", min_value=8, max_value=30,
-                value=st.session_state.get("builder_axis_label_font_size", 14), # Integer value is fine
+                value=st.session_state.get("builder_axis_label_font_size", 14),
                 key="cb_axis_label_font_size"
             )
             st.session_state.builder_color_palette = st.selectbox(
@@ -310,18 +314,18 @@ def display_chart_builder(
             )
             st.session_state.builder_legend_x = st.number_input(
                 "Legend X Position (0-1.5):", min_value=0.0, max_value=1.5, step=0.01,
-                value=float(st.session_state.get("builder_legend_x", 1.02)), # Ensure value is float
+                value=float(st.session_state.get("builder_legend_x", 1.02)),
                 key="cb_legend_x"
             )
             st.session_state.builder_legend_y = st.number_input(
                 "Legend Y Position (0-1.5):", min_value=0.0, max_value=1.5, step=0.01,
-                value=float(st.session_state.get("builder_legend_y", 1.0)), # Ensure value is float
+                value=float(st.session_state.get("builder_legend_y", 1.0)),
                 key="cb_legend_y"
             )
             if st.session_state.builder_chart_type == "scatter":
                 st.session_state.builder_marker_opacity = st.slider(
-                    "Marker Opacity (for scatter):", min_value=0.1, max_value=1.0, step=0.1, # Floats
-                    value=st.session_state.get("builder_marker_opacity", 1.0), # Float
+                    "Marker Opacity (for scatter):", min_value=0.1, max_value=1.0, step=0.1,
+                    value=st.session_state.get("builder_marker_opacity", 1.0),
                     key="cb_marker_opacity"
                 )
 
@@ -364,7 +368,7 @@ def display_chart_builder(
             elif st.session_state.builder_chart_type not in ["pie", "histogram", "box"] and (not selected_x or not selected_y):
                 st.error("Please select valid X-axis and Y-axis columns for this chart type."); valid_input = False
             elif st.session_state.builder_chart_type in ["histogram", "box"] and not selected_x :
-                if not (st.session_state.builder_chart_type == "box" and selected_x and selected_y): # Allow box with X and Y
+                if not (st.session_state.builder_chart_type == "box" and selected_x and selected_y):
                      st.error(f"Please select a valid X-axis for the {st.session_state.builder_chart_type} chart (and optionally Y for box)."); valid_input = False
             elif st.session_state.builder_chart_type == "pie" and (not selected_names or not selected_values):
                 st.error("Please select valid 'Names' and 'Values' columns for the Pie chart."); valid_input = False
@@ -451,7 +455,7 @@ def display_chart_builder(
                                 st.error("For Pie chart, 'Names' and 'Values' must be selected with valid columns."); essential_missing = True
                             elif current_chart_type == "histogram" and not chart_params.get("x"):
                                 st.error(f"For {current_chart_type} chart, 'X-axis' must be selected."); essential_missing = True
-                            elif current_chart_type == "box" and not chart_params.get("x") and not chart_params.get("y"): # Box needs at least x or y
+                            elif current_chart_type == "box" and not chart_params.get("x") and not chart_params.get("y"): 
                                 st.error(f"For Box chart, at least 'X-axis' or 'Y-axis' must be selected."); essential_missing = True
                             elif current_chart_type not in ["pie", "histogram", "box"] and (not chart_params.get("x") or not chart_params.get("y")):
                                 st.error(f"For {current_chart_type} chart, 'X-axis' and 'Y-axis' must be selected with valid columns."); essential_missing = True
@@ -469,8 +473,8 @@ def display_chart_builder(
                                     xaxis_title_font_size=st.session_state.get("builder_axis_label_font_size"),
                                     yaxis_title_font_size=st.session_state.get("builder_axis_label_font_size"),
                                     legend_orientation=st.session_state.get("builder_legend_orientation"),
-                                    legend_x=float(st.session_state.get("builder_legend_x", 1.02)), # Ensure float
-                                    legend_y=float(st.session_state.get("builder_legend_y", 1.0)),  # Ensure float
+                                    legend_x=float(st.session_state.get("builder_legend_x", 1.02)), 
+                                    legend_y=float(st.session_state.get("builder_legend_y", 1.0)),  
                                     legend_font_size=st.session_state.get("builder_axis_label_font_size")
                                 )
                                 if st.session_state.builder_chart_type == "scatter" and "builder_marker_opacity" in st.session_state:
