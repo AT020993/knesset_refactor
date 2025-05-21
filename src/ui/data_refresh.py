@@ -44,65 +44,113 @@ MAX_UNIQUE_VALUES_FOR_FACET = 50
 EXPORTS = {
     "Queries + Full Details": {
         "sql": """
-            SELECT
-                Q.QueryID,
-                Q.Number,
-                Q.KnessetNum,
-                Q.Name AS QueryName,
-                Q.TypeID AS QueryTypeID,
-                Q.TypeDesc AS QueryTypeDesc,
-                S.Desc AS QueryStatusDesc,
-                P.FirstName AS MKFirstName,
-                P.LastName AS MKLastName,
-                P.GenderDesc AS MKGender,
-                P2P.FactionName AS MKFactionName,
-                ufs.CoalitionStatus AS MKFactionCoalitionStatus,
-                M.Name AS MinistryName,
-                strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted
-            FROM KNS_Query Q
-            LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
-            LEFT JOIN KNS_PersonToPosition P2P ON Q.PersonID = P2P.PersonID
-                AND Q.KnessetNum = P2P.KnessetNum
-                AND CAST(Q.SubmitDate AS TIMESTAMP) BETWEEN CAST(P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
-            LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
-            LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-            LEFT JOIN UserFactionCoalitionStatus ufs ON P2P.FactionID = ufs.FactionID AND P2P.KnessetNum = ufs.KnessetNum
-            ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
+WITH MKLatestFactionDetailsInKnesset AS (
+    -- This CTE finds the most recent (or primary) faction and coalition status for each MK in each Knesset they served.
+    -- It ranks positions by StartDate descending, so rn=1 is the latest.
+    SELECT
+        p2p.PersonID,
+        p2p.KnessetNum,
+        p2p.FactionID,
+        p2p.FactionName,
+        ufs.CoalitionStatus,
+        ROW_NUMBER() OVER (PARTITION BY p2p.PersonID, p2p.KnessetNum ORDER BY p2p.StartDate DESC, p2p.FinishDate DESC NULLS LAST) as rn
+    FROM KNS_PersonToPosition p2p
+    LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum
+    WHERE p2p.FactionID IS NOT NULL -- Only consider records where there is a faction
+)
+SELECT
+    Q.QueryID,
+    Q.Number,
+    Q.KnessetNum,
+    Q.Name AS QueryName,
+    Q.TypeID AS QueryTypeID,
+    Q.TypeDesc AS QueryTypeDesc,
+    S.Desc AS QueryStatusDesc,
+    P.FirstName AS MKFirstName,
+    P.LastName AS MKLastName,
+    P.GenderDesc AS MKGender,
+    
+    -- Use FactionName from active position if available, otherwise from latest known position in that Knesset
+    COALESCE(P2P_active.FactionName, FallbackFaction.FactionName) AS MKFactionName,
+    -- Use CoalitionStatus from active position if available, otherwise from latest known position in that Knesset
+    COALESCE(UFS_active.CoalitionStatus, FallbackFaction.CoalitionStatus) AS MKFactionCoalitionStatus,
+    
+    M.Name AS MinistryName,
+    strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted
+FROM KNS_Query Q
+LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
+LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
+LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
+
+-- Primary attempt: Join KNS_PersonToPosition active at query submission time
+LEFT JOIN KNS_PersonToPosition P2P_active ON Q.PersonID = P2P_active.PersonID
+    AND Q.KnessetNum = P2P_active.KnessetNum
+    AND CAST(Q.SubmitDate AS TIMESTAMP) BETWEEN CAST(P2P_active.StartDate AS TIMESTAMP) AND CAST(COALESCE(P2P_active.FinishDate, '9999-12-31') AS TIMESTAMP)
+-- Join UserFactionCoalitionStatus based on this active position
+LEFT JOIN UserFactionCoalitionStatus UFS_active ON P2P_active.FactionID = UFS_active.FactionID AND P2P_active.KnessetNum = UFS_active.KnessetNum
+
+-- Fallback: Join with the latest faction details for that MK in that Knesset
+LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction ON Q.PersonID = FallbackFaction.PersonID
+    AND Q.KnessetNum = FallbackFaction.KnessetNum AND FallbackFaction.rn = 1
+    
+ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
         """,
-        "knesset_filter_column": "Q.KnessetNum",
-        "faction_filter_column": "P2P.FactionID",
+        "knesset_filter_column": "Q.KnessetNum", # This remains the same for filtering the overall query
+        "faction_filter_column": "COALESCE(P2P_active.FactionID, FallbackFaction.FactionID)", # Filter on the effective FactionID
     },
     "Agenda Items + Full Details": {
         "sql": """
-            SELECT
-                A.AgendaID,
-                A.Number AS AgendaNumber,
-                A.KnessetNum,
-                A.Name AS AgendaName,
-                A.ClassificationDesc AS AgendaClassification,
-                S.Desc AS AgendaStatus,
-                INIT_P.FirstName AS InitiatorFirstName,
-                INIT_P.LastName AS InitiatorLastName,
-                INIT_P.GenderDesc AS InitiatorGender,
-                INIT_P2P.FactionName AS InitiatorFactionName,
-                INIT_UFS.CoalitionStatus AS InitiatorFactionCoalitionStatus,
-                HC.Name AS HandlingCommitteeName,
-                strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
-            FROM KNS_Agenda A
-            LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-            LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
-            LEFT JOIN KNS_PersonToPosition INIT_P2P ON A.InitiatorPersonID = INIT_P2P.PersonID
-                AND A.KnessetNum = INIT_P2P.KnessetNum
-                AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) BETWEEN CAST(INIT_P2P.StartDate AS TIMESTAMP) AND CAST(COALESCE(INIT_P2P.FinishDate, '9999-12-31') AS TIMESTAMP)
-            LEFT JOIN UserFactionCoalitionStatus INIT_UFS ON INIT_P2P.FactionID = INIT_UFS.FactionID AND INIT_P2P.KnessetNum = INIT_UFS.KnessetNum
-            LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
-            ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
+WITH MKLatestFactionDetailsInKnesset AS (
+    SELECT
+        p2p.PersonID,
+        p2p.KnessetNum,
+        p2p.FactionID,
+        p2p.FactionName,
+        ufs.CoalitionStatus,
+        ROW_NUMBER() OVER (PARTITION BY p2p.PersonID, p2p.KnessetNum ORDER BY p2p.StartDate DESC, p2p.FinishDate DESC NULLS LAST) as rn
+    FROM KNS_PersonToPosition p2p
+    LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum
+    WHERE p2p.FactionID IS NOT NULL
+)
+SELECT
+    A.AgendaID,
+    A.Number AS AgendaNumber,
+    A.KnessetNum,
+    A.Name AS AgendaName,
+    A.ClassificationDesc AS AgendaClassification,
+    S.Desc AS AgendaStatus,
+    INIT_P.FirstName AS InitiatorFirstName,
+    INIT_P.LastName AS InitiatorLastName,
+    INIT_P.GenderDesc AS InitiatorGender,
+
+    COALESCE(P2P_active_init.FactionName, FallbackFaction_init.FactionName) AS InitiatorFactionName,
+    COALESCE(UFS_active_init.CoalitionStatus, FallbackFaction_init.CoalitionStatus) AS InitiatorFactionCoalitionStatus,
+
+    HC.Name AS HandlingCommitteeName,
+    strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
+FROM KNS_Agenda A
+LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
+LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
+LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
+
+-- Primary attempt for Initiator
+LEFT JOIN KNS_PersonToPosition P2P_active_init ON A.InitiatorPersonID = P2P_active_init.PersonID
+    AND A.KnessetNum = P2P_active_init.KnessetNum
+    AND CAST(COALESCE(A.PresidentDecisionDate, A.LastUpdatedDate) AS TIMESTAMP) BETWEEN CAST(P2P_active_init.StartDate AS TIMESTAMP) AND CAST(COALESCE(P2P_active_init.FinishDate, '9999-12-31') AS TIMESTAMP)
+LEFT JOIN UserFactionCoalitionStatus UFS_active_init ON P2P_active_init.FactionID = UFS_active_init.FactionID AND P2P_active_init.KnessetNum = UFS_active_init.KnessetNum
+
+-- Fallback for Initiator
+LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init ON A.InitiatorPersonID = FallbackFaction_init.PersonID
+    AND A.KnessetNum = FallbackFaction_init.KnessetNum AND FallbackFaction_init.rn = 1
+
+ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "A.KnessetNum",
-        "faction_filter_column": "INIT_P2P.FactionID",
+        "faction_filter_column": "COALESCE(P2P_active_init.FactionID, FallbackFaction_init.FactionID)",
     },
 }
 
+# Plot names updated to reflect single Knesset focus where applicable
 AVAILABLE_PLOTS_BY_TOPIC = {
     "Queries": {
         "Queries by Time Period": pg.plot_queries_by_time_period,
@@ -295,9 +343,8 @@ else:
     if selected_plot_name_for_display:
         current_main_knesset_selection_in_state = st.session_state.get("plot_main_knesset_selection", "")
         
-        # Ensure current selection is valid, otherwise default to empty or first valid option
         if current_main_knesset_selection_in_state not in plot_knesset_options:
-            current_main_knesset_selection_in_state = "" # Default to empty, forcing user selection
+            current_main_knesset_selection_in_state = "" 
             st.session_state.plot_main_knesset_selection = ""
 
 
@@ -307,7 +354,7 @@ else:
         aggregation_level_for_plot = st.session_state.get("plot_aggregation_level", "Yearly")
         show_average_line_for_plot = st.session_state.get("plot_show_average_line", False)
         
-        selected_knesset_main_area_val = "" # Initialize
+        selected_knesset_main_area_val = "" 
 
         if selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]:
             col_knesset_select, col_agg_select, col_avg_line = st.columns([2, 1, 1])
@@ -316,7 +363,7 @@ else:
                     "3. Select Knesset for Plot:",
                     options=plot_knesset_options,
                     index=knesset_select_default_index,
-                    key="plot_main_knesset_selector_tp" # Unique key for time period plots
+                    key="plot_main_knesset_selector_tp" 
                 )
             with col_agg_select:
                 st.session_state.plot_aggregation_level = st.selectbox(
@@ -331,11 +378,10 @@ else:
                 )
             aggregation_level_for_plot = st.session_state.plot_aggregation_level
             show_average_line_for_plot = st.session_state.plot_show_average_line
-        else: # For other plots that require a single Knesset or don't have extra options
-            # Filter out "All Knessets..." if not applicable for this plot type
+        else: 
             options_for_single_knesset_plot = [opt for opt in plot_knesset_options if opt != "All Knessets (Color Coded)"]
             if current_main_knesset_selection_in_state not in options_for_single_knesset_plot:
-                 current_main_knesset_selection_in_state = "" # Force selection if current is "All"
+                 current_main_knesset_selection_in_state = "" 
                  st.session_state.plot_main_knesset_selection = ""
 
             single_knesset_default_idx = options_for_single_knesset_plot.index(current_main_knesset_selection_in_state) \
@@ -345,14 +391,13 @@ else:
                 "3. Select Knesset for Plot:",
                 options=options_for_single_knesset_plot,
                 index=single_knesset_default_idx,
-                key="plot_main_knesset_selector_single" # Unique key for single plots
+                key="plot_main_knesset_selector_single" 
             )
 
         if selected_knesset_main_area_val != st.session_state.get("plot_main_knesset_selection", ""):
             st.session_state.plot_main_knesset_selection = selected_knesset_main_area_val
             st.rerun()
         
-        # Determine final_knesset_filter_for_plot based on st.session_state.plot_main_knesset_selection
         current_selection_for_filter = st.session_state.get("plot_main_knesset_selection")
         if current_selection_for_filter == "All Knessets (Color Coded)" and can_show_all_knessets:
             final_knesset_filter_for_plot = None
@@ -365,9 +410,6 @@ else:
                 st.error(f"Invalid Knesset number selected: {current_selection_for_filter}")
                 final_knesset_filter_for_plot = False
         else:
-            # Check if the plot *requires* a single Knesset.
-            # Most plots are now named "(Single Knesset)" if they require it.
-            # Or, if it's not a plot that `can_show_all_knessets`.
             requires_single = "(Single Knesset)" in selected_plot_name_for_display or not can_show_all_knessets
             if requires_single:
                  st.info(f"Please select a Knesset for the '{selected_plot_name_for_display}' plot.")
