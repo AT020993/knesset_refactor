@@ -32,7 +32,7 @@ A comprehensive platform designed to fetch, store, analyze, and visualize parlia
     * Dedicated button to refresh only the faction coalition status data from the CSV.
 * **Predefined Queries:**
     * Execute curated SQL queries (e.g., "Queries + Full Details," "Agenda Items + Full Details") for common analytical needs.
-    * Results are displayedインタラクティブに and can be downloaded.
+    * Results are displayed interactively and can be downloaded.
 * **Interactive Table Explorer:**
     * Select and view raw data from any table in the DuckDB warehouse.
     * Apply dynamic filters (e.g., Knesset Number, Faction) to narrow down results.
@@ -63,10 +63,12 @@ knesset_refactor/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI configuration
+├── .streamlit/
+│   └── config.toml            # Streamlit configuration
 ├── data/
 │   ├── faction_coalition_status.csv # User-managed faction status (create this file)
 │   ├── parquet/               # Raw parquet files (auto-generated)
-│   └── warehouse.duckdb       # DuckDB database storage (auto-generated)
+│   ├── warehouse.duckdb       # DuckDB database storage (auto-generated)
 │   └── .resume_state.json     # Internal file for resuming downloads (auto-generated)
 ├── docs/
 │   └── KnessetOdataManual.pdf # Official Knesset OData documentation
@@ -74,10 +76,16 @@ knesset_refactor/
 │   └── refresh_all.sh         # Shell script for a full data refresh using the Typer CLI
 ├── src/
 │   ├── backend/
-│   │   ├── fetch_table.py     # Core module for fetching & storing data, includes argparse CLI
+│   │   ├── fetch_table.py     # Core module for fetching & storing data, includes CLI
+│   │   ├── tables.py          # Table definitions
+│   │   ├── utils.py           # Utility functions
 │   │   └── __init__.py
 │   ├── ui/
-│   │   ├── data_refresh.py    # Streamlit interface for data management
+│   │   ├── data_refresh.py    # Main Streamlit interface
+│   │   ├── sidebar_components.py # Sidebar UI components
+│   │   ├── ui_utils.py        # UI utility functions
+│   │   ├── plot_generators.py # Visualization functions
+│   │   ├── chart_builder_ui.py # Interactive chart builder
 │   │   └── __init__.py
 │   ├── utils/
 │   │   ├── logger_setup.py    # Logging configuration
@@ -89,39 +97,46 @@ knesset_refactor/
 │   └── test_views.py          # Unit tests for UI predefined queries
 ├── requirements.txt           # Project dependencies
 └── README.md                  # This file
-````
+```
 
 ## 🛠️ Technologies Used
 
-  * **Python 3.12** (as specified in `.github/workflows/ci.yml`)
-  * **DuckDB:** For the data warehouse.
-  * **Pandas:** For data manipulation.
-  * **Parquet:** For efficient columnar storage.
-  * **Streamlit:** For the user interface.
-  * **aiohttp & backoff:** For robust asynchronous HTTP requests.
-  * **OpenPyXL:** For Excel export functionality.
-  * **Plotly:** For generating interactive data visualizations.
-  * **Pytest:** For unit testing.
-  * **tqdm:** For progress bar visualization during data fetching.
-  * **Typer:** For `src/cli.py`.
+* **Python 3.12.10** (Required)
+* **DuckDB:** For the data warehouse
+* **Pandas:** For data manipulation
+* **Parquet:** For efficient columnar storage
+* **Streamlit:** For the user interface
+* **aiohttp & backoff:** For robust asynchronous HTTP requests
+* **OpenPyXL:** For Excel export functionality
+* **Plotly:** For generating interactive data visualizations
+* **Pytest:** For unit testing
+* **tqdm:** For progress bar visualization during data fetching
+* **Typer:** For `src/cli.py`
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-  * Python 3.12 or higher.
-  * Git.
+* **Python 3.12.10** (Required - specific version needed for compatibility)
+* Git
 
 ### Installation
 
-1.  **Clone the repository:**
+1. **Clone the repository:**
 
     ```bash
     git clone <repository-url>
     cd knesset_refactor
     ```
 
-2.  **Create and activate a virtual environment:**
+2. **Remove any existing virtual environment:**
+
+    ```bash
+    # If you have an old virtual environment, remove it first
+    rm -rf .venv
+    ```
+
+3. **Create and activate a virtual environment:**
 
     ```bash
     python -m venv .venv
@@ -131,14 +146,31 @@ knesset_refactor/
     source .venv/bin/activate
     ```
 
-3.  **Install dependencies:**
+4. **Upgrade pip and install dependencies:**
 
     ```bash
-    pip install -r requirements.txt
+    pip install --upgrade pip
+    
+    # Install core dependencies with specific working versions
+    pip install aiohttp==3.9.1 pandas==2.1.4 streamlit==1.29.0 plotly==5.17.0 tqdm==4.66.1 backoff==2.2.1 pyarrow==14.0.2 fastparquet==2023.10.1 openpyxl==3.1.2 typer==0.9.0 pytest==7.4.3
+    
+    # Install DuckDB (use pre-built wheels only to avoid compilation issues)
+    pip install --only-binary=duckdb duckdb==0.10.3
     ```
 
-4.  **(Optional but Recommended) Create Faction Status CSV:**
-    Create a file named `faction_coalition_status.csv` in the `data/` directory. This file is used to track the coalition/opposition status of factions. If it doesn't exist, the faction status features will still run but won't load any custom data.
+5. **Create required package files:**
+
+    ```bash
+    # Create __init__.py files for proper module imports
+    touch src/__init__.py
+    touch src/utils/__init__.py
+    touch src/backend/__init__.py
+    touch src/ui/__init__.py
+    ```
+
+6. **(Optional but Recommended) Create Faction Status CSV:**
+    Create a file named `faction_coalition_status.csv` in the `data/` directory. This file is used to track the coalition/opposition status of factions.
+    
     **Structure for `data/faction_coalition_status.csv`:**
 
     ```csv
@@ -147,65 +179,75 @@ knesset_refactor/
     25,954,Yesh Atid,Opposition,,
     ```
 
-      * `KnessetNum` (Integer): The Knesset number.
-      * `FactionID` (Integer): The numerical ID of the faction.
-      * `FactionName` (Text): The name of the faction (for reference).
-      * `CoalitionStatus` (Text): e.g., "Coalition", "Opposition".
-      * `DateJoinedCoalition` (Date): YYYY-MM-DD format. Empty if not applicable.
-      * `DateLeftCoalition` (Date): YYYY-MM-DD format. Empty if not applicable.
-
 ## 🖥️ Usage
+
+### Initial Data Setup
+
+Before using the application, you need to download the parliamentary data:
+
+```bash
+# Download all essential tables (this may take 15-30 minutes)
+PYTHONPATH="./src" python -m backend.fetch_table --all
+```
+
+**Note:** If some large tables fail to download, you can fetch them individually:
+
+```bash
+# Download specific critical tables
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Agenda
+```
 
 ### Streamlit User Interface
 
 Launch the Streamlit self-service interface:
 
 ```bash
-streamlit run src/ui/data_refresh.py
+streamlit run src/ui/data_refresh.py --server.address localhost --server.port 8501
 ```
 
-Access the UI via the local or network URL provided by Streamlit. Through the UI, you can:
+Access the UI via the local URL provided by Streamlit (typically `http://localhost:8501`). Through the UI, you can:
 
-  * Refresh OData tables and faction statuses.
-  * Explore tables with filters.
-  * Run predefined analytical queries.
-  * Execute custom SQL.
-  * Download data in CSV or Excel format.
+* **Refresh OData tables** and faction statuses
+* **Explore tables** with dynamic filters
+* **Run predefined analytical queries** with real parliamentary data
+* **Create custom visualizations** using the interactive chart builder
+* **Execute custom SQL** queries against the database
+* **Download data** in CSV or Excel format
 
 ### Command-Line Interface (CLI)
-
-The primary CLI is part of `src/backend/fetch_table.py`. You can use it for various backend operations.
 
 **Show help and available commands:**
 
 ```bash
-python src/backend/fetch_table.py --help
+PYTHONPATH="./src" python -m backend.fetch_table --help
 ```
 
 **Common commands:**
 
-  * **Refresh all predefined OData tables and faction statuses:**
+* **Refresh all predefined OData tables and faction statuses:**
     ```bash
-    python src/backend/fetch_table.py --all
+    PYTHONPATH="./src" python -m backend.fetch_table --all
     ```
-  * **Refresh a specific OData table (e.g., KNS\_Person):**
+* **Refresh a specific OData table (e.g., KNS_Person):**
     ```bash
-    python src/backend/fetch_table.py --table KNS_Person
+    PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
     ```
-  * **Refresh only the faction coalition status data from `data/faction_coalition_status.csv`:**
+* **Refresh only the faction coalition status data:**
     ```bash
-    python src/backend/fetch_table.py --refresh-faction-status
+    PYTHONPATH="./src" python -m backend.fetch_table --refresh-faction-status
     ```
-  * **Execute an SQL query against the warehouse:**
+* **Execute an SQL query against the warehouse:**
     ```bash
-    python src/backend/fetch_table.py --sql "SELECT KnessetNum, COUNT(*) FROM KNS_Faction GROUP BY KnessetNum;"
+    PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main';"
     ```
-  * **List available OData tables:**
+* **List available OData tables:**
     ```bash
-    python src/backend/fetch_table.py --list-tables
+    PYTHONPATH="./src" python -m backend.fetch_table --list-tables
     ```
 
-A convenience script `scripts/refresh_all.sh` is also provided, which uses the simpler Typer-based CLI (`src/cli.py`) to refresh all tables:
+**Alternative simplified CLI:**
 
 ```bash
 bash scripts/refresh_all.sh
@@ -219,27 +261,97 @@ Run unit tests using pytest:
 pytest
 ```
 
-This will discover and run tests from the `tests/` directory. Test coverage reports can also be generated if `pytest-cov` is configured.
+Test core functionality:
 
-## (References)
+```bash
+# Test imports
+python -c "import streamlit, duckdb, pandas, plotly, aiohttp; print('✅ All core libraries imported successfully!')"
 
-  * The official Knesset OData service description can be found in `docs/KnessetOdataManual.pdf`.
+# Test database
+PYTHONPATH="./src" python -m backend.fetch_table --sql "SHOW TABLES;"
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues and Solutions
+
+**1. ModuleNotFoundError: No module named 'utils'**
+```bash
+# Ensure PYTHONPATH is set when running CLI commands
+PYTHONPATH="./src" python -m backend.fetch_table --help
+```
+
+**2. DuckDB compilation errors**
+```bash
+# Use pre-built wheels only
+pip install --only-binary=duckdb duckdb==0.10.3
+```
+
+**3. Database connection/serialization errors**
+```bash
+# Remove old database files and fetch fresh data
+rm -rf data/warehouse.duckdb data/parquet/ data/.resume_state.json
+PYTHONPATH="./src" python -m backend.fetch_table --all
+```
+
+**4. Timestamp conversion errors**
+```bash
+# If you get "timestamp field value out of range" errors, the data may need cleaning
+# This typically happens after version upgrades - re-fetch the problematic tables
+```
+
+**5. Missing tables after download**
+```bash
+# Some large tables may fail during bulk download. Fetch them individually:
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
+```
+
+## 📊 Available Data Tables
+
+The system downloads and manages these core tables:
+
+* **KNS_Person** - Members of Knesset (MKs) personal information
+* **KNS_Faction** - Political parties and factions
+* **KNS_PersonToPosition** - Links people to their positions and factions *(Critical)*
+* **KNS_Query** - Parliamentary questions and queries *(Critical)*
+* **KNS_Agenda** - Parliamentary agenda items
+* **KNS_Committee** - Committee information
+* **KNS_CommitteeSession** - Committee meeting records
+* **KNS_GovMinistry** - Government ministries
+* **KNS_Status** - Various status codes
+* **KNS_PlenumSession** - Plenary session records
+* **KNS_KnessetDates** - Knesset terms and dates
+* **KNS_Bill** - Bills and legislation
+* **KNS_Law** - Laws and legal documents
+* **KNS_IsraelLaw** - Israeli law references
+* **UserFactionCoalitionStatus** - Manual coalition/opposition tracking
+
+## 📋 System Requirements
+
+* **Python:** 3.12.10 (specific version required)
+* **Memory:** 4GB+ RAM recommended for large table processing
+* **Storage:** 2GB+ free space for database and parquet files
+* **Network:** Stable internet connection for API data fetching
 
 ## 🔮 Future Roadmap
 
-  * Enhanced data visualization modules within the Streamlit UI.
-  * Scheduling automatic data refreshes.
-  * User authentication and role-based access for the UI.
-  * Integration of additional relevant parliamentary datasets.
+* Enhanced data visualization modules within the Streamlit UI
+* Scheduling automatic data refreshes
+* User authentication and role-based access for the UI
+* Integration of additional relevant parliamentary datasets
+* Performance optimizations for large dataset handling
 
-## 🤝 Contributing
-
-Contributions are welcome\! Please feel free to submit issues or pull requests to enhance the project's functionality and usability.
 
 ## 📄 License
 
-(Specify your project's license here, e.g., MIT, Apache 2.0. If not specified, consider adding one.)
 
------
+
+## 📚 References
+
+* The official Knesset OData service description can be found in `docs/KnessetOdataManual.pdf`.
+* Knesset OData API: `http://knesset.gov.il/Odata/ParliamentInfo.svc`
+
+---
 
 This project aims to continually improve data transparency and accessibility for parliamentary research and analytics.
