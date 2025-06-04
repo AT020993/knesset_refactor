@@ -1336,3 +1336,203 @@ def plot_agendas_by_coalition_and_status(
     finally:
         if con:
             con.close()
+
+
+def plot_coalition_timeline_gantt(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+):
+    """Coalition periods and government changes over time."""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_coalition_timeline_gantt.")
+        return None
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["UserFactionCoalitionStatus"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = """
+            SELECT
+                FactionName,
+                DateJoinedCoalition AS StartDate,
+                COALESCE(DateLeftCoalition, CURRENT_DATE) AS EndDate,
+                CoalitionStatus
+            FROM UserFactionCoalitionStatus
+            WHERE DateJoinedCoalition IS NOT NULL
+            ORDER BY DateJoinedCoalition
+        """
+
+        logger_obj.debug(
+            f"Executing SQL for plot_coalition_timeline_gantt: {sql_query}"
+        )
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info("No coalition timeline data found.")
+            logger_obj.info("No data for plot_coalition_timeline_gantt.")
+            return None
+
+        df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
+        df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+
+        fig = px.timeline(
+            df,
+            x_start="StartDate",
+            x_end="EndDate",
+            y="FactionName",
+            color="CoalitionStatus",
+            title="<b>Coalition Participation Timeline</b>",
+            color_discrete_map=COALITION_OPPOSITION_COLORS,
+        )
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(title_x=0.5)
+        return fig
+    except Exception as e:
+        logger_obj.error(
+            f"Error generating 'plot_coalition_timeline_gantt': {e}",
+            exc_info=True,
+        )
+        st.error(f"Could not generate 'Coalition Timeline' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
+
+def plot_mk_tenure_gantt(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    person_filter: list | None = None,
+):
+    """MK service periods across Knessets."""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_mk_tenure_gantt.")
+        return None
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Person", "KNS_PersonToPosition"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = """
+            SELECT
+                p.FirstName || ' ' || p.LastName AS MKName,
+                p2p.StartDate AS StartDate,
+                COALESCE(p2p.FinishDate, CURRENT_DATE) AS EndDate,
+                p2p.KnessetNum
+            FROM KNS_PersonToPosition p2p
+            JOIN KNS_Person p ON p2p.PersonID = p.PersonID
+            WHERE p2p.StartDate IS NOT NULL
+        """
+        if person_filter:
+            placeholders = ", ".join(map(str, person_filter))
+            sql_query += f" AND p2p.PersonID IN ({placeholders})"
+        sql_query += " ORDER BY MKName, StartDate"
+
+        logger_obj.debug(f"Executing SQL for plot_mk_tenure_gantt: {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info("No MK tenure data found.")
+            logger_obj.info("No data for plot_mk_tenure_gantt.")
+            return None
+
+        df["KnessetNum"] = df["KnessetNum"].astype(str)
+
+        fig = px.timeline(
+            df,
+            x_start="StartDate",
+            x_end="EndDate",
+            y="MKName",
+            color="KnessetNum",
+            title="<b>MK Tenure Timeline</b>",
+            color_discrete_sequence=KNESSET_COLOR_SEQUENCE,
+        )
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(title_x=0.5)
+        return fig
+    except Exception as e:
+        logger_obj.error(
+            f"Error generating 'plot_mk_tenure_gantt': {e}",
+            exc_info=True,
+        )
+        st.error(f"Could not generate 'MK Tenure Timeline' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
+
+def plot_ministry_leadership_timeline(
+    db_path: Path,
+    connect_func: callable,
+    logger_obj: logging.Logger,
+    ministry_filter: list | None = None,
+):
+    """Ministers and their tenure periods."""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_ministry_leadership_timeline.")
+        return None
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Person", "KNS_PersonToPosition", "KNS_GovMinistry"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = """
+            SELECT
+                m.Name AS MinistryName,
+                p.FirstName || ' ' || p.LastName AS MinisterName,
+                p2p.StartDate AS StartDate,
+                COALESCE(p2p.FinishDate, CURRENT_DATE) AS EndDate
+            FROM KNS_PersonToPosition p2p
+            JOIN KNS_Person p ON p2p.PersonID = p.PersonID
+            JOIN KNS_GovMinistry m ON p2p.GovMinistryID = m.GovMinistryID
+            WHERE p2p.GovMinistryID IS NOT NULL
+        """
+        if ministry_filter:
+            placeholders = ", ".join(map(str, ministry_filter))
+            sql_query += f" AND p2p.GovMinistryID IN ({placeholders})"
+        sql_query += " ORDER BY MinistryName, StartDate"
+
+        logger_obj.debug(
+            f"Executing SQL for plot_ministry_leadership_timeline: {sql_query}"
+        )
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info("No ministry leadership data found.")
+            logger_obj.info("No data for plot_ministry_leadership_timeline.")
+            return None
+
+        fig = px.timeline(
+            df,
+            x_start="StartDate",
+            x_end="EndDate",
+            y="MinisterName",
+            color="MinistryName",
+            title="<b>Ministry Leadership Timeline</b>",
+            color_discrete_sequence=KNESSET_COLOR_SEQUENCE,
+        )
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(title_x=0.5)
+        return fig
+    except Exception as e:
+        logger_obj.error(
+            f"Error generating 'plot_ministry_leadership_timeline': {e}",
+            exc_info=True,
+        )
+        st.error(f"Could not generate 'Ministry Leadership Timeline' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
