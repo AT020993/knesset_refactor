@@ -228,6 +228,8 @@ AVAILABLE_PLOTS_BY_TOPIC = {
         "Queries per Faction (Single Knesset)": pg.plot_queries_per_faction_in_knesset,
         "Queries by Coalition & Answer Status (Single Knesset)": pg.plot_queries_by_coalition_and_answer_status,
         "Query Performance by Ministry (Single Knesset)": pg.plot_queries_by_ministry_and_status,
+        "Query Response Times (Single Knesset)": pg.plot_query_response_times,
+        "Ministry Workload Hierarchy (Single Knesset)": pg.plot_ministry_workload_sunburst,
     },
     "Agendas": {
         "Agenda Items by Time Period": pg.plot_agendas_by_time_period,
@@ -235,6 +237,10 @@ AVAILABLE_PLOTS_BY_TOPIC = {
         "Agenda Item Status Distribution (Single Knesset)": pg.plot_agenda_status_distribution,
         "Agendas per Faction (Single Knesset)": pg.plot_agendas_per_faction_in_knesset,
         "Agendas by Coalition & Status (Single Knesset)": pg.plot_agendas_by_coalition_and_status,
+    },
+    "Advanced Analytics": {
+        "Parliamentary Activity Heatmap (Single Knesset)": pg.plot_parliamentary_activity_heatmap,
+        "MK Collaboration Network (Single Knesset)": pg.plot_mk_collaboration_network,
     }
 }
 

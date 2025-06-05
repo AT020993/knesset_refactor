@@ -195,6 +195,404 @@ def plot_queries_by_time_period(
         if con:
             con.close()
 
+def plot_parliamentary_activity_heatmap(db_path, connect_func, logger_obj, **kwargs):
+    """Calendar heatmap showing daily parliamentary activity intensity"""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_parliamentary_activity_heatmap.")
+        return None
+
+    knesset_filter = kwargs.get('knesset_filter')
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset to view the 'Parliamentary Activity Heatmap'.")
+        logger_obj.info("plot_parliamentary_activity_heatmap requires a single Knesset filter.")
+        return None
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_Agenda"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = f"""
+        WITH DailyActivity AS (
+            SELECT 
+                CAST(q.SubmitDate AS DATE) AS ActivityDate,
+                'Query' AS ActivityType,
+                COUNT(*) AS ActivityCount
+            FROM KNS_Query q
+            WHERE q.KnessetNum = {single_knesset_num} 
+                AND q.SubmitDate IS NOT NULL
+            GROUP BY CAST(q.SubmitDate AS DATE)
+            
+            UNION ALL
+            
+            SELECT 
+                CAST(COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) AS DATE) AS ActivityDate,
+                'Agenda' AS ActivityType,
+                COUNT(*) AS ActivityCount
+            FROM KNS_Agenda a
+            WHERE a.KnessetNum = {single_knesset_num} 
+                AND COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) IS NOT NULL
+            GROUP BY CAST(COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate) AS DATE)
+        ),
+        AggregatedActivity AS (
+            SELECT 
+                ActivityDate,
+                SUM(ActivityCount) AS TotalActivity,
+                MAX(CASE WHEN ActivityType = 'Query' THEN ActivityCount ELSE 0 END) AS QueryCount,
+                MAX(CASE WHEN ActivityType = 'Agenda' THEN ActivityCount ELSE 0 END) AS AgendaCount
+            FROM DailyActivity
+            WHERE ActivityDate >= DATE '2000-01-01' 
+                AND ActivityDate <= CURRENT_DATE
+            GROUP BY ActivityDate
+        )
+        SELECT 
+            ActivityDate,
+            TotalActivity,
+            QueryCount,
+            AgendaCount,
+            strftime('%Y', ActivityDate) AS Year,
+            strftime('%m', ActivityDate) AS Month,
+            strftime('%d', ActivityDate) AS Day,
+            strftime('%w', ActivityDate) AS Weekday
+        FROM AggregatedActivity
+        ORDER BY ActivityDate
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_parliamentary_activity_heatmap (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No activity data found for Knesset {single_knesset_num}.")
+            logger_obj.info(f"No data for 'Parliamentary Activity Heatmap' plot for Knesset {single_knesset_num}.")
+            return None
+
+        df['ActivityDate'] = pd.to_datetime(df['ActivityDate'])
+        df['Year'] = df['Year'].astype(int)
+        df['Month'] = df['Month'].astype(int)
+        df['Day'] = df['Day'].astype(int)
+        df['Weekday'] = df['Weekday'].astype(int)
+        df['TotalActivity'] = pd.to_numeric(df['TotalActivity'], errors='coerce').fillna(0)
+
+        # Create month-year for grouping
+        df['MonthYear'] = df['ActivityDate'].dt.to_period('M').astype(str)
+        
+        # Create day of week labels
+        weekday_labels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+        df['WeekdayName'] = df['Weekday'].map(lambda x: weekday_labels[x])
+
+        fig = px.density_heatmap(df,
+                                x='MonthYear',
+                                y='WeekdayName',
+                                z='TotalActivity',
+                                title=f"<b>Daily Parliamentary Activity Intensity (Knesset {single_knesset_num})</b>",
+                                labels={'MonthYear': 'Month-Year', 
+                                       'WeekdayName': 'Day of Week',
+                                       'TotalActivity': 'Total Activity Count'},
+                                color_continuous_scale='Viridis',
+                                hover_data=['QueryCount', 'AgendaCount']
+                                )
+
+        fig.update_traces(
+            hovertemplate="<b>Period:</b> %{x}<br>" +
+                          "<b>Day:</b> %{y}<br>" +
+                          "<b>Total Activity:</b> %{z}<br>" +
+                          "<b>Queries:</b> %{customdata[0]}<br>" +
+                          "<b>Agenda Items:</b> %{customdata[1]}<extra></extra>"
+        )
+
+        fig.update_layout(
+            title_x=0.5,
+            xaxis_title="Month-Year",
+            yaxis_title="Day of Week",
+            height=500,
+            xaxis_tickangle=-45
+        )
+
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_parliamentary_activity_heatmap': {e}", exc_info=True)
+        st.error(f"Could not generate 'Parliamentary Activity Heatmap' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
+def plot_ministry_workload_sunburst(db_path, connect_func, logger_obj, **kwargs):
+    """Hierarchical view: Ministry -> Query Type -> Status"""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_ministry_workload_sunburst.")
+        return None
+
+    knesset_filter = kwargs.get('knesset_filter')
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset to view the 'Ministry Workload Sunburst'.")
+        logger_obj.info("plot_ministry_workload_sunburst requires a single Knesset filter.")
+        return None
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_GovMinistry", "KNS_Status"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        answer_status_case_sql = """
+            CASE
+                WHEN s.Desc LIKE '%נענתה%' AND s.Desc NOT LIKE '%לא נענתה%' THEN 'Answered'
+                WHEN s.Desc LIKE '%לא נענתה%' THEN 'Not Answered'
+                WHEN s.Desc LIKE '%הועברה%' THEN 'In Progress'
+                WHEN s.Desc LIKE '%בטיפול%' THEN 'In Progress'
+                WHEN s.Desc LIKE '%נדחתה%' THEN 'Rejected'
+                WHEN s.Desc LIKE '%הוסרה%' THEN 'Removed'
+                ELSE 'Other'
+            END AS AnswerStatus
+        """
+
+        sql_query = f"""
+        SELECT 
+            COALESCE(m.Name, 'Unknown Ministry') AS MinistryName,
+            COALESCE(q.TypeDesc, 'Unknown Type') AS QueryType,
+            {answer_status_case_sql},
+            COUNT(q.QueryID) AS QueryCount
+        FROM KNS_Query q
+        LEFT JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+        JOIN KNS_Status s ON q.StatusID = s.StatusID
+        WHERE q.KnessetNum = {single_knesset_num}
+        GROUP BY MinistryName, QueryType, AnswerStatus
+        HAVING QueryCount > 0
+        ORDER BY MinistryName, QueryType, AnswerStatus
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_ministry_workload_sunburst (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No ministry workload data found for Knesset {single_knesset_num}.")
+            logger_obj.info(f"No data for 'Ministry Workload Sunburst' plot for Knesset {single_knesset_num}.")
+            return None
+
+        df['QueryCount'] = pd.to_numeric(df['QueryCount'], errors='coerce').fillna(0)
+
+        # Create hierarchical structure for sunburst
+        df['ids'] = df['MinistryName'] + ' / ' + df['QueryType'] + ' / ' + df['AnswerStatus']
+        df['parents'] = df['MinistryName'] + ' / ' + df['QueryType']
+        df['labels'] = df['AnswerStatus']
+        
+        # Add intermediate levels
+        ministry_df = df.groupby('MinistryName')['QueryCount'].sum().reset_index()
+        ministry_df['ids'] = ministry_df['MinistryName']
+        ministry_df['parents'] = ''
+        ministry_df['labels'] = ministry_df['MinistryName']
+        
+        type_df = df.groupby(['MinistryName', 'QueryType'])['QueryCount'].sum().reset_index()
+        type_df['ids'] = type_df['MinistryName'] + ' / ' + type_df['QueryType']
+        type_df['parents'] = type_df['MinistryName']
+        type_df['labels'] = type_df['QueryType']
+
+        # Combine all levels
+        sunburst_df = pd.concat([
+            ministry_df[['ids', 'parents', 'labels', 'QueryCount']],
+            type_df[['ids', 'parents', 'labels', 'QueryCount']],
+            df[['ids', 'parents', 'labels', 'QueryCount']]
+        ], ignore_index=True)
+
+        fig = px.sunburst(sunburst_df,
+                         ids='ids',
+                         parents='parents',
+                         values='QueryCount',
+                         names='labels',
+                         title=f"<b>Ministry Workload Hierarchy (Knesset {single_knesset_num})</b>",
+                         color='QueryCount',
+                         color_continuous_scale='Viridis',
+                         maxdepth=3
+                         )
+
+        fig.update_traces(
+            hovertemplate="<b>%{label}</b><br>" +
+                          "<b>Query Count:</b> %{value}<br>" +
+                          "<b>Percentage:</b> %{percentParent}<extra></extra>"
+        )
+
+        fig.update_layout(
+            title_x=0.5,
+            height=700,
+            font_size=10
+        )
+
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_ministry_workload_sunburst': {e}", exc_info=True)
+        st.error(f"Could not generate 'Ministry Workload Sunburst' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
+def plot_mk_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
+    """Network graph of MKs based on co-participation patterns"""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_mk_collaboration_network.")
+        return None
+
+    knesset_filter = kwargs.get('knesset_filter')
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset to view the 'MK Collaboration Network'.")
+        logger_obj.info("plot_mk_collaboration_network requires a single Knesset filter.")
+        return None
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "KNS_GovMinistry"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        # Find MKs who frequently submit queries to the same ministries
+        sql_query = f"""
+        WITH MKMinistryActivity AS (
+            SELECT 
+                p.PersonID,
+                p.FirstName || ' ' || p.LastName AS MKName,
+                COALESCE(p2p.FactionName, 'Unknown') AS FactionName,
+                q.GovMinistryID,
+                m.Name AS MinistryName,
+                COUNT(q.QueryID) AS QueryCount
+            FROM KNS_Query q
+            JOIN KNS_Person p ON q.PersonID = p.PersonID
+            LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+                AND q.KnessetNum = p2p.KnessetNum
+                AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) 
+                AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+            WHERE q.KnessetNum = {single_knesset_num}
+                AND q.GovMinistryID IS NOT NULL
+            GROUP BY p.PersonID, MKName, FactionName, q.GovMinistryID, MinistryName
+            HAVING QueryCount >= 2
+        ),
+        MKPairs AS (
+            SELECT 
+                mk1.PersonID AS MK1_ID,
+                mk1.MKName AS MK1_Name,
+                mk1.FactionName AS MK1_Faction,
+                mk2.PersonID AS MK2_ID,
+                mk2.MKName AS MK2_Name,
+                mk2.FactionName AS MK2_Faction,
+                COUNT(DISTINCT mk1.GovMinistryID) AS SharedMinistries,
+                SUM(mk1.QueryCount + mk2.QueryCount) AS TotalQueries
+            FROM MKMinistryActivity mk1
+            JOIN MKMinistryActivity mk2 ON mk1.GovMinistryID = mk2.GovMinistryID
+                AND mk1.PersonID < mk2.PersonID
+            GROUP BY mk1.PersonID, mk1.MKName, mk1.FactionName, 
+                     mk2.PersonID, mk2.MKName, mk2.FactionName
+            HAVING SharedMinistries >= 2
+        )
+        SELECT *
+        FROM MKPairs
+        ORDER BY SharedMinistries DESC, TotalQueries DESC
+        LIMIT 50
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_mk_collaboration_network (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No collaboration patterns found for Knesset {single_knesset_num}.")
+            logger_obj.info(f"No data for 'MK Collaboration Network' plot for Knesset {single_knesset_num}.")
+            return None
+
+        # Get unique MKs for nodes
+        mk1_df = df[['MK1_ID', 'MK1_Name', 'MK1_Faction']].rename(columns={
+            'MK1_ID': 'PersonID', 'MK1_Name': 'MKName', 'MK1_Faction': 'FactionName'
+        })
+        mk2_df = df[['MK2_ID', 'MK2_Name', 'MK2_Faction']].rename(columns={
+            'MK2_ID': 'PersonID', 'MK2_Name': 'MKName', 'MK2_Faction': 'FactionName'
+        })
+        nodes_df = pd.concat([mk1_df, mk2_df]).drop_duplicates(subset=['PersonID'])
+
+        # Create a simple network visualization using scatter plot
+        # Since Plotly doesn't have built-in network graphs, we'll simulate it
+        
+        # Position nodes in a circle
+        import math
+        n_nodes = len(nodes_df)
+        nodes_df = nodes_df.reset_index(drop=True)
+        nodes_df['x'] = [math.cos(2 * math.pi * i / n_nodes) for i in range(n_nodes)]
+        nodes_df['y'] = [math.sin(2 * math.pi * i / n_nodes) for i in range(n_nodes)]
+        
+        # Create edge traces
+        edge_x = []
+        edge_y = []
+        edge_info = []
+        
+        for _, row in df.iterrows():
+            mk1_pos = nodes_df[nodes_df['PersonID'] == row['MK1_ID']].iloc[0]
+            mk2_pos = nodes_df[nodes_df['PersonID'] == row['MK2_ID']].iloc[0]
+            
+            edge_x.extend([mk1_pos['x'], mk2_pos['x'], None])
+            edge_y.extend([mk1_pos['y'], mk2_pos['y'], None])
+            edge_info.append(f"{row['MK1_Name']} - {row['MK2_Name']}: {row['SharedMinistries']} shared ministries")
+
+        # Create the plot
+        fig = go.Figure()
+
+        # Add edges
+        fig.add_trace(go.Scatter(x=edge_x, y=edge_y,
+                                line=dict(width=1, color='lightblue'),
+                                hoverinfo='none',
+                                mode='lines',
+                                showlegend=False))
+
+        # Add nodes
+        faction_colors = {faction: color for faction, color in 
+                         zip(nodes_df['FactionName'].unique(), 
+                             px.colors.qualitative.Plotly[:len(nodes_df['FactionName'].unique())])}
+
+        for faction in nodes_df['FactionName'].unique():
+            faction_nodes = nodes_df[nodes_df['FactionName'] == faction]
+            fig.add_trace(go.Scatter(x=faction_nodes['x'], y=faction_nodes['y'],
+                                    mode='markers+text',
+                                    marker=dict(size=10, color=faction_colors[faction]),
+                                    text=faction_nodes['MKName'],
+                                    textposition="middle center",
+                                    textfont=dict(size=8),
+                                    name=faction,
+                                    hovertemplate="<b>%{text}</b><br>" +
+                                                 f"<b>Faction:</b> {faction}<extra></extra>"))
+
+        fig.update_layout(
+            title=f"<b>MK Collaboration Network (Knesset {single_knesset_num})</b>",
+            title_x=0.5,
+            showlegend=True,
+            height=700,
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            annotations=[
+                dict(text="Connections represent MKs who submit queries to the same ministries",
+                     showarrow=False, xref="paper", yref="paper",
+                     x=0.5, y=-0.1, xanchor='center', yanchor='top')
+            ]
+        )
+
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_mk_collaboration_network': {e}", exc_info=True)
+        st.error(f"Could not generate 'MK Collaboration Network' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
 def plot_query_types_distribution(
     db_path: Path,
     connect_func: callable,
@@ -1532,6 +1930,135 @@ def plot_ministry_leadership_timeline(
             exc_info=True,
         )
         st.error(f"Could not generate 'Ministry Leadership Timeline' plot: {e}")
+        return None
+    finally:
+        if con:
+            con.close()
+
+def plot_query_response_times(db_path, connect_func, logger_obj, **kwargs):
+    """Box plot showing query response times by ministry/faction"""
+    if not db_path.exists():
+        st.error("Database not found. Cannot generate visualization.")
+        logger_obj.error("Database not found for plot_query_response_times.")
+        return None
+
+    knesset_filter = kwargs.get('knesset_filter')
+    faction_filter = kwargs.get('faction_filter')
+    
+    if not knesset_filter or len(knesset_filter) != 1:
+        st.info("Please select a single Knesset to view the 'Query Response Times' plot.")
+        logger_obj.info("plot_query_response_times requires a single Knesset filter.")
+        return None
+    single_knesset_num = knesset_filter[0]
+
+    try:
+        con = connect_func(read_only=True)
+        required_tables = ["KNS_Query", "KNS_GovMinistry", "KNS_Person", "KNS_PersonToPosition", "UserFactionCoalitionStatus"]
+        if not check_tables_exist(con, required_tables, logger_obj):
+            return None
+
+        sql_query = f"""
+        WITH QueryResponseData AS (
+            SELECT
+                q.QueryID,
+                q.SubmitDate,
+                q.ReplyMinisterDate,
+                DATEDIFF('day', CAST(q.SubmitDate AS DATE), CAST(q.ReplyMinisterDate AS DATE)) AS ResponseDays,
+                m.Name AS MinistryName,
+                COALESCE(p2p.FactionName, 'Unknown Faction') AS FactionName,
+                COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                q.TypeDesc AS QueryType
+            FROM KNS_Query q
+            LEFT JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+            JOIN KNS_Person p ON q.PersonID = p.PersonID
+            LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+                AND q.KnessetNum = p2p.KnessetNum
+                AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) 
+                AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+            LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID 
+                AND q.KnessetNum = ufs.KnessetNum
+            WHERE q.KnessetNum = {single_knesset_num}
+                AND q.SubmitDate IS NOT NULL
+                AND q.ReplyMinisterDate IS NOT NULL
+                AND CAST(q.SubmitDate AS DATE) <= CAST(q.ReplyMinisterDate AS DATE)
+        """
+        
+        if faction_filter:
+            valid_faction_ids = [int(fid) for fid in faction_filter if str(fid).isdigit()]
+            if valid_faction_ids:
+                sql_query += f" AND p2p.FactionID IN ({','.join(map(str, valid_faction_ids))})"
+        
+        sql_query += """
+        )
+        SELECT *
+        FROM QueryResponseData
+        WHERE ResponseDays >= 0 AND ResponseDays <= 365
+        ORDER BY ResponseDays
+        """
+
+        logger_obj.debug(f"Executing SQL for plot_query_response_times (Knesset {single_knesset_num}): {sql_query}")
+        df = con.sql(sql_query).df()
+
+        if df.empty:
+            st.info(f"No query response time data found for Knesset {single_knesset_num} with the current filters.")
+            logger_obj.info(f"No data for 'Query Response Times' plot for Knesset {single_knesset_num}.")
+            return None
+
+        df["ResponseDays"] = pd.to_numeric(df["ResponseDays"], errors='coerce')
+        df = df.dropna(subset=["ResponseDays"])
+        
+        if df.empty:
+            st.info(f"No valid response time data found for Knesset {single_knesset_num}.")
+            return None
+
+        df["MinistryName"] = df["MinistryName"].fillna("Unknown Ministry")
+        df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+        df["QueryType"] = df["QueryType"].fillna("Unknown Type")
+
+        fig = px.box(df,
+                     x="MinistryName",
+                     y="ResponseDays",
+                     color="CoalitionStatus",
+                     title=f"<b>Query Response Times by Ministry (Knesset {single_knesset_num})</b>",
+                     labels={"MinistryName": "Ministry", 
+                             "ResponseDays": "Response Time (Days)",
+                             "CoalitionStatus": "Submitter Status"},
+                     color_discrete_map=COALITION_OPPOSITION_COLORS,
+                     hover_data={"QueryType": True, "FactionName": True}
+                     )
+
+        fig.update_traces(
+            hovertemplate="<b>Ministry:</b> %{x}<br>" +
+                          "<b>Response Days:</b> %{y}<br>" +
+                          "<b>Submitter Status:</b> %{fullData.name}<br>" +
+                          "<b>Query Type:</b> %{customdata[0]}<br>" +
+                          "<b>Faction:</b> %{customdata[1]}<extra></extra>"
+        )
+
+        fig.update_layout(
+            xaxis_title="Ministry",
+            yaxis_title="Response Time (Days)",
+            legend_title_text='Submitter Coalition Status',
+            title_x=0.5,
+            xaxis_tickangle=-45,
+            height=600
+        )
+        
+        avg_response_time = df["ResponseDays"].mean()
+        if pd.notna(avg_response_time):
+            fig.add_hline(y=avg_response_time,
+                          line_dash="dash",
+                          line_color="red",
+                          annotation_text=f"Avg Response Time: {avg_response_time:.1f} days",
+                          annotation_position="top right",
+                          annotation_font_size=10,
+                          annotation_font_color="red")
+
+        return fig
+
+    except Exception as e:
+        logger_obj.error(f"Error generating 'plot_query_response_times': {e}", exc_info=True)
+        st.error(f"Could not generate 'Query Response Times' plot: {e}")
         return None
     finally:
         if con:
