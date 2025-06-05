@@ -40,12 +40,17 @@ A comprehensive platform designed to fetch, store, analyze, and visualize parlia
 * **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries directly against the DuckDB database.
 * **Data Export:** Download results from predefined queries and the table explorer in CSV and Excel formats.
 * **Table Update Status:** Displays the last updated timestamp for each table in the database.
-* **Predefined Visualizations:**
-    * Select and view various predefined plots and charts based on the Knesset data (e.g., queries per year, distribution of query types, agenda classifications).
-    * Interactive engagement with charts powered by Plotly.
+* **Comprehensive Visualizations:**
+    * **Predefined Charts:** Over 15 ready-to-use visualizations covering queries, agendas, and advanced analytics
+    * **Query Analytics:** Response times by ministry, coalition status analysis, performance metrics
+    * **Parliamentary Activity:** Calendar heatmaps showing daily activity intensity patterns
+    * **Network Analysis:** MK collaboration networks based on shared ministry focus
+    * **Hierarchical Views:** Sunburst charts for ministry workload breakdown by query type and status
+    * **Timeline Analysis:** Coalition periods, MK tenure, and ministry leadership timelines
+    * Interactive engagement with all charts powered by Plotly
 * **Interactive Chart Builder:**
-    * Dynamically construct custom visualizations (bar charts, scatter plots, etc.) directly from the data tables.
-    * Users can select tables, columns for axes, color encodings, and faceting to explore data patterns.
+    * Dynamically construct custom visualizations (bar charts, scatter plots, etc.) directly from the data tables
+    * Users can select tables, columns for axes, color encodings, and faceting to explore data patterns
 
 ### Command-Line Interface (CLI)
 * **Backend CLI (`src/backend/fetch_table.py`):**
@@ -212,6 +217,7 @@ Access the UI via the local URL provided by Streamlit (typically `http://localho
 * **Refresh OData tables** and faction statuses
 * **Explore tables** with dynamic filters
 * **Run predefined analytical queries** with real parliamentary data
+* **Explore 15+ predefined visualizations** covering query analytics, parliamentary activity patterns, and collaboration networks
 * **Create custom visualizations** using the interactive chart builder
 * **Execute custom SQL** queries against the database
 * **Download data** in CSV or Excel format
@@ -334,13 +340,40 @@ The system downloads and manages these core tables:
 * **Storage:** 2GB+ free space for database and parquet files
 * **Network:** Stable internet connection for API data fetching
 
+## 📊 Available Visualizations
+
+The platform includes 15+ predefined visualizations organized into three categories:
+
+### Query Analytics
+* **Queries by Time Period** - Track submission patterns over time
+* **Query Types Distribution** - Breakdown by query type (regular, urgent, direct)
+* **Response Times Analysis** - Box plots showing ministry response times by coalition status
+* **Faction Status Analysis** - Query patterns by coalition/opposition membership
+* **Ministry Performance** - Query distribution and reply rates by ministry
+* **Ministry Workload Hierarchy** - Sunburst view of ministry → query type → status
+
+### Agenda Analytics  
+* **Agenda Items by Time Period** - Track agenda activity over time
+* **Classification Distribution** - Pie charts of agenda item classifications
+* **Status Distribution** - Current status of agenda items
+* **Faction Activity** - Agenda items by initiating faction
+* **Coalition Impact** - Agenda success rates by coalition/opposition status
+
+### Advanced Analytics
+* **Parliamentary Activity Heatmap** - Calendar view of daily activity intensity
+* **MK Collaboration Network** - Network graph showing MKs with shared ministry focus
+* **Coalition Timeline** - Gantt chart of coalition participation periods
+* **MK Tenure Timeline** - Service periods across Knessets
+* **Ministry Leadership** - Minister appointment timelines
+
 ## 🔮 Future Roadmap
 
-* Enhanced data visualization modules within the Streamlit UI
+* Advanced statistical analysis modules
 * Scheduling automatic data refreshes
 * User authentication and role-based access for the UI
 * Integration of additional relevant parliamentary datasets
 * Performance optimizations for large dataset handling
+* Export functionality for visualization reports
 
 
 ## 📄 License

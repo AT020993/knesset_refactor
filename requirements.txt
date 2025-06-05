@@ -8,7 +8,7 @@ streamlit==1.44.1
 openpyxl==3.1.5
 pyarrow==19.0.1
 fastparquet==2024.11.0
-plotly>=5.0.0 # Added Plotly for visualizations
+plotly>=5.0.0 # Interactive visualizations (charts, graphs, heatmaps, sunburst, network)
 
 # testing / CI
 pytest==8.3.5
