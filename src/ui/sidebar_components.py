@@ -28,6 +28,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 # Assuming these are accessible from the new location
 from backend.fetch_table import TABLES  # type: ignore
 import backend.fetch_table as ft  # type: ignore
+from backend.connection_manager import get_db_connection, safe_execute_query
 # Assuming _connect, get_db_table_list, get_filter_options_from_db, faction_display_map,
 # EXPORTS, DB_PATH, _format_exc, ui_logger are defined in data_refresh or a shared ui_utils
 # For now, we'll pass them as arguments or assume they are accessible via st.session_state or globally if not refactored out.
@@ -165,14 +166,15 @@ def _handle_run_query_button_click(
             ui_logger.info(
                 f"Executing predefined query: {st.session_state.selected_query_name} with SQL:\n{modified_sql}"
             )
-            con = connect_func(read_only=True)
-            st.session_state.query_results_df = con.sql(modified_sql).df()
-            st.session_state.executed_query_name = st.session_state.selected_query_name
-            st.session_state.show_query_results = True
-            st.session_state.show_table_explorer_results = False # Ensure explorer is hidden
-            st.session_state.applied_filters_info_query = applied_filters_info
-            st.session_state.last_executed_sql = modified_sql
-            st.toast(f"✅ Query '{st.session_state.executed_query_name}' executed.", icon="📊")
+            
+            with get_db_connection(db_path, read_only=True, logger_obj=ui_logger) as con:
+                st.session_state.query_results_df = safe_execute_query(con, modified_sql, ui_logger)
+                st.session_state.executed_query_name = st.session_state.selected_query_name
+                st.session_state.show_query_results = True
+                st.session_state.show_table_explorer_results = False # Ensure explorer is hidden
+                st.session_state.applied_filters_info_query = applied_filters_info
+                st.session_state.last_executed_sql = modified_sql
+                st.toast(f"✅ Query '{st.session_state.executed_query_name}' executed.", icon="📊")
         except Exception as e:
             ui_logger.error(f"Error executing query '{st.session_state.selected_query_name}': {e}", exc_info=True)
             ui_logger.error(f"Failed SQL for '{st.session_state.selected_query_name}':\n{modified_sql if 'modified_sql' in locals() else base_sql}")
@@ -198,8 +200,6 @@ def _handle_explore_table_button_click(
     if st.session_state.selected_table_for_explorer and db_path.exists():
         table_to_explore = st.session_state.selected_table_for_explorer
         try:
-            con = connect_func(read_only=True)
-            
             all_table_cols, _, _ = get_table_columns_func(table_to_explore)
             
             db_tables_list_lower = [t.lower() for t in get_db_table_list_func()]
@@ -267,11 +267,13 @@ def _handle_explore_table_button_click(
             final_query += " LIMIT 1000"
 
             ui_logger.info(f"Exploring table '{table_to_explore}' with SQL: {final_query}")
-            st.session_state.table_explorer_df = con.sql(final_query).df()
-            st.session_state.executed_table_explorer_name = table_to_explore
-            st.session_state.show_table_explorer_results = True
-            st.session_state.show_query_results = False # Ensure query results are hidden
-            st.toast(f"🔍 Explored table: {table_to_explore}", icon="📖")
+            
+            with get_db_connection(db_path, read_only=True, logger_obj=ui_logger) as con:
+                st.session_state.table_explorer_df = safe_execute_query(con, final_query, ui_logger)
+                st.session_state.executed_table_explorer_name = table_to_explore
+                st.session_state.show_table_explorer_results = True
+                st.session_state.show_query_results = False # Ensure query results are hidden
+                st.toast(f"🔍 Explored table: {table_to_explore}", icon="📖")
         except Exception as e:
             ui_logger.error(f"Error exploring table '{table_to_explore}': {e}", exc_info=True)
             st.error(f"Error exploring table '{table_to_explore}': {e}")

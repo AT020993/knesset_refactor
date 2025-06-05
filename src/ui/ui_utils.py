@@ -18,6 +18,9 @@ _SRC_DIR = _CURRENT_FILE_DIR.parent
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
+# Import connection manager for safe database handling
+from backend.connection_manager import get_db_connection, safe_execute_query, cached_query_with_connection
+
 # --- Database Connection and Utility Functions ---
 # REMOVED @st.cache_resource(ttl=300) - This was causing issues with closed connections being reused.
 # Each function will now get a fresh connection and manage its lifecycle.
@@ -58,21 +61,16 @@ def get_db_table_list(db_path: Path, _logger_obj: logging.Logger | None = None) 
         if _logger_obj: _logger_obj.warning("Database file not found. Returning empty table list.")
         return []
     
-    con = None
     try:
-        con = connect_db(db_path, read_only=True, _logger_obj=_logger_obj)
-        tables_df = safe_execute_query(con, "SHOW TABLES;", _logger_obj=_logger_obj)
-        table_list = sorted(tables_df["name"].tolist()) if not tables_df.empty else []
-        if _logger_obj: _logger_obj.info(f"Database table list fetched: {len(table_list)} tables.")
-        return table_list
+        with get_db_connection(db_path, read_only=True, logger_obj=_logger_obj) as con:
+            tables_df = safe_execute_query(con, "SHOW TABLES;", _logger_obj)
+            table_list = sorted(tables_df["name"].tolist()) if not tables_df.empty else []
+            if _logger_obj: _logger_obj.info(f"Database table list fetched: {len(table_list)} tables.")
+            return table_list
     except Exception as e:
         if _logger_obj: _logger_obj.error(f"Error in get_db_table_list: {e}", exc_info=True)
         st.sidebar.error(f"DB error listing tables: {e}", icon="🔥") 
         return []
-    finally:
-        if con:
-            con.close()
-            if _logger_obj: _logger_obj.debug("Connection closed in get_db_table_list.")
 
 
 @st.cache_data(ttl=3600)
@@ -81,32 +79,27 @@ def get_table_columns(db_path: Path, table_name: str, _logger_obj: logging.Logge
     if not table_name or not db_path.exists():
         return [], [], []
     
-    con = None
     try:
-        con = connect_db(db_path, read_only=True, _logger_obj=_logger_obj)
-        columns_df = safe_execute_query(con, f"PRAGMA table_info('{table_name}');", _logger_obj=_logger_obj)
+        with get_db_connection(db_path, read_only=True, logger_obj=_logger_obj) as con:
+            columns_df = safe_execute_query(con, f"PRAGMA table_info('{table_name}');", _logger_obj)
 
-        if columns_df.empty:
-            return [], [], []
+            if columns_df.empty:
+                return [], [], []
 
-        all_cols = columns_df["name"].tolist()
-        numeric_cols = columns_df[
-            columns_df["type"].str.contains(
-                "INTEGER|FLOAT|DOUBLE|DECIMAL|NUMERIC|BIGINT|SMALLINT|TINYINT|REAL|NUMBER",
-                case=False,
-                na=False,
-            )
-        ]["name"].tolist()
-        categorical_cols = [col for col in all_cols if col not in numeric_cols]
-        if _logger_obj: _logger_obj.debug(f"Fetched columns for table '{table_name}': All({len(all_cols)}), Num({len(numeric_cols)}), Cat({len(categorical_cols)})")
-        return all_cols, numeric_cols, categorical_cols
+            all_cols = columns_df["name"].tolist()
+            numeric_cols = columns_df[
+                columns_df["type"].str.contains(
+                    "INTEGER|FLOAT|DOUBLE|DECIMAL|NUMERIC|BIGINT|SMALLINT|TINYINT|REAL|NUMBER",
+                    case=False,
+                    na=False,
+                )
+            ]["name"].tolist()
+            categorical_cols = [col for col in all_cols if col not in numeric_cols]
+            if _logger_obj: _logger_obj.debug(f"Fetched columns for table '{table_name}': All({len(all_cols)}), Num({len(numeric_cols)}), Cat({len(categorical_cols)})")
+            return all_cols, numeric_cols, categorical_cols
     except Exception as e:
         if _logger_obj: _logger_obj.error(f"Error getting columns for table {table_name}: {e}", exc_info=True)
         return [], [], []
-    finally:
-        if con:
-            con.close()
-            if _logger_obj: _logger_obj.debug(f"Connection closed in get_table_columns for table {table_name}.")
 
 
 @st.cache_data(ttl=3600)
@@ -117,41 +110,35 @@ def get_filter_options_from_db(db_path: Path, _logger_obj: logging.Logger | None
         if _logger_obj: _logger_obj.warning("Database file not found. Returning empty filter options.")
         return [], pd.DataFrame(columns=["FactionName", "FactionID", "KnessetNum"])
     
-    con = None
     try:
-        con = connect_db(db_path, read_only=True, _logger_obj=_logger_obj) 
-        knesset_nums_df = safe_execute_query(con, "SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC;", _logger_obj)
-        knesset_nums_options = sorted(knesset_nums_df["KnessetNum"].unique().tolist(), reverse=True) if not knesset_nums_df.empty else []
+        with get_db_connection(db_path, read_only=True, logger_obj=_logger_obj) as con:
+            knesset_nums_df = safe_execute_query(con, "SELECT DISTINCT KnessetNum FROM KNS_KnessetDates ORDER BY KnessetNum DESC;", _logger_obj)
+            knesset_nums_options = sorted(knesset_nums_df["KnessetNum"].unique().tolist(), reverse=True) if not knesset_nums_df.empty else []
 
-        db_tables_df = safe_execute_query(con, "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';", _logger_obj)
-        db_tables_list = db_tables_df["table_name"].str.lower().tolist() if not db_tables_df.empty else []
+            db_tables_df = safe_execute_query(con, "SELECT table_name FROM duckdb_tables() WHERE schema_name='main';", _logger_obj)
+            db_tables_list = db_tables_df["table_name"].str.lower().tolist() if not db_tables_df.empty else []
 
+            factions_query = ""
+            if "userfactioncoalitionstatus" in db_tables_list and "kns_faction" in db_tables_list:
+                factions_query = """
+                    SELECT DISTINCT COALESCE(ufcs.FactionName, kf.Name) AS FactionName, kf.FactionID, kf.KnessetNum
+                    FROM KNS_Faction AS kf
+                    LEFT JOIN UserFactionCoalitionStatus AS ufcs ON kf.FactionID = ufcs.FactionID AND kf.KnessetNum = ufcs.KnessetNum
+                    ORDER BY FactionName;
+                """
+            elif "kns_faction" in db_tables_list:
+                if _logger_obj: _logger_obj.info("UserFactionCoalitionStatus table not found, fetching faction names from KNS_Faction.")
+                factions_query = "SELECT DISTINCT Name AS FactionName, FactionID, KnessetNum FROM KNS_Faction ORDER BY FactionName;"
+            else:
+                if _logger_obj: _logger_obj.warning("KNS_Faction table not found. Cannot fetch faction filter options.")
+                return knesset_nums_options, pd.DataFrame(columns=["FactionName", "FactionID", "KnessetNum"])
 
-        factions_query = ""
-        if "userfactioncoalitionstatus" in db_tables_list and "kns_faction" in db_tables_list:
-            factions_query = """
-                SELECT DISTINCT COALESCE(ufcs.FactionName, kf.Name) AS FactionName, kf.FactionID, kf.KnessetNum
-                FROM KNS_Faction AS kf
-                LEFT JOIN UserFactionCoalitionStatus AS ufcs ON kf.FactionID = ufcs.FactionID AND kf.KnessetNum = ufcs.KnessetNum
-                ORDER BY FactionName;
-            """
-        elif "kns_faction" in db_tables_list:
-            if _logger_obj: _logger_obj.info("UserFactionCoalitionStatus table not found, fetching faction names from KNS_Faction.")
-            factions_query = "SELECT DISTINCT Name AS FactionName, FactionID, KnessetNum FROM KNS_Faction ORDER BY FactionName;"
-        else:
-            if _logger_obj: _logger_obj.warning("KNS_Faction table not found. Cannot fetch faction filter options.")
-            return knesset_nums_options, pd.DataFrame(columns=["FactionName", "FactionID", "KnessetNum"])
-
-        factions_df = safe_execute_query(con, factions_query, _logger_obj)
-        if _logger_obj: _logger_obj.info(f"Filter options fetched: {len(knesset_nums_options)} Knesset Nums, {len(factions_df)} Factions.")
-        return knesset_nums_options, factions_df
+            factions_df = safe_execute_query(con, factions_query, _logger_obj)
+            if _logger_obj: _logger_obj.info(f"Filter options fetched: {len(knesset_nums_options)} Knesset Nums, {len(factions_df)} Factions.")
+            return knesset_nums_options, factions_df
     except Exception as e:
         if _logger_obj: _logger_obj.error(f"Error in get_filter_options_from_db: {e}", exc_info=True)
         return [], pd.DataFrame(columns=["FactionName", "FactionID", "KnessetNum"])
-    finally:
-        if con:
-            con.close()
-            if _logger_obj: _logger_obj.debug("Connection closed in get_filter_options_from_db.")
 
 
 def format_exception_for_ui(exc_info=None):
