@@ -24,7 +24,7 @@ from src.ui.plot_generators import (
     # plot_members_by_age_group,
     # Keep other existing, correctly named plot functions from your actual plot_generators.py
     plot_agenda_classifications_pie,
-    plot_queries_by_faction_status,
+    plot_query_status_by_faction,
     plot_agenda_status_distribution,
     plot_queries_per_faction_in_knesset,
     plot_queries_by_coalition_and_answer_status,
@@ -232,28 +232,26 @@ class TestPlotAgendasByTimePeriod:
 # Add more tests for other plot functions, ensuring to use updated names and logic for single Knesset selection
 # For example, for plot_queries_by_faction_status:
 
-class TestPlotQueriesByFactionStatus:
-    @mock.patch('src.ui.plot_generators.px.bar')
+class TestPlotQueryStatusByFaction:
+    @mock.patch('src.ui.plot_generators.go.Figure')
     @mock.patch('src.ui.plot_generators.check_tables_exist')
-    def test_success_single_knesset(self, mock_check_tables_exist, mock_px_bar, mock_db_path, mock_connect_func, mock_logger, mock_conn):
+    def test_success_single_knesset(self, mock_check_tables_exist, mock_go_figure, mock_db_path, mock_connect_func, mock_logger, mock_conn):
         mock_check_tables_exist.return_value = True
         sample_data = pd.DataFrame({
+            'StatusDescription': ['נענתה', 'לא נענתה'],
             'FactionName': ['Likud', 'Yesh Atid'],
-            'CoalitionStatus': ['Coalition', 'Opposition'],
             'QueryCount': [100, 80]
         })
         mock_conn.sql.return_value.df.return_value = sample_data
-        mock_px_bar.return_value = go.Figure()
+        mock_go_figure.return_value = go.Figure()
 
-        fig = plot_queries_by_faction_status(mock_db_path, mock_connect_func, mock_logger, knesset_filter=[25])
+        fig = plot_query_status_by_faction(mock_db_path, mock_connect_func, mock_logger, knesset_filter=[25])
 
         assert isinstance(fig, go.Figure)
-        mock_px_bar.assert_called_once()
-        call_args = mock_px_bar.call_args[1]
-        assert 'Queries by Faction (Coalition/Opposition Status) for Knesset 25' in call_args['title']
+        mock_go_figure.assert_called_once()
         st_mock.error.assert_not_called()
 
     def test_requires_single_knesset(self, mock_db_path, mock_connect_func, mock_logger):
-        fig = plot_queries_by_faction_status(mock_db_path, mock_connect_func, mock_logger, knesset_filter=[24, 25])
+        fig = plot_query_status_by_faction(mock_db_path, mock_connect_func, mock_logger, knesset_filter=[24, 25])
         assert fig is None
         st_mock.info.assert_called_once() # Check specific message if needed

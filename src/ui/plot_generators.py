@@ -948,7 +948,7 @@ def plot_agenda_classifications_pie(
         if con:
             con.close()
 
-def plot_queries_by_faction_status(
+def plot_query_status_by_faction(
     db_path: Path,
     connect_func: callable,
     logger_obj: logging.Logger,
@@ -958,21 +958,22 @@ def plot_queries_by_faction_status(
     end_date: str | None = None
 ):
     """
-    Generates a bar chart of queries submitted by factions, colored by their coalition/opposition status,
-    for a single specified Knesset. Can be filtered by date range using start_date and end_date.
+    Generates a sunburst chart showing query status descriptions as the outer ring 
+    with faction breakdowns as inner segments for a single specified Knesset.
+    Can be filtered by date range using start_date and end_date.
     
     Args:
         start_date: Optional start date in YYYY-MM-DD format
         end_date: Optional end date in YYYY-MM-DD format
     """
     if not db_path.exists():
-        st.error("Database not found. Cannot generate 'Queries by Faction Status' visualization.")
-        logger_obj.error("Database not found for plot_queries_by_faction_status.")
+        st.error("Database not found. Cannot generate 'Query Status by Faction' visualization.")
+        logger_obj.error("Database not found for plot_query_status_by_faction.")
         return None
 
     if not knesset_filter or len(knesset_filter) != 1:
-        st.info("Please select a single Knesset to view the 'Queries by Faction (Coalition/Opposition Status)' plot.")
-        logger_obj.info("plot_queries_by_faction_status requires a single Knesset filter.")
+        st.info("Please select a single Knesset to view the 'Query Status by Faction' plot.")
+        logger_obj.info("plot_query_status_by_faction requires a single Knesset filter.")
         return None
     single_knesset_num = knesset_filter[0]
 
@@ -982,10 +983,9 @@ def plot_queries_by_faction_status(
         logger_obj.error(f"Invalid date range: start_date={start_date}, end_date={end_date}")
         return None
 
-
     try:
         con = connect_func(read_only=True)
-        required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "UserFactionCoalitionStatus", "KNS_Faction"]
+        required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "KNS_Status", "KNS_Faction"]
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
 
@@ -1000,55 +1000,87 @@ def plot_queries_by_faction_status(
         if date_filter_sql:
             date_filter_sql = f" AND {date_filter_sql}"
 
-        cte_sql = f"""
-        WITH QueryFactionInfo AS (
+        # Create faction filter SQL
+        faction_filter_sql = ""
+        if faction_filter:
+            faction_filter_sql = f" AND p2p.FactionID IN ({', '.join(map(str, faction_filter))})"
+
+        sql_query = f"""
+        WITH QueryStatusFactionInfo AS (
             SELECT
                 q.QueryID,
+                COALESCE(s.Desc, 'Unknown Status') AS StatusDescription,
                 COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
                 p2p.FactionID
             FROM KNS_Query q
             JOIN KNS_Person p ON q.PersonID = p.PersonID
+            LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
             LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                 AND q.KnessetNum = p2p.KnessetNum
                 AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
             LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = f_fallback.KnessetNum
             WHERE q.KnessetNum = {single_knesset_num} AND q.SubmitDate IS NOT NULL AND p2p.FactionID IS NOT NULL
-            {'AND p2p.FactionID IN (' + ', '.join(map(str, faction_filter)) + ')' if faction_filter else ''}{date_filter_sql}
+            {faction_filter_sql}{date_filter_sql}
         )
-        """
-        sql_query = cte_sql + f"""
         SELECT
-            qfi.FactionName,
-            COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
-            COUNT(DISTINCT qfi.QueryID) AS QueryCount
-        FROM QueryFactionInfo qfi
-        LEFT JOIN UserFactionCoalitionStatus ufs ON qfi.FactionID = ufs.FactionID AND ufs.KnessetNum = {single_knesset_num}
+            qsfi.StatusDescription,
+            qsfi.FactionName,
+            COUNT(DISTINCT qsfi.QueryID) AS QueryCount
+        FROM QueryStatusFactionInfo qsfi
         GROUP BY
-            qfi.FactionName,
-            ufs.CoalitionStatus
+            qsfi.StatusDescription,
+            qsfi.FactionName
         HAVING QueryCount > 0
         ORDER BY
-            QueryCount DESC, qfi.FactionName;
+            qsfi.StatusDescription, QueryCount DESC;
         """
 
         # Log date filter application
         date_filter_info = ""
         if start_date or end_date:
             date_filter_info = f" with date filter: {start_date or 'None'} to {end_date or 'None'}"
-        logger_obj.debug(f"Executing SQL for plot_queries_by_faction_status (Knesset {single_knesset_num}){date_filter_info}: {sql_query}")
+        logger_obj.debug(f"Executing SQL for plot_query_status_by_faction (Knesset {single_knesset_num}){date_filter_info}: {sql_query}")
         df = con.sql(sql_query).df()
 
         if df.empty:
-            st.info(f"No query data for Knesset {single_knesset_num} to visualize 'Queries by Faction Status' with the current filters.")
-            logger_obj.info(f"No data for 'Queries by Faction Status' plot (Knesset {single_knesset_num}).")
+            st.info(f"No query data for Knesset {single_knesset_num} to visualize 'Query Status by Faction' with the current filters.")
+            logger_obj.info(f"No data for 'Query Status by Faction' plot (Knesset {single_knesset_num}).")
             return None
 
         df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors='coerce').fillna(0)
+        df["StatusDescription"] = df["StatusDescription"].fillna("Unknown Status")
         df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
-        df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+
+        # Prepare data for sunburst chart
+        # Create hierarchical structure: Status -> Faction
+        ids = []
+        labels = []
+        parents = []
+        values = []
+        
+        # Add status-level entries (top level)
+        status_totals = df.groupby('StatusDescription')['QueryCount'].sum().reset_index()
+        for _, row in status_totals.iterrows():
+            status = row['StatusDescription']
+            ids.append(status)
+            labels.append(f"{status}<br>({row['QueryCount']} queries)")
+            parents.append("")
+            values.append(row['QueryCount'])
+        
+        # Add faction-level entries (nested under status)
+        for _, row in df.iterrows():
+            status = row['StatusDescription']
+            faction = row['FactionName']
+            count = row['QueryCount']
+            
+            faction_id = f"{status} - {faction}"
+            ids.append(faction_id)
+            labels.append(f"{faction}<br>({count} queries)")
+            parents.append(status)
+            values.append(count)
 
         # Build title with date range if applicable
-        title = f"<b>Queries by Faction (Coalition/Opposition Status) for Knesset {single_knesset_num}</b>"
+        title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}</b>"
         if start_date or end_date:
             date_range_text = ""
             if start_date and end_date:
@@ -1057,35 +1089,31 @@ def plot_queries_by_faction_status(
                 date_range_text = f" (from {start_date})"
             elif end_date:
                 date_range_text = f" (until {end_date})"
-            title = f"<b>Queries by Faction (Coalition/Opposition Status) for Knesset {single_knesset_num}{date_range_text}</b>"
+            title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
 
-        fig = px.bar(df,
-                     x="FactionName",
-                     y="QueryCount",
-                     color="CoalitionStatus",
-                     title=title,
-                     labels={"FactionName": "Faction", "QueryCount": "Number of Queries",
-                             "CoalitionStatus": "Status"},
-                     color_discrete_map=COALITION_OPPOSITION_COLORS,
-                     hover_name="FactionName",
-                     custom_data=["CoalitionStatus", "QueryCount"] 
-                     )
-        fig.update_traces(
-            hovertemplate="<b>Faction:</b> %{x}<br>" +
-                          "<b>Status:</b> %{customdata[0]}<br>" +
-                          "<b>Query Count:</b> %{customdata[1]}<extra></extra>"
-        )
+        # Create sunburst chart
+        fig = go.Figure(go.Sunburst(
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values,
+            branchvalues="total",
+            hovertemplate="<b>%{label}</b><br>Queries: %{value}<br>Percentage: %{percentParent}<extra></extra>",
+            maxdepth=2,
+        ))
 
-        fig.update_xaxes(categoryorder="total descending", tickangle=-45)
         fig.update_layout(
-            legend_title_text='Coalition Status',
-            title_x=0.5
+            title=title,
+            title_x=0.5,
+            font_size=12,
+            margin=dict(t=50, l=0, r=0, b=0)
         )
+        
         return fig
 
     except Exception as e:
-        logger_obj.error(f"Error generating 'plot_queries_by_faction_status' for Knesset {single_knesset_num}: {e}", exc_info=True)
-        st.error(f"Could not generate 'Queries by Faction Status' plot: {e}")
+        logger_obj.error(f"Error generating 'plot_query_status_by_faction' for Knesset {single_knesset_num}: {e}", exc_info=True)
+        st.error(f"Could not generate 'Query Status by Faction' plot: {e}")
         return None
     finally:
         if con:

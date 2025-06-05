@@ -120,7 +120,7 @@ SELECT
     Q.Name AS QueryName,
     Q.TypeID AS QueryTypeID,
     Q.TypeDesc AS QueryTypeDesc,
-    S.Desc AS QueryStatusDesc,
+    S."Desc" AS QueryStatusDesc,
     P.FirstName AS MKFirstName,
     P.LastName AS MKLastName,
     P.GenderDesc AS MKGender,
@@ -192,7 +192,7 @@ SELECT
     A.Name AS AgendaName, -- This is the main name/title of the agenda item
     A.Name AS AgendaDescription, -- Using A.Name as AgendaDescription as KNS_Agenda.Desc does not exist
     A.ClassificationDesc AS AgendaClassification,
-    S.Desc AS AgendaStatus,
+    S."Desc" AS AgendaStatus,
     INIT_P.FirstName AS InitiatorFirstName,
     INIT_P.LastName AS InitiatorLastName,
     INIT_P.GenderDesc AS InitiatorGender,
@@ -224,7 +224,7 @@ AVAILABLE_PLOTS_BY_TOPIC = {
     "Queries": {
         "Queries by Time Period": pg.plot_queries_by_time_period,
         "Distribution of Query Types (Single Knesset)": pg.plot_query_types_distribution,
-        "Queries by Faction Status (Single Knesset)": pg.plot_queries_by_faction_status,
+        "Query Status Description with Faction Breakdown (Single Knesset)": pg.plot_query_status_by_faction,
         "Queries per Faction (Single Knesset)": pg.plot_queries_per_faction_in_knesset,
         "Queries by Coalition & Answer Status (Single Knesset)": pg.plot_queries_by_coalition_and_answer_status,
         "Query Performance by Ministry (Single Knesset)": pg.plot_queries_by_ministry_and_status,
@@ -523,7 +523,7 @@ else:
             final_knesset_filter_for_plot = False
 
         # Add date picker controls for specific plots
-        if selected_plot_name_for_display == "Queries by Faction Status (Single Knesset)":
+        if selected_plot_name_for_display == "Query Status Description with Faction Breakdown (Single Knesset)":
             st.markdown("**Optional Date Range Filter:**")
             col_start_date, col_end_date = st.columns(2)
             with col_start_date:
@@ -555,7 +555,7 @@ else:
             if selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]:
                 plot_args["aggregation_level"] = aggregation_level_for_plot
                 plot_args["show_average_line"] = show_average_line_for_plot
-            elif selected_plot_name_for_display == "Queries by Faction Status (Single Knesset)":
+            elif selected_plot_name_for_display == "Query Status Description with Faction Breakdown (Single Knesset)":
                 # Convert dates to string format if they exist
                 start_date_str = st.session_state.plot_start_date.strftime('%Y-%m-%d') if st.session_state.plot_start_date else None
                 end_date_str = st.session_state.plot_end_date.strftime('%Y-%m-%d') if st.session_state.plot_end_date else None
