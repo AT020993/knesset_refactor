@@ -42,11 +42,12 @@ A comprehensive platform designed to fetch, store, analyze, and visualize parlia
 * **Table Update Status:** Displays the last updated timestamp for each table in the database.
 * **Comprehensive Visualizations:**
     * **Predefined Charts:** Over 15 ready-to-use visualizations covering queries, agendas, and advanced analytics
-    * **Query Analytics:** Response times by ministry, coalition status analysis, performance metrics
+    * **Query Analytics:** Response times by ministry, coalition status analysis with optional date range filtering, performance metrics
     * **Parliamentary Activity:** Calendar heatmaps showing daily activity intensity patterns
     * **Network Analysis:** MK collaboration networks based on shared ministry focus
     * **Hierarchical Views:** Sunburst charts for ministry workload breakdown by query type and status
     * **Timeline Analysis:** Coalition periods, MK tenure, and ministry leadership timelines
+    * **Temporal Filtering:** Date range controls for analyzing specific time periods in faction query patterns
     * Interactive engagement with all charts powered by Plotly
 * **Interactive Chart Builder:**
     * Dynamically construct custom visualizations (bar charts, scatter plots, etc.) directly from the data tables
@@ -106,23 +107,23 @@ knesset_refactor/
 
 ## 🛠️ Technologies Used
 
-* **Python 3.12.10** (Required)
-* **DuckDB:** For the data warehouse
-* **Pandas:** For data manipulation
+* **Python 3.12+** (Required)
+* **DuckDB 1.2.2:** For the data warehouse
+* **Pandas 2.2.3:** For data manipulation
 * **Parquet:** For efficient columnar storage
-* **Streamlit:** For the user interface
-* **aiohttp & backoff:** For robust asynchronous HTTP requests
-* **OpenPyXL:** For Excel export functionality
-* **Plotly:** For generating interactive data visualizations
-* **Pytest:** For unit testing
-* **tqdm:** For progress bar visualization during data fetching
-* **Typer:** For `src/cli.py`
+* **Streamlit 1.44.1:** For the user interface
+* **aiohttp 3.9.4 & backoff 2.2.1:** For robust asynchronous HTTP requests
+* **OpenPyXL 3.1.5:** For Excel export functionality
+* **Plotly 5.0+:** For generating interactive data visualizations
+* **Pytest 8.3.5:** For unit testing
+* **tqdm 4.66.1:** For progress bar visualization during data fetching
+* **Typer 0.12+:** For `src/cli.py`
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-* **Python 3.12.10** (Required - specific version needed for compatibility)
+* **Python 3.12+** (Required)
 * Git
 
 ### Installation
@@ -151,29 +152,14 @@ knesset_refactor/
     source .venv/bin/activate
     ```
 
-4. **Upgrade pip and install dependencies:**
+4. **Install dependencies:**
 
     ```bash
     pip install --upgrade pip
-    
-    # Install core dependencies with specific working versions
-    pip install aiohttp==3.9.1 pandas==2.1.4 streamlit==1.29.0 plotly==5.17.0 tqdm==4.66.1 backoff==2.2.1 pyarrow==14.0.2 fastparquet==2023.10.1 openpyxl==3.1.2 typer==0.9.0 pytest==7.4.3
-    
-    # Install DuckDB (use pre-built wheels only to avoid compilation issues)
-    pip install --only-binary=duckdb duckdb==0.10.3
+    pip install -r requirements.txt
     ```
 
-5. **Create required package files:**
-
-    ```bash
-    # Create __init__.py files for proper module imports
-    touch src/__init__.py
-    touch src/utils/__init__.py
-    touch src/backend/__init__.py
-    touch src/ui/__init__.py
-    ```
-
-6. **(Optional but Recommended) Create Faction Status CSV:**
+5. **(Optional but Recommended) Create Faction Status CSV:**
     Create a file named `faction_coalition_status.csv` in the `data/` directory. This file is used to track the coalition/opposition status of factions.
     
     **Structure for `data/faction_coalition_status.csv`:**
@@ -287,10 +273,11 @@ PYTHONPATH="./src" python -m backend.fetch_table --sql "SHOW TABLES;"
 PYTHONPATH="./src" python -m backend.fetch_table --help
 ```
 
-**2. DuckDB compilation errors**
+**2. Installation issues**
 ```bash
-# Use pre-built wheels only
-pip install --only-binary=duckdb duckdb==0.10.3
+# Ensure you're using the correct requirements
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
 **3. Database connection/serialization errors**
@@ -335,7 +322,7 @@ The system downloads and manages these core tables:
 
 ## 📋 System Requirements
 
-* **Python:** 3.12.10 (specific version required)
+* **Python:** 3.12+ (required)
 * **Memory:** 4GB+ RAM recommended for large table processing
 * **Storage:** 2GB+ free space for database and parquet files
 * **Network:** Stable internet connection for API data fetching
@@ -348,7 +335,7 @@ The platform includes 15+ predefined visualizations organized into three categor
 * **Queries by Time Period** - Track submission patterns over time
 * **Query Types Distribution** - Breakdown by query type (regular, urgent, direct)
 * **Response Times Analysis** - Box plots showing ministry response times by coalition status
-* **Faction Status Analysis** - Query patterns by coalition/opposition membership
+* **Faction Status Analysis** - Query patterns by coalition/opposition membership with optional date range filtering
 * **Ministry Performance** - Query distribution and reply rates by ministry
 * **Ministry Workload Hierarchy** - Sunburst view of ministry → query type → status
 

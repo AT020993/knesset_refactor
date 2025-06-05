@@ -272,6 +272,8 @@ if "generated_plot_figure" not in st.session_state: st.session_state.generated_p
 if "plot_main_knesset_selection" not in st.session_state: st.session_state.plot_main_knesset_selection = ""
 if "plot_aggregation_level" not in st.session_state: st.session_state.plot_aggregation_level = "Yearly"
 if "plot_show_average_line" not in st.session_state: st.session_state.plot_show_average_line = False
+if "plot_start_date" not in st.session_state: st.session_state.plot_start_date = None
+if "plot_end_date" not in st.session_state: st.session_state.plot_end_date = None
 
 if "builder_selected_table" not in st.session_state: st.session_state.builder_selected_table = None
 if "builder_selected_table_previous_run" not in st.session_state: st.session_state.builder_selected_table_previous_run = None
@@ -399,6 +401,8 @@ else:
         st.session_state.plot_main_knesset_selection = "" 
         st.session_state.plot_aggregation_level = "Yearly" 
         st.session_state.plot_show_average_line = False
+        st.session_state.plot_start_date = None
+        st.session_state.plot_end_date = None
         st.rerun()
 
     selected_plot_name_for_display = ""
@@ -419,6 +423,8 @@ else:
             st.session_state.selected_plot_name_from_topic = selected_chart_widget
             st.session_state.plot_aggregation_level = "Yearly" 
             st.session_state.plot_show_average_line = False
+            st.session_state.plot_start_date = None
+            st.session_state.plot_end_date = None
             st.rerun()
         selected_plot_name_for_display = st.session_state.selected_plot_name_from_topic
 
@@ -516,6 +522,24 @@ else:
                  st.info(f"Please select a Knesset for the '{selected_plot_name_for_display}' plot.")
             final_knesset_filter_for_plot = False
 
+        # Add date picker controls for specific plots
+        if selected_plot_name_for_display == "Queries by Faction Status (Single Knesset)":
+            st.markdown("**Optional Date Range Filter:**")
+            col_start_date, col_end_date = st.columns(2)
+            with col_start_date:
+                st.session_state.plot_start_date = st.date_input(
+                    "Start Date (optional)",
+                    value=st.session_state.get("plot_start_date"),
+                    key=f"start_date_{selected_plot_name_for_display.replace(' ', '_')}",
+                    help="Filter queries from this date onwards"
+                )
+            with col_end_date:
+                st.session_state.plot_end_date = st.date_input(
+                    "End Date (optional)",
+                    value=st.session_state.get("plot_end_date"),
+                    key=f"end_date_{selected_plot_name_for_display.replace(' ', '_')}",
+                    help="Filter queries up to this date"
+                )
 
         can_generate_plot = selected_plot_name_for_display and (final_knesset_filter_for_plot is not False)
 
@@ -531,6 +555,12 @@ else:
             if selected_plot_name_for_display in ["Queries by Time Period", "Agenda Items by Time Period"]:
                 plot_args["aggregation_level"] = aggregation_level_for_plot
                 plot_args["show_average_line"] = show_average_line_for_plot
+            elif selected_plot_name_for_display == "Queries by Faction Status (Single Knesset)":
+                # Convert dates to string format if they exist
+                start_date_str = st.session_state.plot_start_date.strftime('%Y-%m-%d') if st.session_state.plot_start_date else None
+                end_date_str = st.session_state.plot_end_date.strftime('%Y-%m-%d') if st.session_state.plot_end_date else None
+                plot_args["start_date"] = start_date_str
+                plot_args["end_date"] = end_date_str
 
             with st.spinner(f"Generating '{selected_plot_name_for_display}'..."):
                 try:

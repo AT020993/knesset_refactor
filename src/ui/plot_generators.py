@@ -953,11 +953,17 @@ def plot_queries_by_faction_status(
     connect_func: callable,
     logger_obj: logging.Logger,
     knesset_filter: list | None = None, 
-    faction_filter: list | None = None
+    faction_filter: list | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None
 ):
     """
     Generates a bar chart of queries submitted by factions, colored by their coalition/opposition status,
-    for a single specified Knesset.
+    for a single specified Knesset. Can be filtered by date range using start_date and end_date.
+    
+    Args:
+        start_date: Optional start date in YYYY-MM-DD format
+        end_date: Optional end date in YYYY-MM-DD format
     """
     if not db_path.exists():
         st.error("Database not found. Cannot generate 'Queries by Faction Status' visualization.")
@@ -970,12 +976,29 @@ def plot_queries_by_faction_status(
         return None
     single_knesset_num = knesset_filter[0]
 
+    # Date validation
+    if start_date and end_date and start_date > end_date:
+        st.error("Start date must be before or equal to end date.")
+        logger_obj.error(f"Invalid date range: start_date={start_date}, end_date={end_date}")
+        return None
+
 
     try:
         con = connect_func(read_only=True)
         required_tables = ["KNS_Query", "KNS_Person", "KNS_PersonToPosition", "UserFactionCoalitionStatus", "KNS_Faction"]
         if not check_tables_exist(con, required_tables, logger_obj):
             return None
+
+        # Build date filtering conditions
+        date_conditions = []
+        if start_date:
+            date_conditions.append(f"CAST(q.SubmitDate AS DATE) >= '{start_date}'")
+        if end_date:
+            date_conditions.append(f"CAST(q.SubmitDate AS DATE) <= '{end_date}'")
+        
+        date_filter_sql = " AND ".join(date_conditions)
+        if date_filter_sql:
+            date_filter_sql = f" AND {date_filter_sql}"
 
         cte_sql = f"""
         WITH QueryFactionInfo AS (
@@ -990,7 +1013,7 @@ def plot_queries_by_faction_status(
                 AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
             LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = f_fallback.KnessetNum
             WHERE q.KnessetNum = {single_knesset_num} AND q.SubmitDate IS NOT NULL AND p2p.FactionID IS NOT NULL
-            {'AND p2p.FactionID IN (' + ', '.join(map(str, faction_filter)) + ')' if faction_filter else ''}
+            {'AND p2p.FactionID IN (' + ', '.join(map(str, faction_filter)) + ')' if faction_filter else ''}{date_filter_sql}
         )
         """
         sql_query = cte_sql + f"""
@@ -1008,7 +1031,11 @@ def plot_queries_by_faction_status(
             QueryCount DESC, qfi.FactionName;
         """
 
-        logger_obj.debug(f"Executing SQL for plot_queries_by_faction_status (Knesset {single_knesset_num}): {sql_query}")
+        # Log date filter application
+        date_filter_info = ""
+        if start_date or end_date:
+            date_filter_info = f" with date filter: {start_date or 'None'} to {end_date or 'None'}"
+        logger_obj.debug(f"Executing SQL for plot_queries_by_faction_status (Knesset {single_knesset_num}){date_filter_info}: {sql_query}")
         df = con.sql(sql_query).df()
 
         if df.empty:
@@ -1020,12 +1047,23 @@ def plot_queries_by_faction_status(
         df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
         df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
 
+        # Build title with date range if applicable
+        title = f"<b>Queries by Faction (Coalition/Opposition Status) for Knesset {single_knesset_num}</b>"
+        if start_date or end_date:
+            date_range_text = ""
+            if start_date and end_date:
+                date_range_text = f" ({start_date} to {end_date})"
+            elif start_date:
+                date_range_text = f" (from {start_date})"
+            elif end_date:
+                date_range_text = f" (until {end_date})"
+            title = f"<b>Queries by Faction (Coalition/Opposition Status) for Knesset {single_knesset_num}{date_range_text}</b>"
 
         fig = px.bar(df,
                      x="FactionName",
                      y="QueryCount",
                      color="CoalitionStatus",
-                     title=f"<b>Queries by Faction (Coalition/Opposition Status) for Knesset {single_knesset_num}</b>",
+                     title=title,
                      labels={"FactionName": "Faction", "QueryCount": "Number of Queries",
                              "CoalitionStatus": "Status"},
                      color_discrete_map=COALITION_OPPOSITION_COLORS,
