@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 import json
 import aiohttp
+import time
 from src.backend.fetch_table import (
     fetch_json,
     download_table,
@@ -14,10 +15,20 @@ from src.backend.fetch_table import (
     load_and_store_faction_statuses,
     refresh_tables,
     ensure_latest,
+    categorize_error,
+    CircuitBreaker,
+    ErrorCategory,
+    CircuitBreakerState,
+    _load_resume,
+    _save_resume,
+    _download_sequential,
+    map_mk_site_code,
     TABLES,
     CURSOR_TABLES,
     DEFAULT_DB,
     FACTION_COALITION_STATUS_FILE,
+    RESUME_FILE,
+    PAGE_SIZE,
 )
 
 # adjust this import path to where you put fetch_table.py
@@ -25,6 +36,11 @@ from backend import fetch_table  # this now works because conftest.py prepends s
 
 # Test data
 MOCK_TABLE_DATA = {"value": [{"id": 1, "name": "Test 1"}, {"id": 2, "name": "Test 2"}]}
+MOCK_EMPTY_DATA = {"value": []}
+MOCK_LARGE_TABLE_DATA = {"value": [{"PersonID": i, "Name": f"Person {i}"} for i in range(1, 151)]}
+MOCK_CURSOR_TABLE_DATA = {
+    "value": [{"QueryID": i, "Title": f"Query {i}"} for i in range(1, 51)]
+}
 
 MOCK_FACTION_STATUS_DATA = pd.DataFrame(
     {
@@ -36,6 +52,19 @@ MOCK_FACTION_STATUS_DATA = pd.DataFrame(
         "DateLeftCoalition": [None, None],
     }
 )
+
+# Mock resume state data
+MOCK_RESUME_STATE = {
+    "KNS_Query": {
+        "last_pk": 12345,
+        "total_rows": 1000,
+        "chunk_size": 100,
+        "last_update": time.time()
+    }
+}
+
+# Mock OData count response
+MOCK_COUNT_RESPONSE = "250"
 
 
 @pytest.fixture
@@ -183,3 +212,484 @@ def test_refresh_tables_progress_callback(monkeypatch):
     )
 
     assert calls == [(fetch_table.TABLES[0], 123)]
+
+
+# =============================================================================
+# NEW COMPREHENSIVE TESTS
+# =============================================================================
+
+class TestErrorCategorization:
+    """Test error categorization functionality."""
+    
+    def test_categorize_timeout_error(self):
+        """Test timeout error categorization."""
+        error = asyncio.TimeoutError("Connection timeout")
+        result = categorize_error(error)
+        assert result == ErrorCategory.TIMEOUT
+    
+    def test_categorize_network_error(self):
+        """Test network error categorization."""
+        error = aiohttp.ClientConnectorError(None, OSError("Network unreachable"))
+        result = categorize_error(error)
+        assert result == ErrorCategory.NETWORK
+    
+    def test_categorize_client_error(self):
+        """Test client error categorization."""
+        error = aiohttp.ClientResponseError(
+            request_info=None, history=(), status=404, message="Not Found"
+        )
+        result = categorize_error(error)
+        assert result == ErrorCategory.CLIENT
+    
+    def test_categorize_server_error(self):
+        """Test server error categorization."""
+        error = aiohttp.ClientResponseError(
+            request_info=None, history=(), status=500, message="Internal Server Error"
+        )
+        result = categorize_error(error)
+        assert result == ErrorCategory.SERVER
+    
+    def test_categorize_data_error(self):
+        """Test data error categorization."""
+        error = json.JSONDecodeError("Invalid JSON", "", 0)
+        result = categorize_error(error)
+        assert result == ErrorCategory.DATA
+    
+    def test_categorize_unknown_error(self):
+        """Test unknown error categorization."""
+        error = RuntimeError("Some unknown error")
+        result = categorize_error(error)
+        assert result == ErrorCategory.UNKNOWN
+
+
+class TestCircuitBreaker:
+    """Test circuit breaker functionality."""
+    
+    def test_initial_state(self):
+        """Test circuit breaker initial state."""
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+        assert breaker.can_attempt() == True
+        assert not breaker.is_open()
+        assert breaker.state == CircuitBreakerState.CLOSED
+    
+    def test_failure_recording(self):
+        """Test failure recording behavior."""
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+        
+        # Record failures below threshold
+        for i in range(2):
+            breaker.record_failure()
+            assert breaker.can_attempt() == True
+            assert not breaker.is_open()
+        
+        # Third failure should open circuit
+        breaker.record_failure()
+        assert breaker.is_open() == True
+        assert breaker.can_attempt() == False
+        assert breaker.state == CircuitBreakerState.OPEN
+    
+    def test_success_resets_failures(self):
+        """Test that success resets failure count."""
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+        
+        # Record some failures
+        breaker.record_failure()
+        breaker.record_failure()
+        assert breaker.failure_count == 2
+        
+        # Success should reset
+        breaker.record_success()
+        assert breaker.failure_count == 0
+        assert breaker.state == CircuitBreakerState.CLOSED
+    
+    def test_recovery_timeout(self):
+        """Test circuit breaker recovery after timeout."""
+        breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
+        
+        # Open the circuit
+        breaker.record_failure()
+        breaker.record_failure()
+        assert breaker.is_open() == True
+        assert breaker.can_attempt() == False
+        
+        # Wait for recovery timeout
+        time.sleep(0.2)
+        
+        # Should transition to half-open
+        assert breaker.can_attempt() == True
+        assert breaker.state == CircuitBreakerState.HALF_OPEN
+
+
+class TestResumeState:
+    """Test resume state functionality."""
+    
+    def test_save_and_load_resume_state(self, tmp_path):
+        """Test saving and loading resume state."""
+        # Mock RESUME_FILE path
+        resume_file = tmp_path / "resume_state.json"
+        
+        with mock.patch("src.backend.fetch_table.RESUME_FILE", resume_file):
+            # Save state
+            _save_resume(MOCK_RESUME_STATE)
+            
+            # Verify file exists and has correct content
+            assert resume_file.exists()
+            
+            # Load state
+            loaded_state = _load_resume()
+            
+            # Verify structure (timestamps will be different)
+            assert "KNS_Query" in loaded_state
+            assert loaded_state["KNS_Query"]["last_pk"] == 12345
+            assert loaded_state["KNS_Query"]["total_rows"] == 1000
+    
+    def test_load_resume_nonexistent_file(self, tmp_path):
+        """Test loading resume state when file doesn't exist."""
+        nonexistent_file = tmp_path / "nonexistent.json"
+        
+        with mock.patch("src.backend.fetch_table.RESUME_FILE", nonexistent_file):
+            result = _load_resume()
+            assert result == {}
+    
+    def test_load_resume_corrupted_file(self, tmp_path):
+        """Test loading resume state from corrupted file."""
+        corrupted_file = tmp_path / "corrupted.json"
+        corrupted_file.write_text("invalid json content {")
+        
+        with mock.patch("src.backend.fetch_table.RESUME_FILE", corrupted_file):
+            result = _load_resume()
+            assert result == {}
+    
+    def test_migrate_legacy_resume_format(self, tmp_path):
+        """Test migration from legacy resume format."""
+        legacy_file = tmp_path / "legacy_resume.json"
+        legacy_data = {"KNS_Query": 12345, "KNS_Person": 67890}
+        legacy_file.write_text(json.dumps(legacy_data))
+        
+        with mock.patch("src.backend.fetch_table.RESUME_FILE", legacy_file):
+            result = _load_resume()
+            
+            # Should be migrated to new format
+            assert isinstance(result["KNS_Query"], dict)
+            assert result["KNS_Query"]["last_pk"] == 12345
+            assert result["KNS_Query"]["total_rows"] == 0
+
+
+class TestDownloadTable:
+    """Test comprehensive download_table functionality."""
+    
+    @pytest.mark.asyncio
+    async def test_download_cursor_table_with_resume(self):
+        """Test downloading cursor-paged table with resume functionality."""
+        table_name = "KNS_Query"
+        
+        # Mock the resume state
+        mock_state = {
+            table_name: {"last_pk": 50, "total_rows": 100, "chunk_size": 100}
+        }
+        
+        with mock.patch("src.backend.fetch_table.resume_state", mock_state), \
+             mock.patch("src.backend.fetch_table._save_resume") as mock_save, \
+             mock.patch("aiohttp.ClientSession") as mock_session_class:
+            
+            # Setup mock session
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            mock_response = mock.AsyncMock()
+            mock_response.json.return_value = MOCK_CURSOR_TABLE_DATA
+            mock_response.raise_for_status.return_value = None
+            mock_session.get.return_value.__aenter__.return_value = mock_response
+            
+            # First call returns data, second returns empty (end of data)
+            mock_response.json.side_effect = [MOCK_CURSOR_TABLE_DATA, MOCK_EMPTY_DATA]
+            
+            result = await download_table(table_name)
+            
+            # Verify result
+            assert isinstance(result, pd.DataFrame)
+            assert len(result) == 50  # MOCK_CURSOR_TABLE_DATA has 50 rows
+            
+            # Verify resume state was saved
+            mock_save.assert_called()
+    
+    @pytest.mark.asyncio
+    async def test_download_regular_table_parallel(self):
+        """Test downloading regular table with parallel requests."""
+        table_name = "KNS_Person"  # Not in CURSOR_TABLES
+        
+        with mock.patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            
+            # Mock count request
+            mock_count_response = mock.AsyncMock()
+            mock_count_response.text.return_value = MOCK_COUNT_RESPONSE
+            mock_count_response.raise_for_status.return_value = None
+            
+            # Mock data requests
+            mock_data_response = mock.AsyncMock()
+            mock_data_response.json.return_value = MOCK_TABLE_DATA
+            mock_data_response.raise_for_status.return_value = None
+            
+            # Setup session.get to return appropriate responses
+            async def mock_get(url, **kwargs):
+                if "$count" in url:
+                    return mock_count_response
+                else:
+                    return mock_data_response
+            
+            mock_session.get.side_effect = mock_get
+            
+            result = await download_table(table_name)
+            
+            # Verify result
+            assert isinstance(result, pd.DataFrame)
+            assert len(result) >= 2  # At least the mock data
+    
+    @pytest.mark.asyncio
+    async def test_download_table_empty_result(self):
+        """Test downloading table that returns no data."""
+        table_name = "EmptyTable"
+        
+        with mock.patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            mock_response = mock.AsyncMock()
+            mock_response.json.return_value = MOCK_EMPTY_DATA
+            mock_response.raise_for_status.return_value = None
+            mock_session.get.return_value.__aenter__.return_value = mock_response
+            
+            result = await download_table(table_name)
+            
+            # Should return empty DataFrame
+            assert isinstance(result, pd.DataFrame)
+            assert len(result) == 0
+    
+    @pytest.mark.asyncio
+    async def test_download_table_network_error_with_retries(self):
+        """Test download with network errors that eventually succeed."""
+        table_name = "TestTable"
+        
+        with mock.patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            
+            # First few calls fail, then succeed
+            mock_response_fail = mock.AsyncMock()
+            mock_response_fail.json.side_effect = aiohttp.ClientError("Network error")
+            
+            mock_response_success = mock.AsyncMock()
+            mock_response_success.json.return_value = MOCK_TABLE_DATA
+            mock_response_success.raise_for_status.return_value = None
+            
+            # Setup to fail twice then succeed
+            call_count = 0
+            async def mock_get_with_failures(url, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count <= 2:
+                    return mock_response_fail
+                return mock_response_success
+            
+            mock_session.get.side_effect = mock_get_with_failures
+            
+            # Should eventually succeed due to retries
+            result = await download_table(table_name)
+            assert isinstance(result, pd.DataFrame)
+
+
+class TestSequentialDownload:
+    """Test sequential download fallback."""
+    
+    @pytest.mark.asyncio
+    async def test_sequential_download_success(self):
+        """Test successful sequential download."""
+        entity = "TestTable()"
+        
+        mock_session = mock.AsyncMock()
+        mock_response = mock.AsyncMock()
+        mock_response.json.return_value = MOCK_TABLE_DATA
+        mock_response.raise_for_status.return_value = None
+        mock_session.get.return_value.__aenter__.return_value = mock_response
+        
+        # First call returns data, second returns empty
+        mock_response.json.side_effect = [MOCK_TABLE_DATA, MOCK_EMPTY_DATA]
+        
+        result = await _download_sequential(mock_session, entity)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 2
+    
+    @pytest.mark.asyncio
+    async def test_sequential_download_with_error(self):
+        """Test sequential download with error handling."""
+        entity = "TestTable()"
+        
+        mock_session = mock.AsyncMock()
+        mock_response = mock.AsyncMock()
+        mock_response.json.side_effect = aiohttp.ClientError("Network error")
+        mock_session.get.return_value.__aenter__.return_value = mock_response
+        
+        result = await _download_sequential(mock_session, entity)
+        
+        # Should return empty DataFrame when errors occur
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+
+class TestStoreFunction:
+    """Test data storage functionality."""
+    
+    def test_store_empty_dataframe(self, tmp_path):
+        """Test storing empty DataFrame."""
+        db_path = tmp_path / "test.db"
+        empty_df = pd.DataFrame()
+        
+        # Should not create file for empty DataFrame
+        store(empty_df, "EmptyTable", db_path)
+        assert not db_path.exists()
+    
+    def test_store_with_error_handling(self, tmp_path):
+        """Test store function error handling."""
+        # Create a directory where DB file should be to cause error
+        db_path = tmp_path / "test.db"
+        db_path.mkdir()  # This will cause DuckDB connection to fail
+        
+        df = pd.DataFrame(MOCK_TABLE_DATA["value"])
+        
+        # Should handle error gracefully
+        store(df, "TestTable", db_path)
+        # No exception should be raised
+    
+    def test_store_creates_parquet_file(self, tmp_path):
+        """Test that store function creates Parquet files."""
+        db_path = tmp_path / "test.db"
+        df = pd.DataFrame(MOCK_TABLE_DATA["value"])
+        
+        with mock.patch("src.backend.fetch_table.PARQUET_DIR", tmp_path / "parquet"):
+            store(df, "TestTable", db_path)
+            
+            parquet_file = tmp_path / "parquet" / "TestTable.parquet"
+            assert parquet_file.exists()
+
+
+class TestMapMkSiteCode:
+    """Test MK site code mapping functionality."""
+    
+    def test_map_mk_site_code_success(self):
+        """Test successful MK site code mapping."""
+        mock_con = mock.MagicMock()
+        mock_df = pd.DataFrame({"name": ["kns_mksitecode"]})
+        mock_con.execute.return_value.df.return_value = mock_df
+        
+        expected_result = pd.DataFrame({"KnsID": [1, 2], "SiteID": [101, 102]})
+        mock_con.sql.return_value.df.return_value = expected_result
+        
+        result = map_mk_site_code(mock_con)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 2
+        assert list(result.columns) == ["KnsID", "SiteID"]
+    
+    def test_map_mk_site_code_table_missing(self):
+        """Test MK site code mapping when table doesn't exist."""
+        mock_con = mock.MagicMock()
+        mock_df = pd.DataFrame({"name": ["other_table"]})
+        mock_con.execute.return_value.df.return_value = mock_df
+        
+        result = map_mk_site_code(mock_con)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+        assert list(result.columns) == ["KnsID", "SiteID"]
+    
+    def test_map_mk_site_code_error_handling(self):
+        """Test MK site code mapping error handling."""
+        mock_con = mock.MagicMock()
+        mock_con.execute.side_effect = Exception("Database error")
+        
+        result = map_mk_site_code(mock_con)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+        assert list(result.columns) == ["KnsID", "SiteID"]
+
+
+class TestPerformanceBenchmarks:
+    """Performance benchmarks for data processing."""
+    
+    @pytest.mark.asyncio
+    async def test_large_dataset_download_performance(self):
+        """Benchmark downloading large datasets."""
+        table_name = "LargeTable"
+        
+        with mock.patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            mock_response = mock.AsyncMock()
+            mock_response.json.return_value = MOCK_LARGE_TABLE_DATA
+            mock_response.raise_for_status.return_value = None
+            mock_session.get.return_value.__aenter__.return_value = mock_response
+            
+            start_time = time.time()
+            result = await download_table(table_name)
+            end_time = time.time()
+            
+            # Performance assertion (should complete within reasonable time)
+            assert (end_time - start_time) < 5.0  # 5 seconds max
+            assert len(result) == 150
+    
+    def test_large_dataset_storage_performance(self, tmp_path):
+        """Benchmark storing large datasets."""
+        db_path = tmp_path / "perf_test.db"
+        large_df = pd.DataFrame(MOCK_LARGE_TABLE_DATA["value"])
+        
+        start_time = time.time()
+        store(large_df, "LargeTable", db_path)
+        end_time = time.time()
+        
+        # Performance assertion
+        assert (end_time - start_time) < 2.0  # 2 seconds max
+        assert db_path.exists()
+
+
+class TestIntegrationScenarios:
+    """Integration test scenarios."""
+    
+    @pytest.mark.asyncio
+    async def test_full_refresh_workflow(self, tmp_path):
+        """Test complete refresh workflow."""
+        db_path = tmp_path / "integration_test.db"
+        
+        with mock.patch("aiohttp.ClientSession") as mock_session_class, \
+             mock.patch("src.backend.fetch_table.load_and_store_faction_statuses") as mock_load_factions:
+            
+            mock_session = mock_session_class.return_value.__aenter__.return_value
+            mock_response = mock.AsyncMock()
+            mock_response.json.return_value = MOCK_TABLE_DATA
+            mock_response.raise_for_status.return_value = None
+            mock_session.get.return_value.__aenter__.return_value = mock_response
+            
+            # Test refreshing subset of tables
+            test_tables = [TABLES[0]]  # First table only
+            
+            await refresh_tables(tables=test_tables, db_path=db_path)
+            
+            # Verify database was created
+            assert db_path.exists()
+            
+            # Verify faction loading was called
+            mock_load_factions.assert_called_once_with(db_path=db_path)
+    
+    def test_error_recovery_scenario(self, tmp_path):
+        """Test error recovery in various scenarios."""
+        # Test resume file corruption and recovery
+        resume_file = tmp_path / "resume.json"
+        resume_file.write_text("corrupted json {")
+        
+        with mock.patch("src.backend.fetch_table.RESUME_FILE", resume_file):
+            # Should handle corrupted resume file gracefully
+            result = _load_resume()
+            assert result == {}
+            
+            # Should be able to save new state
+            _save_resume({"test": {"last_pk": 1, "total_rows": 10}})
+            
+            # Should be able to load saved state
+            new_result = _load_resume()
+            assert "test" in new_result

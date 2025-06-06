@@ -1,11 +1,24 @@
 import logging
 import sys
+from collections import defaultdict
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 LOG_DIR_DEFAULT = Path("logs")
 LOG_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT_DEFAULT = 5
+
+# Global error tracking for monitoring
+error_metrics = defaultdict(int)
+
+class ErrorTrackingHandler(logging.Handler):
+    """Custom handler to track error metrics."""
+    
+    def emit(self, record):
+        if record.levelno >= logging.ERROR:
+            error_type = getattr(record, 'error_category', 'unknown')
+            error_metrics[f"error_{error_type}"] += 1
+            error_metrics["total_errors"] += 1
 
 def setup_logging(
     logger_name: str,
@@ -62,5 +75,17 @@ def setup_logging(
     )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+    
+    # Add error tracking handler
+    error_tracker = ErrorTrackingHandler()
+    logger.addHandler(error_tracker)
 
     return logger
+
+def get_error_metrics():
+    """Get current error metrics for monitoring."""
+    return dict(error_metrics)
+
+def reset_error_metrics():
+    """Reset error metrics counters."""
+    error_metrics.clear()

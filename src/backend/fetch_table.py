@@ -105,6 +105,8 @@ import argparse
 import asyncio
 import json
 import sys
+import time
+from enum import Enum
 from math import ceil
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -118,6 +120,89 @@ import backoff   # Dependency for retrying operations with exponential backoff
 import duckdb    # Dependency for the database
 import pandas as pd # Dependency for data manipulation
 from tqdm import tqdm # Dependency for progress bars
+
+# -----------------------------------------------------------------------------
+# Error categorization and circuit breaker implementation
+# -----------------------------------------------------------------------------
+class ErrorCategory(Enum):
+    """Categories for different types of API errors."""
+    NETWORK = "network"
+    SERVER = "server"
+    CLIENT = "client"
+    TIMEOUT = "timeout"
+    DATA = "data"
+    UNKNOWN = "unknown"
+
+class CircuitBreakerState(Enum):
+    """States for the circuit breaker pattern."""
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+class CircuitBreaker:
+    """Circuit breaker implementation for API endpoints."""
+    
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = CircuitBreakerState.CLOSED
+    
+    def record_success(self):
+        """Record a successful operation."""
+        self.failure_count = 0
+        self.state = CircuitBreakerState.CLOSED
+        self.last_failure_time = None
+    
+    def record_failure(self):
+        """Record a failed operation."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = CircuitBreakerState.OPEN
+            logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+    
+    def can_attempt(self) -> bool:
+        """Check if we can attempt a request."""
+        if self.state == CircuitBreakerState.CLOSED:
+            return True
+        elif self.state == CircuitBreakerState.OPEN:
+            if time.time() - self.last_failure_time >= self.recovery_timeout:
+                self.state = CircuitBreakerState.HALF_OPEN
+                logger.info("Circuit breaker transitioning to half-open")
+                return True
+            return False
+        else:  # HALF_OPEN
+            return True
+    
+    def is_open(self) -> bool:
+        """Check if circuit breaker is open."""
+        return self.state == CircuitBreakerState.OPEN
+
+def categorize_error(exception: Exception) -> ErrorCategory:
+    """Categorize an exception into error types for better handling."""
+    if isinstance(exception, asyncio.TimeoutError):
+        return ErrorCategory.TIMEOUT
+    elif isinstance(exception, aiohttp.ClientConnectorError):
+        return ErrorCategory.NETWORK
+    elif isinstance(exception, aiohttp.ClientResponseError):
+        if 400 <= exception.status < 500:
+            return ErrorCategory.CLIENT
+        elif 500 <= exception.status < 600:
+            return ErrorCategory.SERVER
+        else:
+            return ErrorCategory.UNKNOWN
+    elif isinstance(exception, aiohttp.ClientError):
+        return ErrorCategory.NETWORK
+    elif isinstance(exception, (json.JSONDecodeError, ValueError)):
+        return ErrorCategory.DATA
+    else:
+        return ErrorCategory.UNKNOWN
+
+# Global circuit breakers for different endpoints
+endpoint_circuit_breakers: Dict[str, CircuitBreaker] = {}
 
 # -----------------------------------------------------------------------------
 # Basic constants / paths
@@ -164,11 +249,17 @@ CURSOR_TABLES: Dict[str, Tuple[str, int]] = {
 # -----------------------------------------------------------------------------
 # Resume‑state helpers (for cursor-based paging)
 # -----------------------------------------------------------------------------
-def _load_resume() -> Dict[str, int]:
+def _load_resume() -> Dict[str, dict]:
     """Loads the resume state from a JSON file for cursor-paged tables."""
     if RESUME_FILE.exists():
         try:
-            return json.loads(RESUME_FILE.read_text())
+            data = json.loads(RESUME_FILE.read_text())
+            # Migrate old format (just int values) to new format
+            if data and isinstance(list(data.values())[0], int):
+                logger.info("Migrating resume state to new format with metadata")
+                return {table: {"last_pk": pk, "total_rows": 0, "last_update": time.time()} 
+                       for table, pk in data.items()}
+            return data
         except json.JSONDecodeError: # Handle empty or malformed JSON
             logger.warning(f"Could not decode resume file {RESUME_FILE}. Starting fresh for cursor tables.")
             pass 
@@ -177,37 +268,82 @@ def _load_resume() -> Dict[str, int]:
             pass
     return {}
 
-def _save_resume(state: Dict[str, int]):
-    """Saves the current resume state to a JSON file."""
+def _save_resume(state: Dict[str, dict]):
+    """Saves the current resume state to a JSON file with metadata."""
     try:
         RESUME_FILE.parent.mkdir(parents=True, exist_ok=True)
-        RESUME_FILE.write_text(json.dumps(state, indent=4))
+        # Add timestamp to each state entry
+        timestamped_state = {}
+        for table, data in state.items():
+            if isinstance(data, dict):
+                timestamped_state[table] = {**data, "last_update": time.time()}
+            else:
+                # Handle legacy format during transition
+                timestamped_state[table] = {"last_pk": data, "total_rows": 0, "last_update": time.time()}
+        
+        RESUME_FILE.write_text(json.dumps(timestamped_state, indent=4))
+        logger.debug(f"Resume state saved for {len(timestamped_state)} tables")
     except Exception as e:
         logger.warning(f"Could not save resume state to {RESUME_FILE}: {e}", exc_info=True)
 
 
-resume_state: Dict[str, int] = _load_resume()
+resume_state: Dict[str, dict] = _load_resume()
 
 # -----------------------------------------------------------------------------
 # Retry helper for HTTP requests
 # -----------------------------------------------------------------------------
 def _backoff_hdlr(details):
-    """Handler for logging backoff attempts."""
-    logger.warning(f"Backing off {details['wait']:.1f}s after: {details['exception']}")
+    """Handler for logging backoff attempts with error categorization."""
+    exception = details['exception']
+    error_category = categorize_error(exception)
+    logger.warning(
+        f"Backing off {details['wait']:.1f}s after {error_category.value} error "
+        f"(attempt {details['tries']}/{MAX_RETRIES}): {exception}"
+    )
 
 @backoff.on_exception(
     backoff.expo, # Use exponential backoff strategy
     (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError), # Retry on these exceptions
     max_tries=MAX_RETRIES,
     on_backoff=_backoff_hdlr, # Log when a backoff occurs
+    jitter=backoff.full_jitter, # Add jitter to prevent thundering herd
+    base=2, # Exponential base
+    max_value=60, # Maximum wait time in seconds
 )
 async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
-    """Fetches JSON data from a URL with retries using exponential backoff."""
-    timeout = aiohttp.ClientTimeout(total=60) # 60 seconds total timeout for the request
-    async with session.get(url, timeout=timeout) as resp:
-        resp.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-        # Allow any content type for JSON parsing, as some APIs might not set it correctly
-        return await resp.json(content_type=None) 
+    """Fetches JSON data from a URL with retries using exponential backoff and circuit breaker."""
+    # Get or create circuit breaker for this base URL
+    base_url = f"{url.split('/', 3)[0]}//{url.split('/', 3)[2]}"
+    if base_url not in endpoint_circuit_breakers:
+        endpoint_circuit_breakers[base_url] = CircuitBreaker()
+    
+    circuit_breaker = endpoint_circuit_breakers[base_url]
+    
+    # Check circuit breaker before attempting
+    if not circuit_breaker.can_attempt():
+        raise aiohttp.ClientError(f"Circuit breaker is open for {base_url}")
+    
+    try:
+        timeout = aiohttp.ClientTimeout(total=60) # 60 seconds total timeout for the request
+        async with session.get(url, timeout=timeout) as resp:
+            resp.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+            # Allow any content type for JSON parsing, as some APIs might not set it correctly
+            result = await resp.json(content_type=None)
+            
+            # Record success in circuit breaker
+            circuit_breaker.record_success()
+            return result
+            
+    except Exception as e:
+        # Record failure in circuit breaker
+        circuit_breaker.record_failure()
+        
+        # Log detailed error information
+        error_category = categorize_error(e)
+        logger.error(f"Request failed with {error_category.value} error: {e}")
+        
+        # Re-raise to trigger backoff retry
+        raise 
 
 # -----------------------------------------------------------------------------
 # Download logic for OData tables
@@ -226,10 +362,15 @@ async def download_table(table: str) -> pd.DataFrame:
         # --- Cursor-paged tables (with checkpoint resume) ---
         if table in CURSOR_TABLES:
             pk, chunk_size = CURSOR_TABLES[table]
-            last_val: int = resume_state.get(table, -1) # Default to -1 if no resume state
-            total_rows_fetched = 0
+            table_state = resume_state.get(table, {"last_pk": -1, "total_rows": 0})
+            last_val: int = table_state.get("last_pk", -1) if isinstance(table_state, dict) else table_state
+            total_rows_fetched = table_state.get("total_rows", 0) if isinstance(table_state, dict) else 0
+            
+            if last_val > -1:
+                logger.info(f"Resuming {table} from PK {last_val} (previously fetched {total_rows_fetched:,} rows)")
+            
             # Progress bar for cursor-paged tables
-            with tqdm(desc=f"Fetching {table} (cursor)", unit=" rows", leave=False) as pbar:
+            with tqdm(desc=f"Fetching {table} (cursor)", unit=" rows", initial=total_rows_fetched, leave=False) as pbar:
                 while True:
                     # Construct URL for cursor-based paging
                     url = (
@@ -272,8 +413,13 @@ async def download_table(table: str) -> pd.DataFrame:
                     total_rows_fetched += len(rows)
                     pbar.update(len(rows)) # Update progress bar
                     
-                    # Checkpoint: Save resume state after each successful chunk
-                    resume_state[table] = last_val 
+                    # Checkpoint: Save enhanced resume state after each successful chunk
+                    resume_state[table] = {
+                        "last_pk": last_val,
+                        "total_rows": total_rows_fetched,
+                        "chunk_size": chunk_size,
+                        "last_update": time.time()
+                    }
                     _save_resume(resume_state)
             
             logger.info(f"Fetched {total_rows_fetched:,} rows in total for {table} (up to {pk} {last_val})")
@@ -318,8 +464,13 @@ async def download_table(table: str) -> pd.DataFrame:
                             pbar.update(len(page_rows)) # Update progress bar
                             return page_index, pd.DataFrame.from_records(page_rows)
                     except Exception as e:
-                        # Log error if fetch_json (with its retries) ultimately fails for this page
-                        logger.error(f"Error fetching page {page_index} for {table} after all retries: {e}.", exc_info=True)
+                        # Log detailed error with categorization
+                        error_category = categorize_error(e)
+                        logger.error(
+                            f"Error fetching page {page_index} for {table} after all retries: "
+                            f"{error_category.value} error - {e}", 
+                            exc_info=True
+                        )
                         return page_index, None # Indicate failure for this page
                     return page_index, None # No data or empty page
 
@@ -353,7 +504,12 @@ async def _download_sequential(session: aiohttp.ClientSession, entity: str) -> p
                 data = await fetch_json(session, url) # Uses backoff internally
             except Exception as e:
                 # This means fetch_json failed after all its retries for this page
-                logger.error(f"Error fetching page {page_index} (sequential) for {table_name} after all retries: {e}. Stopping for this table.", exc_info=True)
+                error_category = categorize_error(e)
+                logger.error(
+                    f"Error fetching page {page_index} (sequential) for {table_name} after all retries: "
+                    f"{error_category.value} error - {e}. Stopping for this table.", 
+                    exc_info=True
+                )
                 break # Stop trying for this table if a page fails sequentially after retries
             
             rows = data.get("value", [])
