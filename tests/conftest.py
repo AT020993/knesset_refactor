@@ -32,15 +32,29 @@ streamlit.cache_resource = passthrough_decorator
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-# This import needs to happen after src is in path and after patching
-import backend.fetch_table as ft
+# Import the new data refresh service instead of the legacy fetch_table
+try:
+    from data.services.data_refresh_service import DataRefreshService
+except ImportError:
+    DataRefreshService = None
 
 @pytest.fixture(autouse=True)
 def stub_download_table(monkeypatch):
     async def fake_download_table(table, **kwargs):
         import pandas as pd
         return pd.DataFrame([])
-    monkeypatch.setattr(ft, "download_table", fake_download_table)
+    
+    # Patch both old and new systems for compatibility
+    try:
+        import backend.fetch_table as ft
+        monkeypatch.setattr(ft, "download_table", fake_download_table)
+    except (ImportError, AttributeError):
+        pass  # Old system not available or doesn't have download_table
+    
+    if DataRefreshService:
+        # Mock the OData client's download_table method
+        from api.odata_client import ODataClient
+        monkeypatch.setattr(ODataClient, "download_table", fake_download_table)
 
 @pytest.fixture(scope="session")
 def duckdb_conn(tmp_path_factory):
