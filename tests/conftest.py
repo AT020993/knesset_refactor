@@ -7,11 +7,32 @@ from unittest import mock # For patching
 # Set environment variable to disable Streamlit caching in tests
 os.environ["STREAMLIT_CACHE_DISABLED"] = "1"
 
+# Patch Streamlit caching BEFORE any imports that use it
+def passthrough_decorator(func=None, **kwargs):
+    """A decorator that does nothing but return the original function."""
+    if func is None:
+        def wrapper(fn):
+            return fn
+        return wrapper
+    return func
+
+# Monkey-patch streamlit caching functions before any modules import them
+import streamlit as st
+original_cache_data = getattr(st, 'cache_data', None)
+original_cache_resource = getattr(st, 'cache_resource', None)
+st.cache_data = passthrough_decorator
+st.cache_resource = passthrough_decorator
+
+# Also patch at the module level for any direct imports
+import streamlit
+streamlit.cache_data = passthrough_decorator
+streamlit.cache_resource = passthrough_decorator
+
 # 1. Make sure `src/` is on the import path:
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-# This import needs to happen after src is in path
+# This import needs to happen after src is in path and after patching
 import backend.fetch_table as ft
 
 @pytest.fixture(autouse=True)
@@ -68,37 +89,4 @@ def duckdb_conn(tmp_path_factory):
     yield con
     con.close()
 
-def passthrough_decorator(func=None, **kwargs):
-    """A decorator that does nothing but return the original function.
-    Handles being called with or without arguments."""
-    if func is None: # Called with arguments, e.g., @st.cache_data(ttl=3600)
-        def wrapper(fn):
-            return fn
-        return wrapper
-    return func # Called without arguments, e.g., @st.cache_data
-
-@pytest.fixture(autouse=True, scope="function")
-def patch_streamlit_caching(monkeypatch):
-    """
-    Patches st.cache_data and st.cache_resource to be pass-through decorators
-    for the entire test session, preventing pickling errors with mocks.
-    """
-    try:
-        # Patch Streamlit cache functions at the module level
-        import streamlit as st
-        monkeypatch.setattr(st, "cache_data", passthrough_decorator)
-        monkeypatch.setattr(st, "cache_resource", passthrough_decorator)
-        
-        # Also patch at the module import level
-        monkeypatch.setattr("streamlit.cache_data", passthrough_decorator)
-        monkeypatch.setattr("streamlit.cache_resource", passthrough_decorator)
-        
-        # Patch in specific modules that use caching
-        monkeypatch.setattr("ui.ui_utils.st.cache_data", passthrough_decorator, raising=False)
-        monkeypatch.setattr("ui.ui_utils.st.cache_resource", passthrough_decorator, raising=False)
-        
-        print("✅ Successfully patched Streamlit caching decorators for tests.")
-    except Exception as e:
-        warning_message = f"Could not patch Streamlit caching functions: {e}. Tests involving Streamlit caching might fail."
-        print(f"⚠️ WARNING: {warning_message}")
 
