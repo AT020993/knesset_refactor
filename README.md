@@ -628,7 +628,7 @@ The platform includes 15+ predefined visualizations organized into three categor
 ### Data & Integration
 * **Additional Data Sources:** Integration with complementary parliamentary datasets
 * **Data Quality Monitoring:** Automated data validation and quality metrics
-* **Performance Optimization:** Query optimization and database tuning
+* **Performance Optimization:** Query optimization and database tuning ([guidelines](docs/query_optimization.md))
 * **Backup & Recovery:** Automated backup strategies and disaster recovery
 
 

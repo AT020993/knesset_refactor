@@ -1,9 +1,11 @@
 """
 Predefined SQL queries for data analysis and export.
 
-This module contains complex SQL queries that were previously hardcoded
-in the UI layer. Each query is defined with its SQL and metadata for
-filtering and display purposes.
+Each query is defined with its SQL and metadata for filtering and display.
+The queries were tuned for DuckDB and work best when the indexes created
+by :class:`data.repositories.database_repository.DatabaseRepository`
+are present. Use ``EXPLAIN`` via ``DatabaseRepository.explain_query``
+to profile and optimize further if needed.
 """
 
 from typing import Dict, Any

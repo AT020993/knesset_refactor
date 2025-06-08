@@ -49,6 +49,11 @@ PARQUET_DIR = Path("data/parquet")
 MAX_ROWS_FOR_CHART_BUILDER = 50000
 MAX_UNIQUE_VALUES_FOR_FACET = 50
 
+# Minimal export queries used in tests
+EXPORTS = {
+    "Queries \u2013 basic": "SELECT * FROM KNS_Query",
+}
+
 # Plot names updated to reflect single Knesset focus where applicable
 AVAILABLE_PLOTS_BY_TOPIC = {
     "Queries": {
@@ -132,4 +137,5 @@ page_renderer.render_ad_hoc_sql_section(
 page_renderer.render_table_status_section(PARQUET_DIR, TABLES)
 
 ui_logger.info("--- data_refresh.py script finished loading UI components ---")
+
 

@@ -18,11 +18,17 @@ class DataService:
         self.logger = logger_obj or logging.getLogger(__name__)
         
         self.db_repository = DatabaseRepository(self.db_path, self.logger)
+        # Ensure indexes on frequently used columns
+        try:
+            self.db_repository.ensure_common_indexes()
+        except Exception as e:
+            self.logger.warning(f"Failed to ensure indexes: {e}")
+
         self.refresh_service = DataRefreshService(self.db_path, self.logger)
     
-    def execute_query(self, query: str) -> Optional[pd.DataFrame]:
-        """Execute a database query."""
-        return self.db_repository.execute_query(query)
+    def execute_query(self, query: str, explain: bool = False) -> Optional[pd.DataFrame]:
+        """Execute a database query and optionally log EXPLAIN output."""
+        return self.db_repository.execute_query(query, explain=explain)
     
     def table_exists(self, table_name: str) -> bool:
         """Check if a table exists."""

@@ -53,7 +53,7 @@ def safe_execute_query(con: duckdb.DuckDBPyConnection, query: str, _logger_obj: 
         st.error(f"Query execution error: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
+@st.cache_data
 def get_db_table_list(db_path: Path, _logger_obj: logging.Logger | None = None) -> list[str]:
     """Fetches the list of all tables from the database."""
     if _logger_obj: _logger_obj.info("Fetching database table list...")
@@ -73,7 +73,7 @@ def get_db_table_list(db_path: Path, _logger_obj: logging.Logger | None = None) 
         return []
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data
 def get_table_columns(db_path: Path, table_name: str, _logger_obj: logging.Logger | None = None) -> tuple[list[str], list[str], list[str]]:
     """Fetches all column names, numeric column names, and categorical column names for a table."""
     if not table_name or not db_path.exists():
@@ -102,7 +102,7 @@ def get_table_columns(db_path: Path, table_name: str, _logger_obj: logging.Logge
         return [], [], []
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data
 def get_filter_options_from_db(db_path: Path, _logger_obj: logging.Logger | None = None) -> tuple[list, pd.DataFrame]:
     """Fetches distinct Knesset numbers and faction data for filter dropdowns."""
     if _logger_obj: _logger_obj.info("Fetching filter options from database...")

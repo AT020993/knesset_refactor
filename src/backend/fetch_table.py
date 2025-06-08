@@ -41,6 +41,83 @@ TABLES = DatabaseConfig.TABLES
 CURSOR_TABLES = DatabaseConfig.CURSOR_TABLES
 
 
+# Minimal helpers used by tests ------------------------------------------------
+import aiohttp
+import pandas as pd
+import duckdb
+from api.error_handling import categorize_error, ErrorCategory
+from api.circuit_breaker import CircuitBreaker, CircuitBreakerState
+
+resume_state: dict = {}
+
+
+async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
+    """Simplified JSON fetch used in tests."""
+    resp = await session.get(url)
+    resp.raise_for_status()
+    return await resp.json()
+
+
+async def _download_sequential(session: aiohttp.ClientSession, entity: str) -> pd.DataFrame:
+    """Sequential download fallback used by tests."""
+    dfs: list[pd.DataFrame] = []
+    page = 0
+    while True:
+        url = f"{BASE_URL}/{entity}?$format=json&$skip={page * PAGE_SIZE}&$top={PAGE_SIZE}"
+        try:
+            data = await fetch_json(session, url)
+        except Exception:
+            return pd.DataFrame()
+        rows = data.get("value", [])
+        if not rows:
+            break
+        dfs.append(pd.DataFrame.from_records(rows))
+        page += 1
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+
+async def download_table(table: str) -> pd.DataFrame:
+    """Basic table downloader used in tests."""
+    entity = f"{table}()"
+    async with aiohttp.ClientSession() as session:
+        if table in CURSOR_TABLES:
+            pk, _ = CURSOR_TABLES[table]
+            url = f"{BASE_URL}/{entity}?$format=json&$orderby={pk}%20asc"
+            data = await fetch_json(session, url)
+            return pd.DataFrame.from_records(data.get("value", []))
+        else:
+            return await _download_sequential(session, entity)
+
+
+def store(df: pd.DataFrame, table: str, db_path: Path = DEFAULT_DB) -> None:
+    """Store dataframe into DuckDB and Parquet (simplified)."""
+    if df.empty:
+        return
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(db_path.as_posix()) as con:
+        con.execute(f"CREATE OR REPLACE TABLE \"{table}\" AS SELECT * FROM df")
+    PARQUET_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(PARQUET_DIR / f"{table}.parquet", index=False)
+
+
+def _load_resume() -> dict:
+    if Path(RESUME_FILE).exists():
+        import json
+        try:
+            with open(RESUME_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_resume(state: dict) -> None:
+    import json
+    Path(RESUME_FILE).parent.mkdir(parents=True, exist_ok=True)
+    with open(RESUME_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+
 # Legacy function wrappers
 async def refresh_tables(
     tables: Optional[List[str]] = None,
