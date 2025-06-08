@@ -36,3 +36,10 @@ def categorize_error(exception: Exception) -> ErrorCategory:
         return ErrorCategory.DATA
     else:
         return ErrorCategory.UNKNOWN
+
+
+class CircuitBreakerOpenException(Exception):
+    """Exception raised when an operation is attempted while the circuit breaker is open."""
+    def __init__(self, message="Circuit breaker is open and cannot accept new calls"):
+        self.message = message
+        super().__init__(self.message)
