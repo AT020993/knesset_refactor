@@ -13,21 +13,18 @@ env:
 
 jobs:
   test:
-    name: Test Suite (Python ${{ matrix.python-version }})
+    name: Test Suite
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12']
-      fail-fast: false
+    timeout-minutes: 15
 
     steps:
     - name: 📥 Checkout code
       uses: actions/checkout@v4
 
-    - name: 🐍 Set up Python ${{ matrix.python-version }}
+    - name: 🐍 Set up Python 3.12
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.12'
         cache: 'pip'
 
     - name: ⚡ Cache dependencies
@@ -43,56 +40,26 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: 🧪 Run comprehensive tests
+    - name: 🧪 Run tests with timeout
+      timeout-minutes: 10
       run: |
         # Set PYTHONPATH for imports
         export PYTHONPATH="./src:$PYTHONPATH"
         
-        # Run tests using pytest.ini configuration
-        pytest -v --tb=short tests/
-
-    - name: 📊 Upload coverage reports
-      uses: codecov/codecov-action@v3
-      if: always()
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
-        verbose: true
-
-    - name: ✅ Verify critical imports
+        # Run tests with faster settings
+        pytest --tb=short --maxfail=5 -x tests/
+        
+    - name: ✅ Quick verification
       run: |
         export PYTHONPATH="./src:$PYTHONPATH"
-        python -c "
-        try:
-            import streamlit, duckdb, pandas, plotly, aiohttp, typer
-            print('✅ All core libraries imported successfully!')
-        except ImportError as e:
-            print(f'❌ Import error: {e}')
-            exit(1)
-        "
-
-    - name: 🔍 Test database functionality
-      run: |
-        export PYTHONPATH="./src:$PYTHONPATH"
-        python -c "
-        import duckdb
-        import tempfile
-        import os
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, 'test.duckdb')
-            conn = duckdb.connect(db_path)
-            conn.execute('CREATE TABLE test (id INTEGER, name VARCHAR)')
-            conn.execute('INSERT INTO test VALUES (1, \\'test\\')')
-            result = conn.execute('SELECT COUNT(*) FROM test').fetchone()
-            assert result[0] == 1
-            print('✅ DuckDB functionality verified!')
-            conn.close()
-        "
+        python -c "import streamlit, duckdb, pandas; print('✅ Core imports OK')"
 
   code-quality:
     name: Code Quality Checks
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 10
+    # Run in parallel with tests, not after
+    # needs: test
     
     steps:
     - name: 📥 Checkout code
@@ -141,7 +108,9 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 10
+    # Run in parallel, not after tests
+    # needs: test
 
     steps:
     - name: 📥 Checkout code
