@@ -46,8 +46,13 @@ jobs:
         # Set PYTHONPATH for imports
         export PYTHONPATH="./src:$PYTHONPATH"
         
-        # Run only the most critical tests for faster CI
-        pytest --tb=short --maxfail=3 -x tests/test_cli.py tests/test_fetch_table.py || true
+        # Run critical tests covering core functionality
+        pytest --tb=short --maxfail=5 -x \
+          tests/test_cli.py \
+          tests/test_fetch_table.py \
+          tests/test_connection_leaks.py \
+          tests/test_ui_utils.py \
+          tests/test_views.py || true
         echo "✅ Quick test check completed"
         
     - name: ✅ Quick verification
