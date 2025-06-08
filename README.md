@@ -27,35 +27,46 @@ Transform complex parliamentary data into actionable insights with:
 
 ## ✨ Key Features
 
-### Backend (`src/backend/fetch_table.py`)
-* **Automated OData Fetching:** Retrieves data directly from the official Knesset OData API (`http://knesset.gov.il/Odata/ParliamentInfo.svc`).
-* **Robust Downloading:**
-    * **Checkpoint-Resume:** For large, cursor-paged tables (e.g., `KNS_CommitteeSession`, `KNS_Bill`), download progress is saved, allowing resumption after interruptions.
-    * **Parallel Downloads:** Utilizes `asyncio` for concurrent fetching of multiple pages for skip-based tables, significantly speeding up data acquisition.
-    * **Automatic Retries:** Implements backoff strategies for transient network errors.
-* **Efficient Data Storage:**
-    * **DuckDB Warehouse:** Stores all fetched data in a local DuckDB database (`data/warehouse.duckdb`) for fast querying and analysis.
-    * **Parquet Files:** Mirrors each table into compressed Parquet files (`data/parquet/`) for optimized storage and interoperability with other data tools.
+### Backend Architecture (Modular & Clean)
+* **Data Services Layer (`src/data/`):**
+    * **Automated OData Fetching:** Retrieves data directly from the official Knesset OData API with circuit breaker pattern
+    * **Repository Pattern:** Clean separation between data access and business logic
+    * **Dependency Injection:** Testable, maintainable architecture with centralized configuration
+* **API Layer (`src/api/`):**
+    * **Robust OData Client:** Implements circuit breaker, retry logic, and proper error categorization
+    * **Checkpoint-Resume:** For large, cursor-paged tables, download progress is saved for interruption recovery
+    * **Parallel Downloads:** Utilizes `asyncio` for concurrent fetching, significantly speeding up data acquisition
+    * **Connection Management:** Monitors and prevents database connection leaks
+* **Storage & Configuration:**
+    * **DuckDB Warehouse:** Stores all fetched data in a local DuckDB database (`data/warehouse.duckdb`) for fast querying
+    * **Parquet Files:** Mirrors each table into compressed Parquet files (`data/parquet/`) for optimized storage
+    * **Centralized Configuration:** All settings managed through dedicated configuration modules
 * **Manual Faction Coalition Status Integration:**
-    * Loads and integrates user-maintained faction coalition/opposition statuses, including joining/leaving dates, from a CSV file (`data/faction_coalition_status.csv`).
-    * This data enriches parliamentary analysis by providing context on faction alignments.
-* **Logging:** Comprehensive logging using the `src/utils/logger_setup.py` module.
+    * Loads and integrates user-maintained faction coalition/opposition statuses from CSV
+    * Enriches parliamentary analysis by providing context on faction alignments
+* **Logging:** Comprehensive logging using the `src/utils/logger_setup.py` module
 
-### Frontend - Streamlit UI (`src/ui/data_refresh.py`)
+### Frontend - Modular Streamlit UI (Refactored Architecture)
+* **Clean Architecture (`src/ui/`):**
+    * **Page-based Structure:** Separate modules for different UI sections (`pages/`, `queries/`, `state/`)
+    * **Centralized State Management:** Type-safe session state management with proper encapsulation
+    * **Query Separation:** Complex SQL queries extracted to dedicated modules with metadata
+    * **Component-based UI:** Reusable UI components with clear separation of concerns
 * **Self-Service Data Refresh:**
-    * Select specific OData tables or refresh all predefined tables.
-    * Monitor live progress of data fetching.
-    * Dedicated button to refresh only the faction coalition status data from the CSV.
-* **Predefined Queries:**
-    * Execute curated SQL queries (e.g., "Queries + Full Details," "Agenda Items + Full Details") for common analytical needs.
-    * Results are displayed interactively and can be downloaded.
+    * Select specific OData tables or refresh all predefined tables
+    * Monitor live progress of data fetching with real-time updates
+    * Dedicated controls for faction coalition status data refresh
+* **Predefined Queries System:**
+    * Execute curated SQL queries with proper filtering and parameterization
+    * Dynamic query execution with type-safe parameter handling
+    * Results displayed interactively with comprehensive download options
 * **Interactive Table Explorer:**
-    * Select and view raw data from any table in the DuckDB warehouse.
-    * Apply dynamic filters (e.g., Knesset Number, Faction) to narrow down results.
-* **Dynamic Filtering:** Sidebar filters for Knesset Numbers and Factions can be applied to both Predefined Queries and the Table Explorer.
-* **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries directly against the DuckDB database.
-* **Data Export:** Download results from predefined queries and the table explorer in CSV and Excel formats.
-* **Table Update Status:** Displays the last updated timestamp for each table in the database.
+    * Dynamic table browsing with intelligent filter application
+    * Auto-detection of filterable columns (KnessetNum, FactionID)
+    * Real-time filter application with session state persistence
+* **Enhanced Filtering:** Centralized sidebar filters with proper state management
+* **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries with error handling
+* **Data Export:** Multi-format download (CSV, Excel) with proper encoding support
 * **Comprehensive Visualizations:**
     * **Predefined Charts:** Over 15 ready-to-use visualizations covering queries, agendas, and advanced analytics
     * **Query Analytics:** Response times by ministry, coalition status analysis with optional date range filtering, performance metrics
@@ -97,22 +108,64 @@ knesset_refactor/
 ├── scripts/
 │   └── refresh_all.sh         # Shell script for a full data refresh using the Typer CLI
 ├── src/
-│   ├── backend/
-│   │   ├── fetch_table.py     # Core module for fetching & storing data, includes CLI
-│   │   ├── tables.py          # Table definitions
-│   │   ├── utils.py           # Utility functions
+│   ├── api/                   # API layer with robust OData client
+│   │   ├── odata_client.py    # Async OData client with circuit breaker
+│   │   ├── circuit_breaker.py # Circuit breaker pattern implementation
+│   │   ├── error_handling.py  # Error categorization and handling
 │   │   └── __init__.py
-│   ├── ui/
-│   │   ├── data_refresh.py    # Main Streamlit interface
+│   ├── backend/               # Legacy compatibility and core utilities
+│   │   ├── connection_manager.py # Database connection management
+│   │   ├── duckdb_io.py      # DuckDB I/O operations
+│   │   ├── fetch_table.py    # Legacy compatibility layer
+│   │   ├── tables.py         # Table definitions
+│   │   ├── utils.py          # Utility functions
+│   │   └── __init__.py
+│   ├── config/               # Centralized configuration management
+│   │   ├── settings.py       # Application settings
+│   │   ├── database.py       # Database configuration
+│   │   ├── api.py           # API configuration
+│   │   ├── charts.py        # Chart configuration
+│   │   └── __init__.py
+│   ├── core/                 # Core architecture components
+│   │   ├── dependencies.py  # Dependency injection container
+│   │   └── __init__.py
+│   ├── data/                 # Data layer with clean architecture
+│   │   ├── repositories/     # Repository pattern implementations
+│   │   ├── services/        # Business logic services
+│   │   └── __init__.py
+│   ├── ui/                   # Modular UI components
+│   │   ├── charts/          # Modular chart system
+│   │   │   ├── factory.py   # Chart factory with inheritance
+│   │   │   ├── base.py      # Base chart class
+│   │   │   ├── comparison.py # Comparison charts
+│   │   │   ├── distribution.py # Distribution charts
+│   │   │   ├── network.py   # Network analysis charts
+│   │   │   ├── timeline.py  # Timeline charts
+│   │   │   └── __init__.py
+│   │   ├── pages/           # Page-specific UI components
+│   │   │   ├── data_refresh_page.py # Main page renderer
+│   │   │   ├── plots_page.py # Plots interface renderer
+│   │   │   └── __init__.py
+│   │   ├── queries/         # Query management system
+│   │   │   ├── predefined_queries.py # SQL definitions
+│   │   │   ├── query_executor.py # Query execution logic
+│   │   │   └── __init__.py
+│   │   ├── services/        # UI business logic services
+│   │   │   ├── chart_service.py # Chart generation service
+│   │   │   └── __init__.py
+│   │   ├── state/           # Session state management
+│   │   │   ├── session_manager.py # Centralized state management
+│   │   │   └── __init__.py
+│   │   ├── data_refresh.py  # Streamlined main interface
 │   │   ├── sidebar_components.py # Sidebar UI components
-│   │   ├── ui_utils.py        # UI utility functions
-│   │   ├── plot_generators.py # Visualization functions
+│   │   ├── ui_utils.py      # UI utility functions
+│   │   ├── plot_generators.py # Legacy compatibility layer
 │   │   ├── chart_builder_ui.py # Interactive chart builder
 │   │   └── __init__.py
 │   ├── utils/
-│   │   ├── logger_setup.py    # Logging configuration
+│   │   ├── logger_setup.py  # Logging configuration
 │   │   └── __init__.py
-│   └── cli.py                 # Typer-based CLI (alternative to fetch_table.py CLI)
+│   └── cli.py               # Typer-based CLI with dependency injection
 ├── tests/
 │   ├── conftest.py            # Pytest fixtures and configuration
 │   ├── test_fetch_table.py    # Unit tests for data-fetching logic
@@ -123,17 +176,35 @@ knesset_refactor/
 
 ## 🛠️ Technologies Used
 
+### Core Technologies
 * **Python 3.12+** (Required)
-* **DuckDB 1.2.2:** For the data warehouse
-* **Pandas 2.2.3:** For data manipulation
-* **Parquet:** For efficient columnar storage
-* **Streamlit 1.44.1:** For the user interface
-* **aiohttp 3.9.4 & backoff 2.2.1:** For robust asynchronous HTTP requests
-* **OpenPyXL 3.1.5:** For Excel export functionality
-* **Plotly 5.0+:** For generating interactive data visualizations
-* **Pytest 8.3.5:** For unit testing
-* **tqdm 4.66.1:** For progress bar visualization during data fetching
-* **Typer 0.12+:** For `src/cli.py`
+* **DuckDB 1.2.2:** High-performance analytical database for the data warehouse
+* **Pandas 2.2.3:** Data manipulation and analysis
+* **Parquet:** Efficient columnar storage format
+
+### Architecture & Patterns
+* **Clean Architecture:** Layered separation with dependency injection
+* **Repository Pattern:** Abstracted data access layer
+* **Circuit Breaker Pattern:** Resilient API communication
+* **Factory Pattern:** Modular chart generation system
+* **Dependency Injection:** Testable, maintainable codebase
+
+### Frontend & Visualization
+* **Streamlit 1.44.1:** Modern web UI framework
+* **Plotly 5.0+:** Interactive data visualizations
+* **Component-based Architecture:** Reusable UI components
+
+### Networking & Reliability
+* **aiohttp 3.9.4:** Asynchronous HTTP client with connection pooling
+* **backoff 2.2.1:** Intelligent retry strategies
+* **Circuit Breaker:** Fault tolerance for API calls
+
+### Development & Testing
+* **Pytest 8.3.5:** Comprehensive unit testing framework
+* **Type Hints:** Full type safety with runtime validation
+* **Typer 0.12+:** Modern CLI framework with dependency injection
+* **OpenPyXL 3.1.5:** Excel export functionality
+* **tqdm 4.66.1:** Progress visualization
 
 ## 📸 Screenshots
 
@@ -145,7 +216,7 @@ knesset_refactor/
 
 ## 🚀 Quick Start
 
-Get up and running in 5 minutes:
+Get up and running in 5 minutes with the new modular architecture:
 
 ```bash
 # 1. Clone and setup
@@ -157,14 +228,21 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Download sample data (5-10 minutes)
+# The new dependency injection system handles configuration automatically
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 
-# 4. Launch interface
+# 4. Launch the refactored interface
 streamlit run src/ui/data_refresh.py
 ```
 
-Open `http://localhost:8501` and start exploring! 🎉
+Open `http://localhost:8501` and explore the new modular UI! 🎉
+
+**New in the refactored version:**
+- ⚡ **Faster loading** with modular architecture
+- 🧩 **Component-based UI** with better separation of concerns
+- 🎯 **Type-safe session management** with centralized state
+- 📊 **Extracted SQL queries** for better maintainability
 
 ## 🚀 Getting Started
 
@@ -530,12 +608,28 @@ The platform includes 15+ predefined visualizations organized into three categor
 
 ## 🔮 Future Roadmap
 
-* Advanced statistical analysis modules
-* Scheduling automatic data refreshes
-* User authentication and role-based access for the UI
-* Integration of additional relevant parliamentary datasets
-* Performance optimizations for large dataset handling
-* Export functionality for visualization reports
+### Architecture Improvements
+* **Complete Chart Migration:** Finish migrating all chart implementations to the new modular system
+* **Advanced Caching:** Redis integration for improved performance
+* **Microservices:** Split into independent, scalable services
+
+### Feature Enhancements
+* **Advanced Statistical Analysis:** Time series forecasting, sentiment analysis integration
+* **Real-time Updates:** WebSocket integration for live data streaming
+* **Machine Learning:** Predictive analytics for parliamentary patterns
+* **API Gateway:** RESTful API for external integrations
+
+### User Experience
+* **Dashboard Customization:** User-configurable dashboard layouts
+* **Export Automation:** Scheduled report generation and distribution
+* **Mobile Responsiveness:** Progressive Web App (PWA) capabilities
+* **User Authentication:** Role-based access control and personalization
+
+### Data & Integration
+* **Additional Data Sources:** Integration with complementary parliamentary datasets
+* **Data Quality Monitoring:** Automated data validation and quality metrics
+* **Performance Optimization:** Query optimization and database tuning
+* **Backup & Recovery:** Automated backup strategies and disaster recovery
 
 
 ## 🤝 Contributing
@@ -569,11 +663,13 @@ pytest
 - ✅ **Ensure all tests pass** before submitting
 
 ### Areas Where We Need Help
-- 📊 **New visualizations** for parliamentary data analysis
-- 🔍 **Performance optimizations** for large dataset handling  
-- 🌐 **API enhancements** for better OData integration
-- 📱 **UI/UX improvements** for the Streamlit interface
-- 🧪 **Test coverage** expansion
+- 📊 **Chart Migration:** Complete the migration of remaining chart implementations to the new modular system
+- 🏗️ **Architecture Enhancement:** Further refactoring of large files (connection_manager.py, chart_renderer.py)
+- 🔍 **Performance optimizations** for large dataset handling and query optimization
+- 🌐 **API enhancements** for better OData integration and real-time capabilities
+- 📱 **UI/UX improvements** using the new component-based architecture
+- 🧪 **Test coverage** expansion, especially for the new modular components
+- 📚 **Documentation** updates for the new architecture patterns and modules
 
 ## 📄 License
 
