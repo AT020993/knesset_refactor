@@ -13,6 +13,7 @@ plotly>=5.0.0 # Interactive visualizations (charts, graphs, heatmaps, sunburst, 
 # testing / CI
 pytest==8.3.5
 pytest-cov==6.1.1
+pytest-asyncio>=0.21.0
 
 # CLI
 typer[all]>=0.12.0,<0.13.0

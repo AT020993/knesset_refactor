@@ -110,11 +110,11 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: 📦 Install quality tools
+    - name: 📦 Install dependencies and quality tools
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 black isort mypy
         pip install -r requirements.txt
+        pip install flake8 black isort mypy
 
     - name: 🎨 Check code formatting with Black (optional)
       continue-on-error: true
@@ -162,6 +162,7 @@ jobs:
     - name: 🔒 Install security tools
       run: |
         python -m pip install --upgrade pip
+        pip install -r requirements.txt
         pip install safety bandit
 
     - name: 🛡️ Check dependencies for known vulnerabilities
