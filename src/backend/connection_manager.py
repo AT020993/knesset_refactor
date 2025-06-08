@@ -394,7 +394,7 @@ def start_background_monitoring(interval_seconds: int = 60) -> None:
 
 def stop_background_monitoring() -> None:
     """Stop background monitoring of database connections."""
-    global _monitoring_enabled, _monitoring_thread
+    global _monitoring_enabled
     
     if not _monitoring_enabled:
         return

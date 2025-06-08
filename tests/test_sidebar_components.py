@@ -247,7 +247,7 @@ class TestHandleRunQueryButtonClick:
         mock_db_path.exists.return_value = False
         mock_st_session_state['selected_query_name'] = "Query1"
         _handle_run_query_button_click(mock_exports_dict, mock_db_path, mock_connect_func, mock_logger, mock_format_exc_func, {})
-        st.error.assert_called_once_with("Database not found. Please ensure 'data/warehouse.duckdb' exists or run data refresh.")
+        mock_st_error.assert_called_once_with("Database not found. Please ensure 'data/warehouse.duckdb' exists or run data refresh.")
 
 
     @mock.patch("src.ui.sidebar_components.st.toast")
