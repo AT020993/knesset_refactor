@@ -18,6 +18,21 @@ Transform complex parliamentary data into actionable insights with:
 - ⚙️ **Robust CLI tools** for automated workflows
 - 📈 **Custom chart builder** for exploratory data analysis
 
+## 🐳 **AI & Development Environment**
+
+**For AI tools (Jules, Codex, etc.) and developers:** This project includes a complete Docker setup for isolated, VM-like development:
+
+```bash
+# Quick start for AI tools
+./docker-setup.sh setup      # One-time setup with sample data
+./docker-setup.sh up dev     # Start development environment
+./docker-setup.sh shell      # Get shell access for coding
+```
+
+- 🔗 **Development UI**: http://localhost:8502
+- 📖 **Full AI Guide**: See [`AI_SETUP.md`](AI_SETUP.md) for complete instructions
+- 🤖 **CI/CD Ready**: Automatic testing for AI-generated branches
+
 ## 🎯 Project Goals
 
 * **Data Accessibility:** Provide easy access to Israeli parliamentary data for researchers and analysts.

@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Main application service
+  knesset-app:
+    build: .
+    container_name: knesset_app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist data and logs
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app/src
+      - STREAMLIT_CACHE_DISABLED=1
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development service for AI tools (like Jules)
+  knesset-dev:
+    build: .
+    container_name: knesset_dev
+    ports:
+      - "8502:8501"  # Different port for dev
+    volumes:
+      # Mount source code for live development
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app/src
+      - STREAMLIT_CACHE_DISABLED=1
+      - LOG_LEVEL=DEBUG
+    command: tail -f /dev/null  # Keep container running for shell access
+    restart: unless-stopped
+
+  # Optional: Database backup service
+  knesset-backup:
+    build: .
+    container_name: knesset_backup
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+    environment:
+      - PYTHONPATH=/app/src
+    command: |
+      sh -c "
+        mkdir -p /app/backups &&
+        while true; do
+          if [ -f /app/data/warehouse.duckdb ]; then
+            cp /app/data/warehouse.duckdb /app/backups/warehouse_backup_$$(date +%Y%m%d_%H%M%S).duckdb &&
+            echo 'Backup created at $$(date)'
+          fi
+          sleep 86400  # Backup every 24 hours
+        done
+      "
+    restart: unless-stopped
+    profiles: ["backup"]  # Only start with --profile backup
+
+networks:
+  default:
+    name: knesset_network
+
+volumes:
+  # Named volumes for better management
+  knesset_data:
+  knesset_logs:
