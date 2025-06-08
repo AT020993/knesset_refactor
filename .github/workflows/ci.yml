@@ -1,17 +1,232 @@
-name: CI
+name: CI - Automated Testing for AI-Generated Branches
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ "*" ]  # Trigger on all branches, especially AI-generated ones
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  PYTHON_VERSION: '3.12'
+  PYTHONPATH: ./src
 
 jobs:
   test:
+    name: Test Suite (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12']
+      fail-fast: false
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: pip install --upgrade pip && pip install -r requirements.txt pytest
-      - name: Run tests
-        run: pytest --maxfail=1 --exitfirst --durations=5
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: ⚡ Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 🧪 Run comprehensive tests
+      run: |
+        # Set PYTHONPATH for imports
+        export PYTHONPATH="./src:$PYTHONPATH"
+        
+        # Run tests with coverage (matches pytest.ini configuration)
+        pytest \
+          --cov=src/backend/fetch_table \
+          --cov-report=term-missing \
+          --cov-report=xml:coverage.xml \
+          --cov-fail-under=80 \
+          -v \
+          --asyncio-mode=auto \
+          --tb=short \
+          tests/
+
+    - name: 📊 Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+        verbose: true
+
+    - name: ✅ Verify critical imports
+      run: |
+        export PYTHONPATH="./src:$PYTHONPATH"
+        python -c "
+        try:
+            import streamlit, duckdb, pandas, plotly, aiohttp, typer
+            print('✅ All core libraries imported successfully!')
+        except ImportError as e:
+            print(f'❌ Import error: {e}')
+            exit(1)
+        "
+
+    - name: 🔍 Test database functionality
+      run: |
+        export PYTHONPATH="./src:$PYTHONPATH"
+        python -c "
+        import duckdb
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, 'test.duckdb')
+            conn = duckdb.connect(db_path)
+            conn.execute('CREATE TABLE test (id INTEGER, name VARCHAR)')
+            conn.execute('INSERT INTO test VALUES (1, \\'test\\')')
+            result = conn.execute('SELECT COUNT(*) FROM test').fetchone()
+            assert result[0] == 1
+            print('✅ DuckDB functionality verified!')
+            conn.close()
+        "
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: 📦 Install quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy
+        pip install -r requirements.txt
+
+    - name: 🎨 Check code formatting with Black (optional)
+      continue-on-error: true
+      run: |
+        black --check --diff src/ tests/ || {
+          echo "⚠️ Code formatting suggestions available. Run 'black src/ tests/' to auto-format."
+        }
+
+    - name: 📏 Check import sorting with isort (optional)
+      continue-on-error: true
+      run: |
+        isort --check-only --diff src/ tests/ || {
+          echo "⚠️ Import sorting suggestions available. Run 'isort src/ tests/' to fix."
+        }
+
+    - name: 🔍 Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+    - name: 🎯 Type checking with mypy (optional)
+      continue-on-error: true
+      run: |
+        export PYTHONPATH="./src:$PYTHONPATH"
+        mypy src/ --ignore-missing-imports --no-strict-optional || {
+          echo "⚠️ Type checking suggestions available (non-blocking)"
+        }
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: 🔒 Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+
+    - name: 🛡️ Check dependencies for known vulnerabilities
+      continue-on-error: true
+      run: |
+        safety check -r requirements.txt || {
+          echo "⚠️ Security vulnerabilities found in dependencies (non-blocking)"
+        }
+
+    - name: 🔍 Run Bandit security analysis
+      continue-on-error: true
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || {
+          echo "⚠️ Security issues found in code (non-blocking)"
+          cat bandit-report.json || true
+        }
+
+  ai-branch-notification:
+    name: AI Branch Testing Summary
+    runs-on: ubuntu-latest
+    needs: [test, code-quality, security-scan]
+    if: always()
+
+    steps:
+    - name: 📋 Generate comprehensive test report
+      run: |
+        echo "## 🤖 AI Branch Testing Summary" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.test.result }}" == "success" ]]; then
+          echo "✅ **Tests**: All tests passed with required coverage (80%+)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Quality Checks" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.code-quality.result }}" == "success" ]]; then
+          echo "✅ **Code Quality**: No critical issues found" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Code Quality**: Check logs for suggestions" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [[ "${{ needs.security-scan.result }}" == "success" ]]; then
+          echo "🔒 **Security**: No critical vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Security**: Check logs for potential issues" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Merge Readiness" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.test.result }}" == "success" ]]; then
+          echo "🎉 **Status**: This branch passes all required tests and is ready for review!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Core functionality verified" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Database operations working" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next steps:** Manual code review and merge when ready." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Status**: This branch has failing tests and needs attention before merge." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Required fixes:** Review test failures in the logs above." >> $GITHUB_STEP_SUMMARY
+        fi

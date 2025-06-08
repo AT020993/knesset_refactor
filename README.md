@@ -1,6 +1,22 @@
 # Knesset OData Explorer
 
-A comprehensive platform designed to fetch, store, analyze, and visualize parliamentary data from the Israeli Knesset's Open Data (OData) API. This project empowers researchers, analysts, and non-technical users to easily manage and explore Israeli parliamentary data.
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![CI Status](https://github.com/AT020993/knesset_refactor/workflows/CI%20-%20Automated%20Testing%20for%20AI-Generated%20Branches/badge.svg)](https://github.com/AT020993/knesset_refactor/actions)
+[![DuckDB](https://img.shields.io/badge/DuckDB-1.2.2-yellow.svg)](https://duckdb.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.44.1-red.svg)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](#-license)
+
+A comprehensive platform for fetching, storing, analyzing, and visualizing Israeli parliamentary data from the Knesset's official OData API. This project democratizes access to parliamentary data, enabling researchers, analysts, and citizens to easily explore Israeli legislative activities.
+
+## ⚡ Quick Overview
+
+Transform complex parliamentary data into actionable insights with:
+- 🔄 **Automated data fetching** from official Knesset OData API
+- 💾 **Efficient storage** in DuckDB with Parquet backup
+- 📊 **15+ interactive visualizations** for parliamentary analysis  
+- 🖥️ **User-friendly Streamlit interface** for non-technical users
+- ⚙️ **Robust CLI tools** for automated workflows
+- 📈 **Custom chart builder** for exploratory data analysis
 
 ## 🎯 Project Goals
 
@@ -119,6 +135,37 @@ knesset_refactor/
 * **tqdm 4.66.1:** For progress bar visualization during data fetching
 * **Typer 0.12+:** For `src/cli.py`
 
+## 📸 Screenshots
+
+### Streamlit Interface
+*Coming soon: Screenshots of the data refresh interface, visualizations, and chart builder*
+
+### Sample Visualizations
+*Coming soon: Examples of parliamentary activity heatmaps, MK collaboration networks, and query analytics*
+
+## 🚀 Quick Start
+
+Get up and running in 5 minutes:
+
+```bash
+# 1. Clone and setup
+git clone https://github.com/AT020993/knesset_refactor.git
+cd knesset_refactor
+python -m venv .venv && source .venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Download sample data (5-10 minutes)
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
+
+# 4. Launch interface
+streamlit run src/ui/data_refresh.py
+```
+
+Open `http://localhost:8501` and start exploring! 🎉
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -131,7 +178,7 @@ knesset_refactor/
 1. **Clone the repository:**
 
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/AT020993/knesset_refactor.git
     cd knesset_refactor
     ```
 
@@ -245,6 +292,88 @@ PYTHONPATH="./src" python -m backend.fetch_table --help
 bash scripts/refresh_all.sh
 ```
 
+## 📚 Usage Examples
+
+### Common Research Scenarios
+
+#### Scenario 1: Analyzing Parliamentary Questions by Ministry
+```bash
+# 1. Download query and ministry data
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_GovMinistry
+
+# 2. Run analysis query
+PYTHONPATH="./src" python -m backend.fetch_table --sql "
+SELECT 
+    m.Name as Ministry, 
+    COUNT(*) as Query_Count,
+    AVG(DATEDIFF('day', q.StartDate, q.ReplyDate)) as Avg_Response_Days
+FROM KNS_Query q 
+JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID 
+WHERE q.ReplyDate IS NOT NULL 
+GROUP BY m.Name 
+ORDER BY Query_Count DESC
+"
+```
+
+#### Scenario 2: Tracking Coalition vs Opposition Activity
+```bash
+# Launch Streamlit UI
+streamlit run src/ui/data_refresh.py
+
+# In the UI:
+# 1. Go to "Predefined Queries" → "Queries + Full Details"
+# 2. Apply filter: Coalition Status = "Coalition" 
+# 3. Set date range for specific Knesset term
+# 4. Export results to Excel for further analysis
+```
+
+#### Scenario 3: Building Custom Visualizations
+```bash
+# In Streamlit UI:
+# 1. Navigate to "Chart Builder" tab
+# 2. Select table: "KNS_Query" 
+# 3. X-axis: "StartDate", Y-axis: "Count", Color: "Coalition Status"
+# 4. Create time series showing query submission patterns
+# 5. Download chart as PNG for presentations
+```
+
+### Power User Workflows
+
+#### Daily Data Refresh Automation
+```bash
+# Add to cron job for daily refresh:
+0 6 * * * cd /path/to/knesset_refactor && PYTHONPATH="./src" python -m backend.fetch_table --all >> logs/daily_refresh.log 2>&1
+```
+
+#### Research Paper Data Export
+```python
+# Custom analysis script
+import duckdb
+
+# Connect to warehouse
+conn = duckdb.connect('data/warehouse.duckdb')
+
+# Complex analytical query
+results = conn.execute("""
+    SELECT 
+        EXTRACT(year FROM q.StartDate) as Year,
+        f.Name as Faction,
+        COUNT(*) as Questions_Asked,
+        COUNT(q.ReplyDate) as Questions_Answered,
+        ROUND(COUNT(q.ReplyDate) * 100.0 / COUNT(*), 2) as Answer_Rate
+    FROM KNS_Query q
+    JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
+    JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+    WHERE q.StartDate >= '2020-01-01'
+    GROUP BY Year, f.Name
+    ORDER BY Year DESC, Questions_Asked DESC
+""").fetchdf()
+
+# Export for academic paper
+results.to_excel('research_data.xlsx', index=False)
+```
+
 ## 🧪 Testing
 
 Run unit tests using pytest:
@@ -262,6 +391,52 @@ python -c "import streamlit, duckdb, pandas, plotly, aiohttp; print('✅ All cor
 # Test database
 PYTHONPATH="./src" python -m backend.fetch_table --sql "SHOW TABLES;"
 ```
+
+## 🤖 AI-Powered Development & CI/CD
+
+This project is optimized for AI-assisted development with **automated testing for AI-generated branches**.
+
+### Automated Testing Pipeline
+
+When AI tools (Codex, Jules, etc.) create new branches, our GitHub Actions workflow automatically:
+
+✅ **Comprehensive Testing**
+- Runs full pytest suite with 80%+ coverage requirement
+- Tests async functionality with proper asyncio handling
+- Verifies critical imports and database functionality
+
+✅ **Code Quality Checks**
+- Linting with flake8 (syntax errors block merge)
+- Code formatting suggestions with Black
+- Import sorting with isort
+- Type checking with mypy
+
+✅ **Security Scanning**
+- Dependency vulnerability checks with Safety
+- Code security analysis with Bandit
+
+✅ **Intelligent Reporting**
+- Detailed test summaries in GitHub Actions
+- Clear merge readiness indicators
+- Non-blocking suggestions for improvements
+
+### Workflow Triggers
+
+The CI pipeline runs on:
+- 🔄 **All branch pushes** (especially AI-generated branches)
+- 🔀 **Pull requests** to main/master
+- 📊 **Generates comprehensive test reports**
+
+### AI Development Best Practices
+
+When using AI tools with this repository:
+
+1. **Let AI create feature branches** - CI will automatically test them
+2. **Check the Actions tab** for detailed test results  
+3. **Look for the green checkmark** before merging
+4. **Review the automated summary** for any suggestions
+
+The workflow ensures AI-generated code meets quality standards before integration.
 
 ## 🔧 Troubleshooting
 
@@ -363,7 +538,50 @@ The platform includes 15+ predefined visualizations organized into three categor
 * Export functionality for visualization reports
 
 
+## 🤝 Contributing
+
+We welcome contributions! Here are some ways you can help:
+
+### Issues & Bug Reports
+- 🐛 **Found a bug?** [Open an issue](https://github.com/AT020993/knesset_refactor/issues) with steps to reproduce
+- 💡 **Have an idea?** Share feature requests and suggestions
+- 📖 **Documentation gaps?** Help improve our docs
+
+### Development Setup
+```bash
+# Fork the repo, then:
+git clone https://github.com/AT020993/knesset_refactor.git
+cd knesset_refactor
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# Run tests
+pytest
+
+# Run linting (if available)
+# Add your preferred linting commands here
+```
+
+### Pull Request Guidelines
+- 🧪 **Add tests** for new functionality
+- 📝 **Update documentation** for API changes  
+- 🏷️ **Follow existing code style** and naming conventions
+- ✅ **Ensure all tests pass** before submitting
+
+### Areas Where We Need Help
+- 📊 **New visualizations** for parliamentary data analysis
+- 🔍 **Performance optimizations** for large dataset handling  
+- 🌐 **API enhancements** for better OData integration
+- 📱 **UI/UX improvements** for the Streamlit interface
+- 🧪 **Test coverage** expansion
+
 ## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Licenses
+- **Knesset OData API**: Data provided by the Israeli Knesset under their terms of service
+- **Dependencies**: See `requirements.txt` for all third-party libraries and their respective licenses
 
 
 
