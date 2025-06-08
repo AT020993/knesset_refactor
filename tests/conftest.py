@@ -4,6 +4,9 @@ import os
 import pytest
 from unittest import mock # For patching
 
+# Set environment variable to disable Streamlit caching in tests
+os.environ["STREAMLIT_CACHE_DISABLED"] = "1"
+
 # 1. Make sure `src/` is on the import path:
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -74,31 +77,28 @@ def passthrough_decorator(func=None, **kwargs):
         return wrapper
     return func # Called without arguments, e.g., @st.cache_data
 
-@pytest.fixture(autouse=True, scope="session")
+@pytest.fixture(autouse=True, scope="function")
 def patch_streamlit_caching(monkeypatch):
     """
     Patches st.cache_data and st.cache_resource to be pass-through decorators
     for the entire test session, preventing pickling errors with mocks.
     """
     try:
-        # Patching at the source where 'st' is imported and used is most reliable.
-        # Assuming 'streamlit' is imported as 'st' in the modules that use caching.
+        # Patch Streamlit cache functions at the module level
+        import streamlit as st
+        monkeypatch.setattr(st, "cache_data", passthrough_decorator)
+        monkeypatch.setattr(st, "cache_resource", passthrough_decorator)
         
-        # For src.ui.ui_utils (where get_filter_options_from_db is)
-        monkeypatch.setattr("src.ui.ui_utils.st.cache_data", passthrough_decorator, raising=False)
-        monkeypatch.setattr("src.ui.ui_utils.st.cache_resource", passthrough_decorator, raising=False)
+        # Also patch at the module import level
+        monkeypatch.setattr("streamlit.cache_data", passthrough_decorator)
+        monkeypatch.setattr("streamlit.cache_resource", passthrough_decorator)
         
-        # If other modules also use st.cache_data or st.cache_resource directly,
-        # they might need similar patching. For example:
-        # monkeypatch.setattr("src.ui.data_refresh.st.cache_data", passthrough_decorator, raising=False)
-        # monkeypatch.setattr("streamlit.cache_data", passthrough_decorator, raising=False) # General fallback
-        # monkeypatch.setattr("streamlit.cache_resource", passthrough_decorator, raising=False)
-
-
-        print("Attempted to patch Streamlit caching decorators for the test session.")
+        # Patch in specific modules that use caching
+        monkeypatch.setattr("ui.ui_utils.st.cache_data", passthrough_decorator, raising=False)
+        monkeypatch.setattr("ui.ui_utils.st.cache_resource", passthrough_decorator, raising=False)
+        
+        print("✅ Successfully patched Streamlit caching decorators for tests.")
     except Exception as e:
-        # Use pytest's warning system or print for visibility in CI
         warning_message = f"Could not patch Streamlit caching functions: {e}. Tests involving Streamlit caching might fail."
-        print(f"WARNING: {warning_message}")
-        # pytest.warnings.warn(UserWarning(warning_message)) # If you want it as a pytest warning
+        print(f"⚠️ WARNING: {warning_message}")
 
