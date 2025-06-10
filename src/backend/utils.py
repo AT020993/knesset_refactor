@@ -2,13 +2,11 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import duckdb
 import pandas as pd
 
 from backend.connection_manager import get_db_connection, safe_execute_query
-from config.settings import Settings
 
 
 def map_mk_site_code(
@@ -48,15 +46,15 @@ def get_faction_display_mapping(
         with get_db_connection(db_path, read_only=True, logger_obj=logger_obj) as con:
             query = """
             SELECT DISTINCT FactionName, COUNT(*) as member_count
-            FROM KNS_PersonToPosition 
-            WHERE FactionName IS NOT NULL 
-            GROUP BY FactionName 
+            FROM KNS_PersonToPosition
+            WHERE FactionName IS NOT NULL
+            GROUP BY FactionName
             ORDER BY member_count DESC
             """
 
             result = safe_execute_query(con, query, logger_obj)
             if result is not None and not result.empty:
-                # Create mapping based on member count (higher count = lower number = higher priority)
+                # Create mapping based on member count
                 return {
                     faction: idx
                     for idx, faction in enumerate(result["FactionName"].tolist())
@@ -75,7 +73,7 @@ def get_database_summary(
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
 
-    summary = {
+    summary: Dict[str, Any] = {
         "database_path": str(db_path),
         "exists": db_path.exists(),
         "tables": {},
@@ -130,7 +128,7 @@ def validate_database_integrity(
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
 
-    report = {
+    report: Dict[str, Any] = {
         "database_exists": db_path.exists(),
         "issues": [],
         "warnings": [],
@@ -155,7 +153,7 @@ def validate_database_integrity(
             )
             tables_result = safe_execute_query(con, tables_query, logger_obj)
 
-            existing_tables = []
+            existing_tables: List[str] = []
             if tables_result is not None and not tables_result.empty:
                 existing_tables = tables_result["table_name"].tolist()
 
@@ -179,7 +177,9 @@ def validate_database_integrity(
 
             # Check each existing table
             for table_name in existing_tables:
-                table_check = {"exists": True, "row_count": 0, "has_data": False}
+                table_check: Dict[str, Any] = {
+                    "exists": True, "row_count": 0, "has_data": False
+                }
 
                 try:
                     count_query = f'SELECT COUNT(*) as count FROM "{table_name}"'
