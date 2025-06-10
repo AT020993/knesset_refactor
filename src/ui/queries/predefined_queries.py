@@ -6,7 +6,7 @@ in the UI layer. Each query is defined with its SQL and metadata for
 filtering and display purposes.
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Query definitions with their SQL and metadata
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
@@ -115,9 +115,8 @@ ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "Q.KnessetNum",
         "faction_filter_column": "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
-        "description": "Comprehensive query data with faction details, ministry information, and responsible ministers"
+        "description": "Comprehensive query data with faction details, ministry information, and responsible ministers",
     },
-    
     "Agenda Items + Full Details": {
         "sql": """
 WITH MKLatestFactionDetailsInKnesset AS (
@@ -182,8 +181,72 @@ ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "A.KnessetNum",
         "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
-        "description": "Comprehensive agenda items with initiator details, committee information, and faction status"
-    }
+        "description": "Comprehensive agenda items with initiator details, committee information, and faction status",
+    },
+    "Bills + Full Details": {
+        "sql": """
+WITH MKLatestFactionDetailsInKnesset AS (
+    SELECT
+        p2p.PersonID,
+        p2p.KnessetNum,
+        p2p.FactionID,
+        p2p.FactionName,
+        ufs.CoalitionStatus,
+        p2p.PersonToPositionID,
+        ROW_NUMBER() OVER (PARTITION BY p2p.PersonID, p2p.KnessetNum ORDER BY p2p.StartDate DESC, p2p.FinishDate DESC NULLS LAST, p2p.PersonToPositionID DESC) as rn
+    FROM KNS_PersonToPosition p2p
+    LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum
+    WHERE p2p.FactionID IS NOT NULL
+),
+ActiveInitiatorFactionDetailsForBill AS (
+    SELECT
+        b_inner.BillID,
+        p2p_inner.FactionID AS ActiveFactionID,
+        p2p_inner.FactionName AS ActiveFactionName,
+        ufs_inner.CoalitionStatus AS ActiveCoalitionStatus,
+        ROW_NUMBER() OVER (
+            PARTITION BY b_inner.BillID
+            ORDER BY p2p_inner.StartDate DESC, p2p_inner.PersonToPositionID DESC
+        ) as rn_active
+    FROM KNS_Bill b_inner
+    JOIN KNS_PersonToPosition p2p_inner ON b_inner.InitiatorID = p2p_inner.PersonID
+        AND b_inner.KnessetNum = p2p_inner.KnessetNum
+        AND CAST(b_inner.LastUpdatedDate AS TIMESTAMP)
+            BETWEEN CAST(p2p_inner.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p_inner.FinishDate, '9999-12-31') AS TIMESTAMP)
+    LEFT JOIN UserFactionCoalitionStatus ufs_inner ON p2p_inner.FactionID = ufs_inner.FactionID AND p2p_inner.KnessetNum = ufs_inner.KnessetNum
+    WHERE p2p_inner.FactionID IS NOT NULL AND b_inner.InitiatorID IS NOT NULL
+)
+SELECT
+    B.BillID,
+    B.Number AS BillNumber,
+    B.KnessetNum,
+    B.Name AS BillName,
+    B.StageDesc AS BillStage,
+    S."Desc" AS BillStatus,
+    INIT_P.FirstName AS InitiatorFirstName,
+    INIT_P.LastName AS InitiatorLastName,
+    INIT_P.GenderDesc AS InitiatorGender,
+
+    COALESCE(AIFD.ActiveFactionName, FallbackFaction_init.FactionName) AS InitiatorFactionName,
+    COALESCE(AIFD.ActiveCoalitionStatus, FallbackFaction_init.CoalitionStatus) AS InitiatorFactionCoalitionStatus,
+
+    HC.Name AS CurrentCommitteeName,
+    strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted
+
+FROM KNS_Bill B
+LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
+LEFT JOIN KNS_Person INIT_P ON B.InitiatorID = INIT_P.PersonID
+LEFT JOIN KNS_Committee HC ON B.CurrentCommitteeID = HC.CommitteeID
+LEFT JOIN ActiveInitiatorFactionDetailsForBill AIFD ON B.BillID = AIFD.BillID AND AIFD.rn_active = 1
+LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init ON B.InitiatorID = FallbackFaction_init.PersonID
+    AND B.KnessetNum = FallbackFaction_init.KnessetNum AND FallbackFaction_init.rn = 1
+
+ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT 10000;
+        """,
+        "knesset_filter_column": "B.KnessetNum",
+        "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
+        "description": "Comprehensive bill data with initiator factions, committee assignments, and status details",
+    },
 }
 
 
@@ -208,7 +271,7 @@ def get_query_filters(query_name: str) -> Dict[str, str]:
     query_def = get_query_definition(query_name)
     return {
         "knesset_filter_column": query_def.get("knesset_filter_column", ""),
-        "faction_filter_column": query_def.get("faction_filter_column", "")
+        "faction_filter_column": query_def.get("faction_filter_column", ""),
     }
 
 
