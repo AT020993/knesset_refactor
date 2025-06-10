@@ -74,6 +74,7 @@ Transform complex parliamentary data into actionable insights with:
 * **Predefined Queries System:**
     * Execute curated SQL queries with proper filtering and parameterization
     * Dynamic query execution with type-safe parameter handling
+    * Built-in examples: "Queries + Full Details", "Agenda Items + Full Details", "Bills + Full Details"
     * Results displayed interactively with comprehensive download options
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
