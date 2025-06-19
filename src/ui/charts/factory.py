@@ -63,14 +63,13 @@ class ChartFactory:
                 'query_types_distribution',
                 'agenda_classifications_pie',
                 'query_status_distribution',
-                'agenda_status_distribution'
+                'agenda_status_distribution',
+                'bill_status_distribution'
             ],
             'comparison': [
                 'queries_per_faction',
                 'queries_by_coalition_status',
-                'queries_by_ministry',
-                'agendas_per_faction',
-                'agendas_by_coalition_status'
+                'queries_by_ministry'
             ],
             'network': [
                 'mk_collaboration_network'

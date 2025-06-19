@@ -29,8 +29,6 @@ from src.ui.plot_generators import (
     plot_queries_per_faction_in_knesset,
     plot_queries_by_coalition_and_answer_status,
     plot_queries_by_ministry_and_status,
-    plot_agendas_per_faction_in_knesset,
-    plot_agendas_by_coalition_and_status,
 )
 
 # Mock streamlit globally for all tests in this file

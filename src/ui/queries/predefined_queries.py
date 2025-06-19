@@ -194,6 +194,8 @@ SELECT
     A.Name AS AgendaDescription, -- Using A.Name as AgendaDescription
     A.ClassificationDesc AS AgendaClassification,
     S."Desc" AS AgendaStatus,
+    A.InitiatorPersonID, -- Added InitiatorPersonID for combination with PersonID
+    INIT_P.PersonID AS InitiatorPersonIDResolved, -- Added resolved PersonID
     INIT_P.FirstName AS InitiatorFirstName,
     INIT_P.LastName AS InitiatorLastName,
     INIT_P.GenderDesc AS InitiatorGender,

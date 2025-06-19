@@ -58,12 +58,16 @@ class BaseChart(ABC):
     
     def build_filters(self, knesset_filter: Optional[List[int]] = None, 
                      faction_filter: Optional[List[str]] = None,
+                     table_prefix: str = "",
                      **kwargs) -> Dict[str, Any]:
         """Build common filter conditions."""
         filters = {}
         
+        # Add table prefix with dot if provided
+        prefix = f"{table_prefix}." if table_prefix else ""
+        
         if knesset_filter:
-            filters['knesset_condition'] = f"KnessetNum IN ({','.join(map(str, knesset_filter))})"
+            filters['knesset_condition'] = f"{prefix}KnessetNum IN ({','.join(map(str, knesset_filter))})"
             if len(knesset_filter) == 1:
                 filters['is_single_knesset'] = True
                 filters['knesset_title'] = f"Knesset {knesset_filter[0]}"

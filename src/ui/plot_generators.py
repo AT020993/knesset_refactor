@@ -48,8 +48,18 @@ def plot_queries_by_time_period(
     **kwargs
 ) -> Optional[Any]:
     """Legacy wrapper for queries by time period chart."""
-    chart_service = ChartService(db_path, logger_obj)
-    return chart_service.plot_queries_by_time_period(**kwargs)
+    try:
+        logger_obj.info(f"plot_queries_by_time_period called with db_path={db_path}, kwargs={kwargs}")
+        chart_service = ChartService(db_path, logger_obj)
+        logger_obj.info("ChartService created successfully")
+        result = chart_service.plot_queries_by_time_period(**kwargs)
+        logger_obj.info(f"Chart result: {type(result)} {'(figure)' if result else '(None)'}")
+        return result
+    except Exception as e:
+        logger_obj.error(f"Error in plot_queries_by_time_period: {e}", exc_info=True)
+        import streamlit as st
+        st.error(f"Chart generation failed: {e}")
+        return None
 
 
 def plot_query_types_distribution(
@@ -94,15 +104,25 @@ def plot_mk_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
 
 
 def plot_agendas_by_time_period(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
+    """Legacy wrapper for agendas by time period chart."""
+    try:
+        logger_obj.info(f"plot_agendas_by_time_period called with db_path={db_path}, kwargs={kwargs}")
+        chart_service = ChartService(db_path, logger_obj)
+        logger_obj.info("ChartService created for agendas")
+        result = chart_service.plot_agendas_by_time_period(**kwargs)
+        logger_obj.info(f"Agenda chart result: {type(result)} {'(figure)' if result else '(None)'}")
+        return result
+    except Exception as e:
+        logger_obj.error(f"Error in plot_agendas_by_time_period: {e}", exc_info=True)
+        import streamlit as st
+        st.error(f"Agenda chart generation failed: {e}")
+        return None
 
 
 def plot_agenda_classifications_pie(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
+    """Legacy wrapper for agenda classifications pie chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_agenda_classifications_pie(**kwargs)
 
 
 def plot_query_status_by_faction(db_path, connect_func, logger_obj, **kwargs):
@@ -112,9 +132,15 @@ def plot_query_status_by_faction(db_path, connect_func, logger_obj, **kwargs):
 
 
 def plot_agenda_status_distribution(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
+    """Legacy wrapper for agenda status distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_agenda_status_distribution(**kwargs)
+
+
+def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for bill status distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_bill_status_distribution(**kwargs)
 
 
 def plot_queries_by_coalition_and_answer_status(db_path, connect_func, logger_obj, **kwargs):
@@ -129,16 +155,6 @@ def plot_queries_by_ministry_and_status(db_path, connect_func, logger_obj, **kwa
     return None
 
 
-def plot_agendas_per_faction_in_knesset(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_agendas_by_coalition_and_status(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
 
 
 def plot_coalition_timeline_gantt(db_path, connect_func, logger_obj, **kwargs):

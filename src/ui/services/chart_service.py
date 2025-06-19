@@ -37,3 +37,21 @@ class ChartService:
     def plot_queries_per_faction_in_knesset(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for queries per faction."""
         return self.chart_factory.plot_queries_per_faction_in_knesset(**kwargs)
+    
+    # Agenda chart methods
+    def plot_agendas_by_time_period(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for agendas by time period."""
+        return self.create_chart('time_series', 'agendas_by_time', **kwargs)
+    
+    def plot_agenda_classifications_pie(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for agenda classifications pie chart."""
+        return self.create_chart('distribution', 'agenda_classifications_pie', **kwargs)
+    
+    def plot_agenda_status_distribution(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for agenda status distribution."""
+        return self.create_chart('distribution', 'agenda_status_distribution', **kwargs)
+    
+    # Bill chart methods
+    def plot_bill_status_distribution(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bill status distribution."""
+        return self.create_chart('distribution', 'bill_status_distribution', **kwargs)
