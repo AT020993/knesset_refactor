@@ -85,22 +85,6 @@ def plot_queries_per_faction_in_knesset(
 
 
 # Add more legacy function wrappers as needed
-def plot_parliamentary_activity_heatmap(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_ministry_workload_sunburst(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_mk_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
 
 
 def plot_agendas_by_time_period(db_path, connect_func, logger_obj, **kwargs):
@@ -125,10 +109,6 @@ def plot_agenda_classifications_pie(db_path, connect_func, logger_obj, **kwargs)
     return chart_service.plot_agenda_classifications_pie(**kwargs)
 
 
-def plot_query_status_by_faction(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
 
 
 def plot_agenda_status_distribution(db_path, connect_func, logger_obj, **kwargs):
@@ -143,39 +123,3 @@ def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
     return chart_service.plot_bill_status_distribution(**kwargs)
 
 
-def plot_queries_by_coalition_and_answer_status(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_queries_by_ministry_and_status(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-
-
-def plot_coalition_timeline_gantt(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_mk_tenure_gantt(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_ministry_leadership_timeline(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None
-
-
-def plot_query_response_times(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper - implementation pending in new system."""
-    warnings.warn("This chart type needs to be implemented in the new chart system", UserWarning)
-    return None

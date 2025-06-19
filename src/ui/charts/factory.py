@@ -8,8 +8,6 @@ import plotly.graph_objects as go
 from .time_series import TimeSeriesCharts
 from .distribution import DistributionCharts
 from .comparison import ComparisonCharts
-from .network import NetworkCharts
-from .timeline import TimelineCharts
 
 
 class ChartFactory:
@@ -24,8 +22,6 @@ class ChartFactory:
             'time_series': TimeSeriesCharts(db_path, logger_obj),
             'distribution': DistributionCharts(db_path, logger_obj),
             'comparison': ComparisonCharts(db_path, logger_obj),
-            'network': NetworkCharts(db_path, logger_obj),
-            'timeline': TimelineCharts(db_path, logger_obj),
         }
     
     def create_chart(self, chart_category: str, chart_type: str, **kwargs) -> Optional[go.Figure]:
@@ -56,8 +52,7 @@ class ChartFactory:
         return {
             'time_series': [
                 'queries_by_time',
-                'agendas_by_time',
-                'parliamentary_activity_heatmap'
+                'agendas_by_time'
             ],
             'distribution': [
                 'query_types_distribution',
@@ -70,15 +65,6 @@ class ChartFactory:
                 'queries_per_faction',
                 'queries_by_coalition_status',
                 'queries_by_ministry'
-            ],
-            'network': [
-                'mk_collaboration_network'
-            ],
-            'timeline': [
-                'coalition_timeline_gantt',
-                'mk_tenure_gantt',
-                'ministry_leadership_timeline',
-                'query_response_times'
             ]
         }
     

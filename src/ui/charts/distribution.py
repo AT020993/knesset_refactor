@@ -15,10 +15,51 @@ from backend.connection_manager import get_db_connection, safe_execute_query
 class DistributionCharts(BaseChart):
     """Distribution analysis charts (pie, histogram, etc.)."""
     
-    def plot_query_types_distribution(self, **kwargs) -> Optional[go.Figure]:
+    def plot_query_types_distribution(self, knesset_filter: Optional[List[int]] = None, faction_filter: Optional[List[str]] = None, **kwargs) -> Optional[go.Figure]:
         """Generate query types distribution chart."""
-        # TODO: Implement from original plot_generators.py
-        pass
+        if not self.check_database_exists():
+            return None
+        
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q")
+        
+        try:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                if not self.check_tables_exist(con, ["KNS_Query"]):
+                    return None
+                
+                query = f"""
+                    SELECT
+                        COALESCE(q.TypeDesc, 'Unknown') AS QueryType,
+                        COUNT(q.QueryID) AS Count
+                    FROM KNS_Query q
+                    WHERE q.KnessetNum IS NOT NULL
+                        AND {filters['knesset_condition']}
+                    GROUP BY q.TypeDesc
+                    ORDER BY Count DESC
+                """
+                
+                df = safe_execute_query(con, query, self.logger)
+                
+                if df.empty:
+                    st.info(f"No query type data found for '{filters['knesset_title']}'.")
+                    return None
+                
+                fig = px.pie(
+                    df,
+                    values="Count",
+                    names="QueryType",
+                    title=f"<b>Query Types Distribution for {filters['knesset_title']}</b>"
+                )
+                
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                fig.update_layout(title_x=0.5)
+                
+                return fig
+                
+        except Exception as e:
+            self.logger.error(f"Error generating query types distribution chart: {e}", exc_info=True)
+            st.error(f"Could not generate query types chart: {e}")
+            return None
     
     def plot_agenda_classifications_pie(self, knesset_filter: Optional[List[int]] = None, faction_filter: Optional[List[str]] = None, **kwargs) -> Optional[go.Figure]:
         """Generate agenda classifications pie chart."""
