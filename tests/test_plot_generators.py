@@ -214,12 +214,12 @@ class TestPlotQueriesByTimePeriod:
 
 
 class TestPlotQueryTypesDistribution:
-    @mock.patch("src.ui.plot_generators.px.bar")  # Changed from pie to bar
+    @mock.patch("src.ui.plot_generators.px.pie")
     @mock.patch("src.ui.plot_generators.check_tables_exist")
     def test_success_single_knesset(
         self,
         mock_check_tables_exist,
-        mock_px_bar,
+        mock_px_pie,
         mock_db_path,
         mock_connect_func,
         mock_logger,
@@ -227,12 +227,10 @@ class TestPlotQueryTypesDistribution:
     ):
         mock_check_tables_exist.return_value = True
         sample_data = pd.DataFrame(
-            {"TypeDesc": ["Type A", "Type B"], "QueryCount": [50, 75]}
+            {"QueryType": ["Type A", "Type B"], "Count": [50, 75]}
         )
-        mock_conn.execute.return_value.df.return_value = (
-            sample_data  # Assuming execute for parameterized query
-        )
-        mock_px_bar.return_value = go.Figure()
+        mock_conn.execute.return_value.df.return_value = sample_data
+        mock_px_pie.return_value = go.Figure()
 
         fig = plot_query_types_distribution(
             mock_db_path, mock_connect_func, mock_logger, knesset_filter=[25]
@@ -243,11 +241,11 @@ class TestPlotQueryTypesDistribution:
             mock_conn, ["KNS_Query"], mock_logger
         )
         mock_conn.execute.assert_called_once()
-        mock_px_bar.assert_called_once()
-        call_args = mock_px_bar.call_args[1]
+        mock_px_pie.assert_called_once()
+        call_args = mock_px_pie.call_args[1]
         pd.testing.assert_frame_equal(call_args["data_frame"], sample_data)
-        assert call_args["x"] == "TypeDesc"
-        assert call_args["y"] == "QueryCount"
+        assert call_args["values"] == "Count"
+        assert call_args["names"] == "QueryType"
         assert "Distribution of Query Types for Knesset 25" in call_args["title"]
         st_mock.error.assert_not_called()
 
