@@ -111,6 +111,13 @@ class KnessetTables:
         dependencies=["KNS_Person", "KNS_Committee"]
     )
     
+    BILL_INITIATOR = TableMetadata(
+        name="KNS_BillInitiator",
+        description="Bill initiators",
+        primary_key="BillInitiatorID",
+        dependencies=["KNS_Bill", "KNS_Person"]
+    )
+    
     LAW = TableMetadata(
         name="KNS_Law",
         description="Enacted laws",
@@ -137,7 +144,7 @@ class KnessetTables:
         return [
             cls.PERSON, cls.FACTION, cls.PERSON_TO_POSITION, cls.GOV_MINISTRY,
             cls.STATUS, cls.QUERY, cls.AGENDA, cls.COMMITTEE, cls.COMMITTEE_SESSION,
-            cls.PLENUM_SESSION, cls.KNESSET_DATES, cls.BILL, cls.LAW, cls.ISRAEL_LAW
+            cls.PLENUM_SESSION, cls.KNESSET_DATES, cls.BILL, cls.BILL_INITIATOR, cls.LAW, cls.ISRAEL_LAW
         ]
     
     @classmethod

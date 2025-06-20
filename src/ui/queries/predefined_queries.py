@@ -136,8 +136,7 @@ LEFT JOIN MinisterOfReplyMinistry MRM
 ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "Q.KnessetNum",
-        "faction_filter_column":
-            "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
+        "faction_filter_column": "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
         "description": (
             "Comprehensive query data with faction details, "
             "ministry information, and responsible ministers"
@@ -224,8 +223,7 @@ LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "A.KnessetNum",
-        "faction_filter_column":
-            "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
+        "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
         "description": (
             "Comprehensive agenda items with initiator details, "
             "committee information, and faction status"
@@ -233,6 +231,17 @@ ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
     },
     "Bills + Full Details": {
         "sql": """
+WITH BillInitiators AS (
+    SELECT
+        bi.BillID,
+        STRING_AGG(p.FirstName || ' ' || p.LastName, ', ') AS InitiatorNames,
+        STRING_AGG(p.FirstName, ', ') AS InitiatorFirstNames,
+        STRING_AGG(p.LastName, ', ') AS InitiatorLastNames,
+        COUNT(DISTINCT p.PersonID) AS InitiatorCount
+    FROM KNS_BillInitiator bi
+    LEFT JOIN KNS_Person p ON bi.PersonID = p.PersonID
+    GROUP BY bi.BillID
+)
 SELECT
     B.BillID,
     B.Number AS BillNumber,
@@ -251,19 +260,24 @@ SELECT
     B.PublicationSeriesDesc,
     B.PublicationSeriesFirstCall,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d')
-        AS LastUpdatedDateFormatted
+        AS LastUpdatedDateFormatted,
+    COALESCE(BI.InitiatorNames, 'Unknown') AS BillInitiatorNames,
+    COALESCE(BI.InitiatorFirstNames, '') AS BillInitiatorFirstNames,
+    COALESCE(BI.InitiatorLastNames, '') AS BillInitiatorLastNames,
+    COALESCE(BI.InitiatorCount, 0) AS BillInitiatorCount
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
+LEFT JOIN BillInitiators BI ON B.BillID = BI.BillID
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "B.KnessetNum",
         "faction_filter_column": "",
         "description": (
-            "Comprehensive bill data with initiator factions, committee "
-            "assignments, and status details"
+            "Comprehensive bill data with initiator details, committee "
+            "assignments, and status information"
         ),
     },
 }
