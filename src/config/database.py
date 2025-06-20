@@ -20,6 +20,7 @@ class DatabaseConfig:
         "KNS_PlenumSession",
         "KNS_KnessetDates",
         "KNS_Bill",
+        "KNS_BillInitiator",
         "KNS_Law",
         "KNS_IsraelLaw"
     ]
