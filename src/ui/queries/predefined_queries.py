@@ -231,17 +231,6 @@ ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
     },
     "Bills + Full Details": {
         "sql": """
-WITH BillInitiators AS (
-    SELECT
-        bi.BillID,
-        STRING_AGG(p.FirstName || ' ' || p.LastName, ', ') AS InitiatorNames,
-        STRING_AGG(p.FirstName, ', ') AS InitiatorFirstNames,
-        STRING_AGG(p.LastName, ', ') AS InitiatorLastNames,
-        COUNT(DISTINCT p.PersonID) AS InitiatorCount
-    FROM KNS_BillInitiator bi
-    LEFT JOIN KNS_Person p ON bi.PersonID = p.PersonID
-    GROUP BY bi.BillID
-)
 SELECT
     B.BillID,
     B.Number AS BillNumber,
@@ -261,15 +250,14 @@ SELECT
     B.PublicationSeriesFirstCall,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d')
         AS LastUpdatedDateFormatted,
-    COALESCE(BI.InitiatorNames, 'Unknown') AS BillInitiatorNames,
-    COALESCE(BI.InitiatorFirstNames, '') AS BillInitiatorFirstNames,
-    COALESCE(BI.InitiatorLastNames, '') AS BillInitiatorLastNames,
-    COALESCE(BI.InitiatorCount, 0) AS BillInitiatorCount
+    'Unknown' AS BillInitiatorNames,
+    '' AS BillInitiatorFirstNames,
+    '' AS BillInitiatorLastNames,
+    0 AS BillInitiatorCount
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
-LEFT JOIN BillInitiators BI ON B.BillID = BI.BillID
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT 10000;
         """,
