@@ -69,6 +69,8 @@ class ChartFactory:
                 "queries_per_faction",
                 "queries_by_coalition_status",
                 "queries_by_ministry",
+                "agendas_per_faction",
+                "agendas_by_coalition_status",
             ],
         }
 
@@ -88,3 +90,11 @@ class ChartFactory:
     def plot_query_status_by_faction(self, **kwargs) -> Optional[go.Figure]:
         """Legacy compatibility method."""
         return self.create_chart("distribution", "query_status_by_faction", **kwargs)
+
+    def plot_agendas_per_faction_in_knesset(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy compatibility method."""
+        return self.create_chart("comparison", "agendas_per_faction", **kwargs)
+
+    def plot_agendas_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy compatibility method."""
+        return self.create_chart("comparison", "agendas_by_coalition_status", **kwargs)

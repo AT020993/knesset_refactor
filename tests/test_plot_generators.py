@@ -332,3 +332,55 @@ class TestPlotQueryStatusByFaction:
         )
         assert fig is None
         st_mock.info.assert_called_once()  # Check specific message if needed
+
+
+class TestPlotAgendasPerFaction:
+    @mock.patch("src.ui.services.chart_service.ChartService.plot_agendas_per_faction")
+    def test_success_single_knesset(
+        self, mock_chart, mock_db_path, mock_connect_func, mock_logger
+    ):
+        mock_chart.return_value = go.Figure()
+
+        fig = plot_agendas_per_faction(
+            mock_db_path, mock_connect_func, mock_logger, knesset_filter=[25]
+        )
+
+        assert isinstance(fig, go.Figure)
+        mock_chart.assert_called_once()
+        st_mock.error.assert_not_called()
+
+    def test_requires_single_knesset(
+        self, mock_db_path, mock_connect_func, mock_logger
+    ):
+        fig = plot_agendas_per_faction(
+            mock_db_path, mock_connect_func, mock_logger, knesset_filter=[24, 25]
+        )
+        assert fig is None
+        st_mock.info.assert_called_once()
+
+
+class TestPlotAgendasByCoalitionStatus:
+    @mock.patch(
+        "src.ui.services.chart_service.ChartService.plot_agendas_by_coalition_status"
+    )
+    def test_success_single_knesset(
+        self, mock_chart, mock_db_path, mock_connect_func, mock_logger
+    ):
+        mock_chart.return_value = go.Figure()
+
+        fig = plot_agendas_by_coalition_status(
+            mock_db_path, mock_connect_func, mock_logger, knesset_filter=[25]
+        )
+
+        assert isinstance(fig, go.Figure)
+        mock_chart.assert_called_once()
+        st_mock.error.assert_not_called()
+
+    def test_requires_single_knesset(
+        self, mock_db_path, mock_connect_func, mock_logger
+    ):
+        fig = plot_agendas_by_coalition_status(
+            mock_db_path, mock_connect_func, mock_logger, knesset_filter=[24, 25]
+        )
+        assert fig is None
+        st_mock.info.assert_called_once()

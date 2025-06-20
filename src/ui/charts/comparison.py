@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -92,6 +92,236 @@ class ComparisonCharts(BaseChart):
         """Generate queries by coalition/opposition status chart."""
         # TODO: Implement from original plot_generators.py
         pass
+
+    def plot_agendas_per_faction(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate agenda items per initiating faction chart."""
+        if not self.check_database_exists():
+            return None
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Agendas per Faction' plot."
+            )
+            self.logger.info(
+                "plot_agendas_per_faction requires a single Knesset filter."
+            )
+            return None
+
+        single_knesset_num = knesset_filter[0]
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Agenda",
+                    "KNS_Person",
+                    "KNS_PersonToPosition",
+                    "KNS_Faction",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
+
+                query = f"""
+                SELECT
+                    COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+                    p2p.FactionID,
+                    COUNT(DISTINCT a.AgendaID) AS AgendaCount
+                FROM KNS_Agenda a
+                JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+                LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+                    AND a.KnessetNum = p2p.KnessetNum
+                    AND CAST({date_column} AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
+                    AND a.KnessetNum = f_fallback.KnessetNum
+                WHERE a.KnessetNum = {single_knesset_num} AND a.InitiatorPersonID IS NOT NULL
+                    AND p2p.FactionID IS NOT NULL
+                """
+
+                params: List[Any] = []
+                if faction_filter:
+                    placeholders = ", ".join(["?"] * len(faction_filter))
+                    query += f" AND p2p.FactionID IN ({placeholders})"
+                    params.extend(faction_filter)
+
+                query += """
+                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+                HAVING AgendaCount > 0
+                ORDER BY AgendaCount DESC;
+                """
+
+                self.logger.debug(
+                    "Executing SQL for plot_agendas_per_faction (Knesset %s): %s",
+                    single_knesset_num,
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No agenda data found for Knesset {single_knesset_num} with the current filters."
+                    )
+                    return None
+
+                df["AgendaCount"] = pd.to_numeric(
+                    df["AgendaCount"], errors="coerce"
+                ).fillna(0)
+                df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
+
+                fig = px.bar(
+                    df,
+                    x="FactionName",
+                    y="AgendaCount",
+                    color="FactionName",
+                    title=f"<b>Agendas per Initiating Faction (Knesset {single_knesset_num})</b>",
+                    labels={
+                        "FactionName": "Faction",
+                        "AgendaCount": "Number of Agenda Items",
+                    },
+                    hover_name="FactionName",
+                    custom_data=["AgendaCount"],
+                    color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE,
+                )
+
+                fig.update_traces(
+                    hovertemplate="<b>Faction:</b> %{x}<br><b>Agenda Items:</b> %{customdata[0]}<extra></extra>"
+                )
+
+                fig.update_layout(
+                    xaxis_title="Initiating Faction",
+                    yaxis_title="Number of Agenda Items",
+                    title_x=0.5,
+                    xaxis_tickangle=-45,
+                    showlegend=False,
+                )
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                "Error generating 'plot_agendas_per_faction' for Knesset %s: %s",
+                single_knesset_num,
+                e,
+                exc_info=True,
+            )
+            st.error(f"Could not generate 'Agendas per Faction' plot: {e}")
+            return None
+
+    def plot_agendas_by_coalition_status(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate agenda distribution by coalition/opposition status."""
+        if not self.check_database_exists():
+            return None
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Agendas by Coalition Status' plot."
+            )
+            self.logger.info(
+                "plot_agendas_by_coalition_status requires a single Knesset filter."
+            )
+            return None
+
+        single_knesset_num = knesset_filter[0]
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Agenda",
+                    "KNS_Person",
+                    "KNS_PersonToPosition",
+                    "UserFactionCoalitionStatus",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
+
+                query = f"""
+                SELECT
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    COUNT(DISTINCT a.AgendaID) AS AgendaCount
+                FROM KNS_Agenda a
+                JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+                LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+                    AND a.KnessetNum = p2p.KnessetNum
+                    AND CAST({date_column} AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
+                    AND a.KnessetNum = ufs.KnessetNum
+                WHERE a.KnessetNum = {single_knesset_num} AND a.InitiatorPersonID IS NOT NULL
+                    AND p2p.FactionID IS NOT NULL
+                """
+
+                params: List[Any] = []
+                if faction_filter:
+                    placeholders = ", ".join(["?"] * len(faction_filter))
+                    query += f" AND p2p.FactionID IN ({placeholders})"
+                    params.extend(faction_filter)
+
+                query += """
+                GROUP BY CoalitionStatus
+                HAVING AgendaCount > 0
+                ORDER BY AgendaCount DESC;
+                """
+
+                self.logger.debug(
+                    "Executing SQL for plot_agendas_by_coalition_status (Knesset %s): %s",
+                    single_knesset_num,
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No agenda data for Knesset {single_knesset_num} to visualize 'Agendas by Coalition Status'."
+                    )
+                    return None
+
+                df["AgendaCount"] = pd.to_numeric(
+                    df["AgendaCount"], errors="coerce"
+                ).fillna(0)
+                df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+
+                fig = px.pie(
+                    df,
+                    values="AgendaCount",
+                    names="CoalitionStatus",
+                    title=f"<b>Agendas by Initiator Coalition Status (Knesset {single_knesset_num})</b>",
+                    color="CoalitionStatus",
+                    color_discrete_map=self.config.COALITION_OPPOSITION_COLORS,
+                )
+
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(title_x=0.5)
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                "Error generating 'plot_agendas_by_coalition_status' for Knesset %s: %s",
+                single_knesset_num,
+                e,
+                exc_info=True,
+            )
+            st.error(f"Could not generate 'Agendas by Coalition Status' plot: {e}")
+            return None
 
     def plot_queries_by_ministry(self, **kwargs) -> Optional[go.Figure]:
         """Generate queries by ministry chart."""
@@ -302,6 +532,8 @@ class ComparisonCharts(BaseChart):
             "queries_by_coalition_status": self.plot_queries_by_coalition_status,
             "queries_by_ministry": self.plot_queries_by_ministry,
             "query_status_by_faction": self.plot_query_status_by_faction,
+            "agendas_per_faction": self.plot_agendas_per_faction,
+            "agendas_by_coalition_status": self.plot_agendas_by_coalition_status,
         }
 
         method = chart_methods.get(chart_type)
