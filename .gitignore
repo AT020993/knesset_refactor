@@ -10,3 +10,16 @@ __pycache__/
 
 # Logging
 logs/
+
+# Testing
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+
+# Development
+*.pyc
+__pycache__/
