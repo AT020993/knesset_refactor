@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knesset-refactor"
+version = "0.1.0"
+dependencies = [
+    "streamlit",
+    "duckdb",
+    "pandas",
+    "plotly",
+    "requests",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "flake8",
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
