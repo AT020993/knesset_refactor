@@ -36,8 +36,8 @@ import ui.ui_utils as ui_utils
 import ui.chart_builder_ui as cb_ui
 
 # Initialize logger for the UI module
-ui_logger = logging.getLogger("knesset.ui.data_refresh") # Use logging.getLogger
-if not ui_logger.handlers: 
+ui_logger = logging.getLogger("knesset.ui.data_refresh")  # Use logging.getLogger
+if not ui_logger.handlers:
     setup_logging("knesset.ui.data_refresh", console_output=True)
 
 ui_logger.info("--- data_refresh.py script started ---")
@@ -49,30 +49,15 @@ PARQUET_DIR = Path("data/parquet")
 MAX_ROWS_FOR_CHART_BUILDER = 50000
 MAX_UNIQUE_VALUES_FOR_FACET = 50
 
-# Plot names updated to reflect single Knesset focus where applicable
-AVAILABLE_PLOTS_BY_TOPIC = {
-    "Queries": {
-        "Queries by Time Period": pg.plot_queries_by_time_period,
-        "Distribution of Query Types (Single Knesset)": pg.plot_query_types_distribution,
-        "Queries per Faction (Single Knesset)": pg.plot_queries_per_faction_in_knesset,
-    },
-    "Agendas": {
-        "Agenda Items by Time Period": pg.plot_agendas_by_time_period,
-        "Distribution of Agenda Classifications (Single Knesset)": pg.plot_agenda_classifications_pie,
-        "Agenda Item Status Distribution (Single Knesset)": pg.plot_agenda_status_distribution,
-    },
-    "Bills": {
-        "Bill Status Distribution (Single Knesset)": pg.plot_bill_status_distribution,
-    }
-}
-
 st.set_page_config(page_title="Knesset OData – Refresh & Export", layout="wide")
 
 ui_logger.info("--- Initializing session state ---")
 SessionStateManager.initialize_all_session_state()
 ui_logger.info("--- Finished initializing session state ---")
 
-knesset_nums_options_global, factions_options_df_global = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
+knesset_nums_options_global, factions_options_df_global = (
+    ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
+)
 faction_display_map_global = {
     f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
     for _, row in factions_options_df_global.iterrows()
@@ -81,47 +66,58 @@ faction_display_map_global = {
 sc.display_sidebar(
     db_path_arg=DB_PATH,
     exports_arg=PREDEFINED_QUERIES,
-    connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger),
-    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, _logger_obj=ui_logger),
-    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(DB_PATH, table_name, _logger_obj=ui_logger),
-    get_filter_options_func_arg=lambda: (knesset_nums_options_global, factions_options_df_global),
+    connect_func_arg=lambda read_only=True: ui_utils.connect_db(
+        DB_PATH, read_only, _logger_obj=ui_logger
+    ),
+    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(
+        DB_PATH, _logger_obj=ui_logger
+    ),
+    get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(
+        DB_PATH, table_name, _logger_obj=ui_logger
+    ),
+    get_filter_options_func_arg=lambda: (
+        knesset_nums_options_global,
+        factions_options_df_global,
+    ),
     faction_display_map_arg=faction_display_map_global,
     ui_logger_arg=ui_logger,
-    format_exc_func_arg=ui_utils.format_exception_for_ui
+    format_exc_func_arg=ui_utils.format_exception_for_ui,
 )
 
 # Initialize page renderers
-page_renderer = DataRefreshPageRenderer(DB_PATH, ui_logger)
+data_refresh_renderer = DataRefreshPageRenderer(DB_PATH, ui_logger)
 plots_renderer = PlotsPageRenderer(DB_PATH, ui_logger)
 
-# Render page sections
-page_renderer.render_page_header()
-page_renderer.render_query_results_section()
-page_renderer.render_table_explorer_section()
+# Render main page header
+data_refresh_renderer.render_page_header()
 
-# Render plots section
-plots_renderer.render_plots_section(
-    available_plots=AVAILABLE_PLOTS_BY_TOPIC,
-    knesset_options=sorted([str(k) for k in knesset_nums_options_global], key=int, reverse=True) if knesset_nums_options_global else [],
-    faction_display_map=faction_display_map_global,
-    connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
-)
+# Main content sections
+data_refresh_renderer.render_query_results_section()
+data_refresh_renderer.render_table_explorer_section()
 
+# Render plots/visualizations section
+try:
+    plots_renderer.render_plots_section(
+        available_plots=pg.get_available_plots(),
+        knesset_options=knesset_nums_options_global,
+        faction_display_map=faction_display_map_global,
+        connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
+    )
+except Exception as e:
+    st.error(f"Error loading visualizations section: {e}")
+    ui_logger.error(f"Error in plots section: {e}", exc_info=True)
 
-st.divider()
-cb_ui.display_chart_builder(
-    db_path=DB_PATH,
-    max_rows_for_chart_builder=MAX_ROWS_FOR_CHART_BUILDER,
-    max_unique_values_for_facet=MAX_UNIQUE_VALUES_FOR_FACET,
-    faction_display_map_global=faction_display_map_global,
-    logger_obj=ui_logger
-)
-
-# Render remaining sections
-page_renderer.render_ad_hoc_sql_section(
-    connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
-)
-page_renderer.render_table_status_section(PARQUET_DIR, TABLES)
+# Chart Builder section
+try:
+    cb_ui.display_chart_builder(
+        db_path=DB_PATH,
+        max_rows_for_chart_builder=MAX_ROWS_FOR_CHART_BUILDER,
+        max_unique_values_for_facet=MAX_UNIQUE_VALUES_FOR_FACET,
+        faction_display_map_global=faction_display_map_global,
+        logger_obj=ui_logger
+    )
+except Exception as e:
+    st.error(f"Error loading chart builder section: {e}")
+    ui_logger.error(f"Error in chart builder section: {e}", exc_info=True)
 
 ui_logger.info("--- data_refresh.py script finished loading UI components ---")
-

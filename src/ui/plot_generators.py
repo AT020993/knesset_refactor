@@ -123,3 +123,22 @@ def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
     return chart_service.plot_bill_status_distribution(**kwargs)
 
 
+def get_available_plots():
+    """Return available plot categories and their functions for the UI."""
+    return {
+        "Query Analytics": {
+            "Queries by Time Period": plot_queries_by_time_period,
+            "Query Types Distribution": plot_query_types_distribution,
+            "Queries per Faction": plot_queries_per_faction_in_knesset,
+        },
+        "Agenda Analytics": {
+            "Agendas by Time Period": plot_agendas_by_time_period,
+            "Agenda Classifications": plot_agenda_classifications_pie,
+            "Agenda Status Distribution": plot_agenda_status_distribution,
+        },
+        "Bills Analytics": {
+            "Bill Status Distribution": plot_bill_status_distribution,
+        }
+    }
+
+
