@@ -136,8 +136,7 @@ LEFT JOIN MinisterOfReplyMinistry MRM
 ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "Q.KnessetNum",
-        "faction_filter_column":
-            "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
+        "faction_filter_column": "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
         "description": (
             "Comprehensive query data with faction details, "
             "ministry information, and responsible ministers"
@@ -224,8 +223,7 @@ LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "A.KnessetNum",
-        "faction_filter_column":
-            "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
+        "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
         "description": (
             "Comprehensive agenda items with initiator details, "
             "committee information, and faction status"
@@ -239,7 +237,7 @@ WITH BillInitiators AS (
         STRING_AGG(p.FirstName || ' ' || p.LastName, ', ') AS InitiatorNames,
         STRING_AGG(p.FirstName, ', ') AS InitiatorFirstNames,
         STRING_AGG(p.LastName, ', ') AS InitiatorLastNames,
-        COUNT(DISTINCT bi.PersonID) AS InitiatorCount
+        COUNT(DISTINCT p.PersonID) AS InitiatorCount
     FROM KNS_BillInitiator bi
     LEFT JOIN KNS_Person p ON bi.PersonID = p.PersonID
     GROUP BY bi.BillID
