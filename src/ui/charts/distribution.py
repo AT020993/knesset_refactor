@@ -21,10 +21,21 @@ class DistributionCharts(BaseChart):
         self,
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate query types distribution chart."""
+        """Generate query types distribution chart with optional date range."""
         if not self.check_database_exists():
+            return None
+
+        if start_date and end_date and start_date > end_date:
+            st.error("Start date must be before or equal to end date.")
+            self.logger.error(
+                "Invalid date range: start_date=%s, end_date=%s",
+                start_date,
+                end_date,
+            )
             return None
 
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q")
@@ -36,13 +47,27 @@ class DistributionCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Query"]):
                     return None
 
+                date_conditions = []
+                if start_date:
+                    date_conditions.append(
+                        f"CAST(q.SubmitDate AS DATE) >= '{start_date}'"
+                    )
+                if end_date:
+                    date_conditions.append(
+                        f"CAST(q.SubmitDate AS DATE) <= '{end_date}'"
+                    )
+
+                date_filter_sql = " AND ".join(date_conditions)
+                if date_filter_sql:
+                    date_filter_sql = f" AND {date_filter_sql}"
+
                 query = f"""
                     SELECT
                         COALESCE(q.TypeDesc, 'Unknown') AS QueryType,
                         COUNT(q.QueryID) AS Count
                     FROM KNS_Query q
                     WHERE q.KnessetNum IS NOT NULL
-                        AND {filters["knesset_condition"]}
+                        AND {filters["knesset_condition"]}{date_filter_sql}
                     GROUP BY q.TypeDesc
                     ORDER BY Count DESC
                 """
@@ -55,11 +80,22 @@ class DistributionCharts(BaseChart):
                     )
                     return None
 
+                date_range_text = ""
+                if start_date or end_date:
+                    if start_date and end_date:
+                        date_range_text = f" ({start_date} to {end_date})"
+                    elif start_date:
+                        date_range_text = f" (from {start_date})"
+                    else:
+                        date_range_text = f" (until {end_date})"
+
                 fig = px.pie(
                     df,
                     values="Count",
                     names="QueryType",
-                    title=f"<b>Query Types Distribution for {filters['knesset_title']}</b>",
+                    title=(
+                        f"<b>Query Types Distribution for {filters['knesset_title']}{date_range_text}</b>"
+                    ),
                 )
 
                 fig.update_traces(textposition="inside", textinfo="percent+label")
