@@ -602,7 +602,7 @@ The platform includes 15+ predefined visualizations organized into three categor
 
 ### Query Analytics
 * **Queries by Time Period** - Track submission patterns over time
-* **Query Types Distribution** - Breakdown by query type (regular, urgent, direct)
+* **Query Types Distribution** - Breakdown by query type with optional date range filtering
 * **Response Times Analysis** - Box plots showing ministry response times by coalition status
 * **Faction Status Analysis** - Query patterns by coalition/opposition membership with optional date range filtering
 * **Ministry Performance** - Query distribution and reply rates by ministry
