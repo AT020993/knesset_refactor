@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 
 import pandas as pd
 import plotly.express as px
@@ -46,7 +46,7 @@ class ComparisonCharts(BaseChart):
                     LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID 
                         AND q.KnessetNum = p2p.KnessetNum
                     WHERE q.KnessetNum IS NOT NULL
-                        AND {filters['knesset_condition']}
+                        AND {filters["knesset_condition"]}
                     GROUP BY p2p.FactionName
                     ORDER BY QueryCount DESC
                     LIMIT 20
@@ -144,28 +144,30 @@ class ComparisonCharts(BaseChart):
                 if not self.check_tables_exist(con, required_tables):
                     return None
 
-                date_conditions = []
-                if start_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) >= '{start_date}'"
-                    )
-                if end_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) <= '{end_date}'"
-                    )
-                date_filter_sql = " AND ".join(date_conditions)
-                if date_filter_sql:
-                    date_filter_sql = f" AND {date_filter_sql}"
+                params: List[Any] = [single_knesset_num]
+                conditions = [
+                    "q.KnessetNum = ?",
+                    "q.SubmitDate IS NOT NULL",
+                    "p2p.FactionID IS NOT NULL",
+                ]
 
-                faction_filter_sql = ""
+                if start_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) >= ?")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) <= ?")
+                    params.append(end_date)
+
                 if faction_filter:
                     valid_ids = [
                         str(fid) for fid in faction_filter if str(fid).isdigit()
                     ]
                     if valid_ids:
-                        faction_filter_sql = (
-                            f" AND p2p.FactionID IN ({', '.join(valid_ids)})"
-                        )
+                        placeholders = ", ".join("?" for _ in valid_ids)
+                        conditions.append(f"p2p.FactionID IN ({placeholders})")
+                        params.extend(valid_ids)
+
+                where_clause = " AND ".join(conditions)
 
                 sql_query = f"""
                 WITH QueryStatusFactionInfo AS (
@@ -180,9 +182,8 @@ class ComparisonCharts(BaseChart):
                     LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                         AND q.KnessetNum = p2p.KnessetNum
                         AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
-                    LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = f_fallback.KnessetNum
-                    WHERE q.KnessetNum = {single_knesset_num} AND q.SubmitDate IS NOT NULL AND p2p.FactionID IS NOT NULL
-                    {faction_filter_sql}{date_filter_sql}
+                    LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = p2p.KnessetNum
+                    WHERE {where_clause}
                 )
                 SELECT
                     qsfi.StatusDescription,
@@ -208,7 +209,7 @@ class ComparisonCharts(BaseChart):
                     sql_query,
                 )
 
-                df = safe_execute_query(con, sql_query, self.logger)
+                df = safe_execute_query(con, sql_query, self.logger, params=params)
 
                 if df.empty:
                     st.info(
