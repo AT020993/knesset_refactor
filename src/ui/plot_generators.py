@@ -140,6 +140,18 @@ def plot_agenda_status_distribution(db_path, connect_func, logger_obj, **kwargs)
     return chart_service.plot_agenda_status_distribution(**kwargs)
 
 
+def plot_agendas_per_faction(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for agendas per faction chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_agendas_per_faction(**kwargs)
+
+
+def plot_agendas_by_coalition_status(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for agendas by coalition status chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_agendas_by_coalition_status(**kwargs)
+
+
 def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bill status distribution chart."""
     chart_service = ChartService(db_path, logger_obj)
@@ -159,6 +171,8 @@ def get_available_plots():
             "Agendas by Time Period": plot_agendas_by_time_period,
             "Agenda Classifications": plot_agenda_classifications_pie,
             "Agenda Status Distribution": plot_agenda_status_distribution,
+            "Agendas per Faction": plot_agendas_per_faction,
+            "Agendas by Coalition Status": plot_agendas_by_coalition_status,
         },
         "Bills Analytics": {
             "Bill Status Distribution": plot_bill_status_distribution,

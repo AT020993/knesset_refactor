@@ -62,6 +62,14 @@ class ChartService:
         """Legacy method for agenda status distribution."""
         return self.create_chart("distribution", "agenda_status_distribution", **kwargs)
 
+    def plot_agendas_per_faction(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for agendas per faction."""
+        return self.create_chart("comparison", "agendas_per_faction", **kwargs)
+
+    def plot_agendas_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for agendas by coalition status."""
+        return self.create_chart("comparison", "agendas_by_coalition_status", **kwargs)
+
     # Bill chart methods
     def plot_bill_status_distribution(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for bill status distribution."""
