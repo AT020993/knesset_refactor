@@ -42,7 +42,7 @@ class DistributionCharts(BaseChart):
                         COUNT(q.QueryID) AS Count
                     FROM KNS_Query q
                     WHERE q.KnessetNum IS NOT NULL
-                        AND {filters['knesset_condition']}
+                        AND {filters["knesset_condition"]}
                     GROUP BY q.TypeDesc
                     ORDER BY Count DESC
                 """
@@ -99,7 +99,7 @@ class DistributionCharts(BaseChart):
                         COUNT(a.AgendaID) AS Count
                     FROM KNS_Agenda a
                     WHERE a.KnessetNum IS NOT NULL
-                        AND {filters['knesset_condition']}
+                        AND {filters["knesset_condition"]}
                     GROUP BY a.ClassificationDesc
                     ORDER BY Count DESC
                 """
@@ -162,7 +162,7 @@ class DistributionCharts(BaseChart):
                     FROM KNS_Agenda a
                     LEFT JOIN KNS_Status s ON a.StatusID = s.StatusID
                     WHERE a.KnessetNum IS NOT NULL
-                        AND {filters['knesset_condition']}
+                        AND {filters["knesset_condition"]}
                     GROUP BY s."Desc"
                     ORDER BY Count DESC
                 """
@@ -220,7 +220,7 @@ class DistributionCharts(BaseChart):
                     FROM KNS_Bill b
                     LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
                     WHERE b.KnessetNum IS NOT NULL
-                        AND {filters['knesset_condition']}
+                        AND {filters["knesset_condition"]}
                     GROUP BY s."Desc"
                     ORDER BY Count DESC
                 """
@@ -313,11 +313,12 @@ class DistributionCharts(BaseChart):
                 if date_filter_sql:
                     date_filter_sql = f" AND {date_filter_sql}"
 
+                params = []
                 faction_filter_sql = ""
                 if faction_filter:
-                    faction_filter_sql = (
-                        f" AND p2p.FactionID IN ({', '.join(map(str, faction_filter))})"
-                    )
+                    placeholders = ", ".join(["?"] * len(faction_filter))
+                    faction_filter_sql = f" AND COALESCE(p2p.FactionName, f_fallback.Name) IN ({placeholders})"
+                    params.extend(faction_filter)
 
                 sql_query = f"""
                 WITH QueryStatusFactionInfo AS (
@@ -353,7 +354,7 @@ class DistributionCharts(BaseChart):
                     "Executing SQL for plot_query_status_by_faction: %s",
                     sql_query,
                 )
-                df = safe_execute_query(con, sql_query, self.logger)
+                df = safe_execute_query(con, sql_query, self.logger, params=params)
 
                 if df.empty:
                     st.info(
