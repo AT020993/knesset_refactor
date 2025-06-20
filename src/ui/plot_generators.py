@@ -10,10 +10,10 @@ For new code, use:
 - ui.services.chart_service.ChartService
 """
 
+import logging
 import warnings
 from pathlib import Path
-from typing import Optional, List, Callable, Any
-import logging
+from typing import Any, Callable, List, Optional
 
 from ui.services.chart_service import ChartService
 
@@ -21,11 +21,12 @@ from ui.services.chart_service import ChartService
 warnings.warn(
     "plot_generators module is deprecated. Use ui.charts.factory.ChartFactory or ui.services.chart_service.ChartService instead.",
     DeprecationWarning,
-    stacklevel=2
+    stacklevel=2,
 )
 
 # Legacy color constants for backward compatibility
 from config.charts import ChartConfig
+
 KNESSET_COLOR_SEQUENCE = ChartConfig.KNESSET_COLOR_SEQUENCE
 COALITION_OPPOSITION_COLORS = ChartConfig.COALITION_OPPOSITION_COLORS
 ANSWER_STATUS_COLORS = ChartConfig.ANSWER_STATUS_COLORS
@@ -33,9 +34,12 @@ GENERAL_STATUS_COLORS = ChartConfig.GENERAL_STATUS_COLORS
 QUERY_TYPE_COLORS = ChartConfig.QUERY_TYPE_COLORS
 
 
-def check_tables_exist(con, required_tables: list[str], logger_obj: logging.Logger) -> bool:
+def check_tables_exist(
+    con, required_tables: list[str], logger_obj: logging.Logger
+) -> bool:
     """Legacy compatibility function."""
     from ui.charts.base import BaseChart
+
     base_chart = BaseChart(Path(), logger_obj)
     return base_chart.check_tables_exist(con, required_tables)
 
@@ -45,19 +49,24 @@ def plot_queries_by_time_period(
     db_path: Path,
     connect_func: Callable,  # Ignored in new implementation
     logger_obj: logging.Logger,
-    **kwargs
+    **kwargs,
 ) -> Optional[Any]:
     """Legacy wrapper for queries by time period chart."""
     try:
-        logger_obj.info(f"plot_queries_by_time_period called with db_path={db_path}, kwargs={kwargs}")
+        logger_obj.info(
+            f"plot_queries_by_time_period called with db_path={db_path}, kwargs={kwargs}"
+        )
         chart_service = ChartService(db_path, logger_obj)
         logger_obj.info("ChartService created successfully")
         result = chart_service.plot_queries_by_time_period(**kwargs)
-        logger_obj.info(f"Chart result: {type(result)} {'(figure)' if result else '(None)'}")
+        logger_obj.info(
+            f"Chart result: {type(result)} {'(figure)' if result else '(None)'}"
+        )
         return result
     except Exception as e:
         logger_obj.error(f"Error in plot_queries_by_time_period: {e}", exc_info=True)
         import streamlit as st
+
         st.error(f"Chart generation failed: {e}")
         return None
 
@@ -66,7 +75,7 @@ def plot_query_types_distribution(
     db_path: Path,
     connect_func: Callable,  # Ignored in new implementation
     logger_obj: logging.Logger,
-    **kwargs
+    **kwargs,
 ) -> Optional[Any]:
     """Legacy wrapper for query types distribution chart."""
     chart_service = ChartService(db_path, logger_obj)
@@ -77,11 +86,22 @@ def plot_queries_per_faction_in_knesset(
     db_path: Path,
     connect_func: Callable,  # Ignored in new implementation
     logger_obj: logging.Logger,
-    **kwargs
+    **kwargs,
 ) -> Optional[Any]:
     """Legacy wrapper for queries per faction chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_queries_per_faction_in_knesset(**kwargs)
+
+
+def plot_query_status_by_faction(
+    db_path: Path,
+    connect_func: Callable,  # Ignored in new implementation
+    logger_obj: logging.Logger,
+    **kwargs,
+) -> Optional[Any]:
+    """Legacy wrapper for query status by faction chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_query_status_by_faction(**kwargs)
 
 
 # Add more legacy function wrappers as needed
@@ -90,15 +110,20 @@ def plot_queries_per_faction_in_knesset(
 def plot_agendas_by_time_period(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for agendas by time period chart."""
     try:
-        logger_obj.info(f"plot_agendas_by_time_period called with db_path={db_path}, kwargs={kwargs}")
+        logger_obj.info(
+            f"plot_agendas_by_time_period called with db_path={db_path}, kwargs={kwargs}"
+        )
         chart_service = ChartService(db_path, logger_obj)
         logger_obj.info("ChartService created for agendas")
         result = chart_service.plot_agendas_by_time_period(**kwargs)
-        logger_obj.info(f"Agenda chart result: {type(result)} {'(figure)' if result else '(None)'}")
+        logger_obj.info(
+            f"Agenda chart result: {type(result)} {'(figure)' if result else '(None)'}"
+        )
         return result
     except Exception as e:
         logger_obj.error(f"Error in plot_agendas_by_time_period: {e}", exc_info=True)
         import streamlit as st
+
         st.error(f"Agenda chart generation failed: {e}")
         return None
 
@@ -107,8 +132,6 @@ def plot_agenda_classifications_pie(db_path, connect_func, logger_obj, **kwargs)
     """Legacy wrapper for agenda classifications pie chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_agenda_classifications_pie(**kwargs)
-
-
 
 
 def plot_agenda_status_distribution(db_path, connect_func, logger_obj, **kwargs):
@@ -130,6 +153,7 @@ def get_available_plots():
             "Queries by Time Period": plot_queries_by_time_period,
             "Query Types Distribution": plot_query_types_distribution,
             "Queries per Faction": plot_queries_per_faction_in_knesset,
+            "Query Status Description with Faction Breakdown (Single Knesset)": plot_query_status_by_faction,
         },
         "Agenda Analytics": {
             "Agendas by Time Period": plot_agendas_by_time_period,
@@ -138,7 +162,5 @@ def get_available_plots():
         },
         "Bills Analytics": {
             "Bill Status Distribution": plot_bill_status_distribution,
-        }
+        },
     }
-
-
