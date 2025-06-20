@@ -1,4 +1,6 @@
-# Knesset OData Explorer
+# 🏛️ Knesset OData Explorer
+
+<div align="center">
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![CI Status](https://github.com/AT020993/knesset_refactor/workflows/CI%20-%20Automated%20Testing%20for%20AI-Generated%20Branches/badge.svg)](https://github.com/AT020993/knesset_refactor/actions)
@@ -6,11 +8,43 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.44.1-red.svg)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#-license)
 
-A comprehensive platform for fetching, storing, analyzing, and visualizing Israeli parliamentary data from the Knesset's official OData API. This project democratizes access to parliamentary data, enabling researchers, analysts, and citizens to easily explore Israeli legislative activities.
+**A comprehensive platform for fetching, storing, analyzing, and visualizing Israeli parliamentary data**
 
-## ⚡ Quick Overview
+*Democratizing access to parliamentary data for researchers, analysts, and citizens*
+
+[Quick Start](#-quick-start) • [Features](#-key-features) • [Documentation](#-project-structure) • [API Reference](#-usage-examples) • [Contributing](#-contributing)
+
+</div>
+
+---
+
+## 📋 Table of Contents
+
+<details>
+<summary>Click to expand</summary>
+
+- [🎯 Project Overview](#-project-overview)
+- [✨ Key Features](#-key-features)
+- [🚀 Quick Start](#-quick-start)
+- [🛠️ Installation](#-installation)
+- [📖 Usage Guide](#-usage-guide)
+- [📊 Visualizations](#-available-visualizations)
+- [📂 Project Structure](#-project-structure)
+- [🧪 Testing](#-testing)
+- [🤖 AI & CI/CD](#-ai-powered-development--cicd)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [📚 Examples](#-usage-examples)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
+</details>
+
+---
+
+## 🎯 Project Overview
 
 Transform complex parliamentary data into actionable insights with:
+
 - 🔄 **Automated data fetching** from official Knesset OData API
 - 💾 **Efficient storage** in DuckDB with Parquet backup
 - 📊 **15+ interactive visualizations** for parliamentary analysis  
@@ -18,9 +52,16 @@ Transform complex parliamentary data into actionable insights with:
 - ⚙️ **Robust CLI tools** for automated workflows
 - 📈 **Custom chart builder** for exploratory data analysis
 
-## 🐳 **AI & Development Environment**
+### 🎯 Project Goals
 
-**For AI tools (Jules, Codex, etc.) and developers:** This project includes a complete Docker setup for isolated, VM-like development:
+- **Data Accessibility:** Provide easy access to Israeli parliamentary data for researchers and analysts
+- **Self-Service:** Enable users (including non-technical ones) to independently refresh, explore, and download curated and raw data
+- **Comprehensive Data Management:** Support robust and resumable fetching, efficient storage, and timely updates of parliamentary data
+- **User-Friendly Interface:** Offer an intuitive Streamlit-based interface for data interaction, exploration, and exportation
+
+### 🐳 Development Environment
+
+For AI tools (Jules, Codex, etc.) and developers, this project includes a complete Docker setup:
 
 ```bash
 # Quick start for AI tools
@@ -32,13 +73,6 @@ Transform complex parliamentary data into actionable insights with:
 - 🔗 **Development UI**: http://localhost:8502
 - 📖 **Full AI Guide**: See [`AI_SETUP.md`](AI_SETUP.md) for complete instructions
 - 🤖 **CI/CD Ready**: Automatic testing for AI-generated branches
-
-## 🎯 Project Goals
-
-* **Data Accessibility:** Provide easy access to Israeli parliamentary data for researchers and analysts.
-* **Self-Service:** Enable users (including non-technical ones) to independently refresh, explore, and download curated and raw data.
-* **Comprehensive Data Management:** Support robust and resumable fetching, efficient storage, and timely updates of parliamentary data.
-* **User-Friendly Interface:** Offer an intuitive Streamlit-based interface for data interaction, exploration, and exportation.
 
 ## ✨ Key Features
 
@@ -232,7 +266,16 @@ knesset_refactor/
 
 ## 🚀 Quick Start
 
-Get up and running in 5 minutes with the new modular architecture:
+Get up and running in 5 minutes:
+
+<details>
+<summary><b>🔧 Prerequisites</b></summary>
+
+- **Python 3.12+** (Required)
+- **Git**
+- **4GB+ RAM** (recommended for large datasets)
+
+</details>
 
 ```bash
 # 1. Clone and setup
@@ -241,150 +284,108 @@ cd knesset_refactor
 python -m venv .venv && source .venv/bin/activate
 
 # 2. Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # 3. Download sample data (5-10 minutes)
-# The new dependency injection system handles configuration automatically
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 
-# 4. Launch the refactored interface
+# 4. Launch the interface
 streamlit run src/ui/data_refresh.py
 ```
 
-Open `http://localhost:8501` and explore the new modular UI! 🎉
+🎉 **Open `http://localhost:8501`** and explore the modular UI!
 
-**New in the refactored version:**
+### ✨ What's New
+
 - ⚡ **Faster loading** with modular architecture
 - 🧩 **Component-based UI** with better separation of concerns
 - 🎯 **Type-safe session management** with centralized state
 - 📊 **Extracted SQL queries** for better maintainability
 
-## 🚀 Getting Started
+---
 
-### Prerequisites
+### 📁 Optional Configuration
 
-* **Python 3.12+** (Required)
-* Git
+<details>
+<summary><b>Faction Status CSV (Recommended)</b></summary>
 
-### Installation
+Create `data/faction_coalition_status.csv` to track coalition/opposition status:
 
-1. **Clone the repository:**
-
-    ```bash
-    git clone https://github.com/AT020993/knesset_refactor.git
-    cd knesset_refactor
-    ```
-
-2. **Remove any existing virtual environment:**
-
-    ```bash
-    # If you have an old virtual environment, remove it first
-    rm -rf .venv
-    ```
-
-3. **Create and activate a virtual environment:**
-
-    ```bash
-    python -m venv .venv
-    # On Windows
-    # .venv\Scripts\activate
-    # On macOS/Linux
-    source .venv/bin/activate
-    ```
-
-4. **Install dependencies:**
-
-    ```bash
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    ```
-
-5. **(Optional but Recommended) Create Faction Status CSV:**
-    Create a file named `faction_coalition_status.csv` in the `data/` directory. This file is used to track the coalition/opposition status of factions.
-    
-    **Structure for `data/faction_coalition_status.csv`:**
-
-    ```csv
-    KnessetNum,FactionID,FactionName,CoalitionStatus,DateJoinedCoalition,DateLeftCoalition
-    25,961,Likud,Coalition,2022-12-29,
-    25,954,Yesh Atid,Opposition,,
-    ```
-
-## 🖥️ Usage
-
-### Initial Data Setup
-
-Before using the application, you need to download the parliamentary data:
-
-```bash
-# Download all essential tables (this may take 15-30 minutes)
-PYTHONPATH="./src" python -m backend.fetch_table --all
+```csv
+KnessetNum,FactionID,FactionName,CoalitionStatus,DateJoinedCoalition,DateLeftCoalition
+25,961,Likud,Coalition,2022-12-29,
+25,954,Yesh Atid,Opposition,,
 ```
 
-**Note:** If some large tables fail to download, you can fetch them individually:
+</details>
+
+---
+
+## 📖 Usage Guide
+
+### 1️⃣ Initial Data Setup
+
+Download parliamentary data (15-30 minutes for full dataset):
 
 ```bash
-# Download specific critical tables
+# Download all essential tables
+PYTHONPATH="./src" python -m backend.fetch_table --all
+
+# OR download specific critical tables individually
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Agenda
 ```
 
-### Streamlit User Interface
-
-Launch the Streamlit self-service interface:
+### 2️⃣ Launch the Interface
 
 ```bash
 streamlit run src/ui/data_refresh.py --server.address localhost --server.port 8501
 ```
 
-Access the UI via the local URL provided by Streamlit (typically `http://localhost:8501`). Through the UI, you can:
+Access the UI at `http://localhost:8501`
 
-* **Refresh OData tables** and faction statuses
-* **Explore tables** with dynamic filters
-* **Run predefined analytical queries** with real parliamentary data
-* **Explore 15+ predefined visualizations** covering query analytics, parliamentary activity patterns, and collaboration networks
-* **Create custom visualizations** using the interactive chart builder
-* **Execute custom SQL** queries against the database
-* **Download data** in CSV or Excel format
+### 3️⃣ What You Can Do
 
-### Command-Line Interface (CLI)
+<div align="center">
 
-**Show help and available commands:**
+| Feature | Description |
+|---------|-------------|
+| 🔄 **Data Refresh** | Update OData tables and faction statuses |
+| 🔍 **Table Explorer** | Browse tables with dynamic filters |
+| 📊 **Predefined Queries** | Run analytical queries on parliamentary data |
+| 📈 **15+ Visualizations** | Query analytics, activity patterns, collaboration networks |
+| 🎨 **Custom Charts** | Interactive chart builder for exploration |
+| 💻 **SQL Sandbox** | Execute custom SQL queries |
+| 📥 **Data Export** | Download results in CSV or Excel format |
+
+</div>
+
+### 4️⃣ Command-Line Interface (CLI)
+
+<details>
+<summary><b>📋 CLI Commands Reference</b></summary>
 
 ```bash
+# Show help
 PYTHONPATH="./src" python -m backend.fetch_table --help
-```
 
-**Common commands:**
+# Data Operations
+PYTHONPATH="./src" python -m backend.fetch_table --all                    # Refresh all tables
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person       # Specific table
+PYTHONPATH="./src" python -m backend.fetch_table --refresh-faction-status # Faction data only
+PYTHONPATH="./src" python -m backend.fetch_table --list-tables            # List available tables
 
-* **Refresh all predefined OData tables and faction statuses:**
-    ```bash
-    PYTHONPATH="./src" python -m backend.fetch_table --all
-    ```
-* **Refresh a specific OData table (e.g., KNS_Person):**
-    ```bash
-    PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
-    ```
-* **Refresh only the faction coalition status data:**
-    ```bash
-    PYTHONPATH="./src" python -m backend.fetch_table --refresh-faction-status
-    ```
-* **Execute an SQL query against the warehouse:**
-    ```bash
-    PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main';"
-    ```
-* **List available OData tables:**
-    ```bash
-    PYTHONPATH="./src" python -m backend.fetch_table --list-tables
-    ```
+# Query Operations
+PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT * FROM KNS_Person LIMIT 5;"
 
-**Alternative simplified CLI:**
-
-```bash
+# Alternative simplified CLI
 bash scripts/refresh_all.sh
 ```
+
+</details>
 
 ## 📚 Usage Examples
 
@@ -589,12 +590,19 @@ The system downloads and manages these core tables:
 * **KNS_IsraelLaw** - Israeli law references
 * **UserFactionCoalitionStatus** - Manual coalition/opposition tracking
 
-## 📋 System Requirements
+## 💻 System Requirements
 
-* **Python:** 3.12+ (required)
-* **Memory:** 4GB+ RAM recommended for large table processing
-* **Storage:** 2GB+ free space for database and parquet files
-* **Network:** Stable internet connection for API data fetching
+<div align="center">
+
+| Component | Requirement | Notes |
+|-----------|-------------|-------|
+| **Python** | 3.12+ | Required |
+| **Memory** | 4GB+ RAM | Recommended for large datasets |
+| **Storage** | 2GB+ free space | Database and parquet files |
+| **Network** | Stable internet | For API data fetching |
+| **OS** | Windows/macOS/Linux | Cross-platform support |
+
+</div>
 
 ## 📊 Available Visualizations
 
@@ -689,11 +697,28 @@ pytest
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+<div align="center">
 
-### Third-Party Licenses
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+</div>
+
+### 📋 Third-Party Acknowledgments
+
 - **Knesset OData API**: Data provided by the Israeli Knesset under their terms of service
-- **Dependencies**: See `requirements.txt` for all third-party libraries and their respective licenses
+- **Dependencies**: See [`requirements.txt`](requirements.txt) for all third-party libraries and their respective licenses
+
+---
+
+<div align="center">
+
+**Made with ❤️ for parliamentary transparency and data accessibility**
+
+[⬆️ Back to Top](#️-knesset-odata-explorer) • [🐛 Report Bug](https://github.com/AT020993/knesset_refactor/issues) • [💡 Request Feature](https://github.com/AT020993/knesset_refactor/issues)
+
+</div>
 
 
 

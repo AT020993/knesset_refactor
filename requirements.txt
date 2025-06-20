@@ -1,19 +1,53 @@
-# core runtime dependencies
-aiohttp==3.9.4
-backoff==2.2.1
-tqdm==4.66.1
-duckdb==1.2.2
-pandas==2.2.3
-streamlit==1.44.1
-openpyxl==3.1.5
-pyarrow==19.0.1
-fastparquet==2024.11.0
-plotly>=5.0.0 # Interactive visualizations (charts, graphs, heatmaps, sunburst, network)
+# =============================================================================
+# KNESSET ODATA EXPLORER - REQUIREMENTS
+# =============================================================================
+# A comprehensive platform for fetching, storing, analyzing, and visualizing
+# Israeli parliamentary data from the Knesset's official OData API.
+# =============================================================================
 
-# testing / CI
-pytest==8.3.5
-pytest-cov==6.1.1
-pytest-asyncio>=0.21.0
+# -----------------------------------------------------------------------------
+# CORE RUNTIME DEPENDENCIES
+# -----------------------------------------------------------------------------
+# Database & Data Processing
+duckdb==1.2.2                     # High-performance analytical database
+pandas==2.2.3                     # Data manipulation and analysis
+pyarrow==19.0.1                   # Columnar data format support
+fastparquet==2024.11.0            # Fast parquet file I/O
 
-# CLI
-typer[all]>=0.12.0,<0.13.0
+# Web Framework & UI
+streamlit==1.44.1                 # Modern web UI framework
+plotly>=5.0.0                     # Interactive data visualizations
+
+# HTTP Client & Async Operations
+aiohttp==3.9.4                    # Asynchronous HTTP client with connection pooling
+backoff==2.2.1                    # Intelligent retry strategies for API calls
+
+# Utilities & Progress
+tqdm==4.66.1                      # Progress bars and status visualization
+openpyxl==3.1.5                   # Excel file export functionality
+
+# -----------------------------------------------------------------------------
+# COMMAND LINE INTERFACE
+# -----------------------------------------------------------------------------
+typer[all]>=0.12.0,<0.13.0        # Modern CLI framework with dependency injection
+
+# -----------------------------------------------------------------------------
+# DEVELOPMENT & TESTING
+# -----------------------------------------------------------------------------
+pytest==8.3.5                     # Comprehensive unit testing framework
+pytest-cov==6.1.1                 # Test coverage reporting
+pytest-asyncio>=0.21.0            # Async test support
+
+# -----------------------------------------------------------------------------
+# CODE QUALITY & FORMATTING (Optional - for development)
+# -----------------------------------------------------------------------------
+# black>=23.0.0                   # Code formatter
+# flake8>=6.0.0                   # Linting and code style enforcement
+# isort>=5.12.0                   # Import sorting
+# mypy>=1.0.0                     # Type checking
+
+# -----------------------------------------------------------------------------
+# SECURITY & MONITORING (Optional - for production)
+# -----------------------------------------------------------------------------
+# safety>=2.3.0                   # Dependency vulnerability scanning
+# bandit>=1.7.0                   # Security analysis for Python code
