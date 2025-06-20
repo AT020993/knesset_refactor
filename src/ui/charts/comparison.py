@@ -144,14 +144,17 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND a.KnessetNum = f_fallback.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
-                    AND p2p.FactionID IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
                 if faction_filter:
-                    placeholders = ", ".join(["?"] * len(faction_filter))
-                    query += f" AND p2p.FactionID IN ({placeholders})"
-                    params.extend(faction_filter)
+                    valid_ids = [
+                        str(fid) for fid in faction_filter if str(fid).isdigit()
+                    ]
+                    if valid_ids:
+                        placeholders = ", ".join("?" for _ in valid_ids)
+                        query += f" AND p2p.FactionID IN ({placeholders})"
+                        params.extend(valid_ids)
 
                 query += """
                 GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
@@ -266,14 +269,17 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
                     AND a.KnessetNum = ufs.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
-                    AND p2p.FactionID IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
                 if faction_filter:
-                    placeholders = ", ".join(["?"] * len(faction_filter))
-                    query += f" AND p2p.FactionID IN ({placeholders})"
-                    params.extend(faction_filter)
+                    valid_ids = [
+                        str(fid) for fid in faction_filter if str(fid).isdigit()
+                    ]
+                    if valid_ids:
+                        placeholders = ", ".join("?" for _ in valid_ids)
+                        query += f" AND p2p.FactionID IN ({placeholders})"
+                        params.extend(valid_ids)
 
                 query += """
                 GROUP BY CoalitionStatus
