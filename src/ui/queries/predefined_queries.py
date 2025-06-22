@@ -262,7 +262,29 @@ SELECT
         GROUP_CONCAT(P.LastName, ', '),
         ''
     ) AS BillInitiatorLastNames,
-    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount
+    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount,
+    COALESCE(
+        (SELECT P2.FirstName || ' ' || P2.LastName 
+         FROM KNS_BillInitiator BI2
+         INNER JOIN KNS_Person P2 ON BI2.PersonID = P2.PersonID
+         WHERE BI2.BillID = B.BillID 
+           AND BI2.IsInitiator = true
+         ORDER BY BI2.Ordinal ASC
+         LIMIT 1),
+        'Unknown'
+    ) AS MainInitiatorName,
+    COALESCE(
+        GROUP_CONCAT(
+            CASE WHEN NOT (BI.IsInitiator = true AND BI.Ordinal = (
+                SELECT MIN(BI3.Ordinal) 
+                FROM KNS_BillInitiator BI3 
+                WHERE BI3.BillID = B.BillID AND BI3.IsInitiator = true
+            ))
+                 THEN P.FirstName || ' ' || P.LastName 
+                 END, ', '
+        ),
+        ''
+    ) AS JoiningMemberNames
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
