@@ -133,7 +133,7 @@ LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction
 LEFT JOIN MinisterOfReplyMinistry MRM
     ON Q.QueryID = MRM.QueryID AND MRM.rn_min = 1
 
-ORDER BY Q.KnessetNum DESC, Q.QueryID DESC LIMIT 10000;
+ORDER BY Q.KnessetNum DESC, Q.QueryID DESC;
         """,
         "knesset_filter_column": "Q.KnessetNum",
         "faction_filter_column": "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
@@ -220,7 +220,7 @@ LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init
     AND A.KnessetNum = FallbackFaction_init.KnessetNum
     AND FallbackFaction_init.rn = 1
 
-ORDER BY A.KnessetNum DESC, A.AgendaID DESC LIMIT 10000;
+ORDER BY A.KnessetNum DESC, A.AgendaID DESC;
         """,
         "knesset_filter_column": "A.KnessetNum",
         "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
@@ -343,7 +343,7 @@ GROUP BY B.BillID, B.Number, B.KnessetNum, B.Name, B.SubTypeDesc,
          B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill,
          B.SummaryLaw, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
          B.LastUpdatedDate
-ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT 10000;
+ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
         "knesset_filter_column": "B.KnessetNum",
         "faction_filter_column": "",
