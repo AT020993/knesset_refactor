@@ -250,15 +250,31 @@ SELECT
     B.PublicationSeriesFirstCall,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d')
         AS LastUpdatedDateFormatted,
-    'Unknown' AS BillInitiatorNames,
-    '' AS BillInitiatorFirstNames,
-    '' AS BillInitiatorLastNames,
-    0 AS BillInitiatorCount
+    COALESCE(
+        GROUP_CONCAT(P.FirstName || ' ' || P.LastName, ', '),
+        'Unknown'
+    ) AS BillInitiatorNames,
+    COALESCE(
+        GROUP_CONCAT(P.FirstName, ', '),
+        ''
+    ) AS BillInitiatorFirstNames,
+    COALESCE(
+        GROUP_CONCAT(P.LastName, ', '),
+        ''
+    ) AS BillInitiatorLastNames,
+    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
+LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
+LEFT JOIN KNS_Person P ON BI.PersonID = P.PersonID
 
+GROUP BY B.BillID, B.Number, B.KnessetNum, B.Name, B.SubTypeDesc, 
+         S."Desc", B.PrivateNumber, C.Name, B.PostponementReasonDesc,
+         B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill,
+         B.SummaryLaw, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
+         B.LastUpdatedDate
 ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT 10000;
         """,
         "knesset_filter_column": "B.KnessetNum",

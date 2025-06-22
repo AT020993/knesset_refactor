@@ -14,7 +14,7 @@ def fetch_odata_table(table_name, primary_key=None, limit=None):
     base_url = f"https://knesset.gov.il/Odata/ParliamentInfo.svc/{table_name}"
     all_records = []
     skip = 0
-    top = 1000
+    top = 100  # API seems to limit to 100 records per request
     
     while True:
         if limit and skip >= limit:
@@ -24,7 +24,8 @@ def fetch_odata_table(table_name, primary_key=None, limit=None):
         print(f"  Fetching records {skip} to {skip + top}...")
         
         try:
-            response = requests.get(url, timeout=30)
+            headers = {'Accept': 'application/json'}
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -37,9 +38,11 @@ def fetch_odata_table(table_name, primary_key=None, limit=None):
             all_records.extend(records)
             print(f"  Fetched {len(records)} records. Total: {len(all_records)}")
             
-            skip += top
+            skip += len(records)  # Use actual number of records fetched
             
+            # Continue fetching if we got the maximum number of records
             if len(records) < top:
+                print("  Reached end of records.")
                 break
                 
         except Exception as e:
