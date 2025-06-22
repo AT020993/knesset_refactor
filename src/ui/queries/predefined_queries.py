@@ -251,15 +251,15 @@ SELECT
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d')
         AS LastUpdatedDateFormatted,
     COALESCE(
-        GROUP_CONCAT(P.FirstName || ' ' || P.LastName, ', '),
+        GROUP_CONCAT(DISTINCT P.FirstName || ' ' || P.LastName, ', '),
         'Unknown'
     ) AS BillInitiatorNames,
     COALESCE(
-        GROUP_CONCAT(P.FirstName, ', '),
+        GROUP_CONCAT(DISTINCT P.FirstName, ', '),
         ''
     ) AS BillInitiatorFirstNames,
     COALESCE(
-        GROUP_CONCAT(P.LastName, ', '),
+        GROUP_CONCAT(DISTINCT P.LastName, ', '),
         ''
     ) AS BillInitiatorLastNames,
     COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount,
@@ -286,7 +286,7 @@ SELECT
         'Unknown'
     ) AS MainInitiatorCoalitionStatus,
     COALESCE(
-        GROUP_CONCAT(
+        GROUP_CONCAT(DISTINCT
             CASE WHEN NOT (BI.IsInitiator = true AND BI.Ordinal = (
                 SELECT MIN(BI3.Ordinal) 
                 FROM KNS_BillInitiator BI3 
@@ -296,17 +296,47 @@ SELECT
                  END, ', '
         ),
         ''
-    ) AS JoiningMemberNames
+    ) AS JoiningMemberNames,
+    COALESCE(
+        (SELECT COUNT(DISTINCT BI_JOIN.PersonID)
+         FROM KNS_BillInitiator BI_JOIN
+         WHERE BI_JOIN.BillID = B.BillID 
+           AND NOT (BI_JOIN.IsInitiator = true AND BI_JOIN.Ordinal = (
+               SELECT MIN(BI_MAIN.Ordinal) 
+               FROM KNS_BillInitiator BI_MAIN 
+               WHERE BI_MAIN.BillID = B.BillID AND BI_MAIN.IsInitiator = true
+           ))
+           AND (SELECT UCS_SUB.CoalitionStatus
+                FROM KNS_PersonToPosition PTP_SUB
+                INNER JOIN UserFactionCoalitionStatus UCS_SUB ON PTP_SUB.FactionID = UCS_SUB.FactionID
+                WHERE PTP_SUB.PersonID = BI_JOIN.PersonID
+                ORDER BY PTP_SUB.StartDate DESC
+                LIMIT 1) = 'Coalition'),
+        0
+    ) AS JoiningCoalitionCount,
+    COALESCE(
+        (SELECT COUNT(DISTINCT BI_JOIN.PersonID)
+         FROM KNS_BillInitiator BI_JOIN
+         WHERE BI_JOIN.BillID = B.BillID 
+           AND NOT (BI_JOIN.IsInitiator = true AND BI_JOIN.Ordinal = (
+               SELECT MIN(BI_MAIN.Ordinal) 
+               FROM KNS_BillInitiator BI_MAIN 
+               WHERE BI_MAIN.BillID = B.BillID AND BI_MAIN.IsInitiator = true
+           ))
+           AND (SELECT UCS_SUB.CoalitionStatus
+                FROM KNS_PersonToPosition PTP_SUB
+                INNER JOIN UserFactionCoalitionStatus UCS_SUB ON PTP_SUB.FactionID = UCS_SUB.FactionID
+                WHERE PTP_SUB.PersonID = BI_JOIN.PersonID
+                ORDER BY PTP_SUB.StartDate DESC
+                LIMIT 1) IN ('Opposition', 'Opoosition')),
+        0
+    ) AS JoiningOppositionCount
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
 LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
 LEFT JOIN KNS_Person P ON BI.PersonID = P.PersonID
-LEFT JOIN KNS_PersonToPosition PTP ON P.PersonID = PTP.PersonID 
-    AND PTP.KnessetNum = B.KnessetNum
-LEFT JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID 
-    AND UCS.KnessetNum = B.KnessetNum
 
 GROUP BY B.BillID, B.Number, B.KnessetNum, B.Name, B.SubTypeDesc, 
          S."Desc", B.PrivateNumber, C.Name, B.PostponementReasonDesc,
