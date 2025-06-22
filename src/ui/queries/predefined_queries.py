@@ -274,6 +274,18 @@ SELECT
         'Unknown'
     ) AS MainInitiatorName,
     COALESCE(
+        (SELECT UCS2.CoalitionStatus
+         FROM KNS_BillInitiator BI2
+         INNER JOIN KNS_Person P2 ON BI2.PersonID = P2.PersonID
+         INNER JOIN KNS_PersonToPosition PTP2 ON P2.PersonID = PTP2.PersonID
+         INNER JOIN UserFactionCoalitionStatus UCS2 ON PTP2.FactionID = UCS2.FactionID
+         WHERE BI2.BillID = B.BillID 
+           AND BI2.IsInitiator = true
+         ORDER BY BI2.Ordinal ASC, PTP2.StartDate DESC
+         LIMIT 1),
+        'Unknown'
+    ) AS MainInitiatorCoalitionStatus,
+    COALESCE(
         GROUP_CONCAT(
             CASE WHEN NOT (BI.IsInitiator = true AND BI.Ordinal = (
                 SELECT MIN(BI3.Ordinal) 
@@ -291,6 +303,10 @@ LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
 LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
 LEFT JOIN KNS_Person P ON BI.PersonID = P.PersonID
+LEFT JOIN KNS_PersonToPosition PTP ON P.PersonID = PTP.PersonID 
+    AND PTP.KnessetNum = B.KnessetNum
+LEFT JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID 
+    AND UCS.KnessetNum = B.KnessetNum
 
 GROUP BY B.BillID, B.Number, B.KnessetNum, B.Name, B.SubTypeDesc, 
          S."Desc", B.PrivateNumber, C.Name, B.PostponementReasonDesc,
