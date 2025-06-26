@@ -74,3 +74,19 @@ class ChartService:
     def plot_bill_status_distribution(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for bill status distribution."""
         return self.create_chart("distribution", "bill_status_distribution", **kwargs)
+
+    def plot_bills_by_time_period(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bills by time period."""
+        return self.create_chart("time_series", "bills_by_time", **kwargs)
+
+    def plot_bill_subtype_distribution(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bill subtype distribution."""
+        return self.create_chart("distribution", "bill_subtype_distribution", **kwargs)
+
+    def plot_bills_per_faction(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bills per faction."""
+        return self.create_chart("comparison", "bills_per_faction", **kwargs)
+
+    def plot_bills_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bills by coalition status."""
+        return self.create_chart("comparison", "bills_by_coalition_status", **kwargs)

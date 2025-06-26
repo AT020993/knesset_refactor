@@ -478,6 +478,63 @@ class DistributionCharts(BaseChart):
             st.error(f"Could not generate 'Query Status by Faction' plot: {e}")
             return None
 
+    def plot_bill_subtype_distribution(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate bill subtype distribution chart."""
+        if not self.check_database_exists():
+            return None
+
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                if not self.check_tables_exist(con, ["KNS_Bill"]):
+                    return None
+
+                query = f"""
+                    SELECT
+                        COALESCE(b.SubTypeDesc, 'Unknown') AS SubType,
+                        COUNT(b.BillID) AS Count
+                    FROM KNS_Bill b
+                    WHERE b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                    GROUP BY b.SubTypeDesc
+                    ORDER BY Count DESC
+                """
+
+                df = safe_execute_query(con, query, self.logger)
+
+                if df.empty:
+                    st.info(
+                        f"No bill subtype data found for '{filters['knesset_title']}'."
+                    )
+                    return None
+
+                fig = px.pie(
+                    df,
+                    values="Count",
+                    names="SubType",
+                    title=f"<b>Bill SubType Distribution for {filters['knesset_title']}</b>",
+                )
+
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(title_x=0.5)
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                f"Error generating bill subtype distribution chart: {e}", exc_info=True
+            )
+            st.error(f"Could not generate bill subtype chart: {e}")
+            return None
+
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Generate the requested distribution chart."""
         chart_methods = {
@@ -487,6 +544,7 @@ class DistributionCharts(BaseChart):
             "query_status_by_faction": self.plot_query_status_by_faction,
             "agenda_status_distribution": self.plot_agenda_status_distribution,
             "bill_status_distribution": self.plot_bill_status_distribution,
+            "bill_subtype_distribution": self.plot_bill_subtype_distribution,
         }
 
         method = chart_methods.get(chart_type)

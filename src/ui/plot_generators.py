@@ -157,6 +157,26 @@ def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_bill_status_distribution(**kwargs)
 
+def plot_bills_by_time_period(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for bills by time period chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_bills_by_time_period(**kwargs)
+
+def plot_bill_subtype_distribution(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for bill subtype distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_bill_subtype_distribution(**kwargs)
+
+def plot_bills_per_faction(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for bills per faction chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_bills_per_faction(**kwargs)
+
+def plot_bills_by_coalition_status(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for bills by coalition status chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_bills_by_coalition_status(**kwargs)
+
 
 def get_available_plots():
     """Return available plot categories and their functions for the UI."""
@@ -176,5 +196,9 @@ def get_available_plots():
         },
         "Bills Analytics": {
             "Bill Status Distribution": plot_bill_status_distribution,
+            "Bills by Time Period": plot_bills_by_time_period,
+            "Bill SubType Distribution": plot_bill_subtype_distribution,
+            "Bills per Faction": plot_bills_per_faction,
+            "Bills by Coalition Status": plot_bills_by_coalition_status,
         },
     }

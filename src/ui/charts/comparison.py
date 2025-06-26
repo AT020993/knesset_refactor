@@ -531,6 +531,238 @@ class ComparisonCharts(BaseChart):
             st.error(f"Could not generate 'Query Status by Faction' plot: {e}")
             return None
 
+    def plot_bills_per_faction(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate bills per initiating faction chart."""
+        if not self.check_database_exists():
+            return None
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Bills per Faction' plot."
+            )
+            self.logger.info(
+                "plot_bills_per_faction requires a single Knesset filter."
+            )
+            return None
+
+        single_knesset_num = knesset_filter[0]
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Bill",
+                    "KNS_BillInitiator",
+                    "KNS_PersonToPosition",
+                    "KNS_Faction",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                query = f"""
+                SELECT
+                    COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+                    p2p.FactionID,
+                    COUNT(DISTINCT b.BillID) AS BillCount
+                FROM KNS_Bill b
+                JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
+                    AND b.KnessetNum = p2p.KnessetNum
+                    AND CAST(b.PublicationDate AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
+                    AND b.KnessetNum = f_fallback.KnessetNum
+                WHERE b.KnessetNum = ?
+                """
+
+                params: List[Any] = [single_knesset_num]
+                if faction_filter:
+                    valid_ids = [
+                        str(fid) for fid in faction_filter if str(fid).isdigit()
+                    ]
+                    if valid_ids:
+                        placeholders = ", ".join("?" for _ in valid_ids)
+                        query += f" AND p2p.FactionID IN ({placeholders})"
+                        params.extend(valid_ids)
+
+                query += """
+                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+                HAVING BillCount > 0
+                ORDER BY BillCount DESC;
+                """
+
+                self.logger.debug(
+                    "Executing SQL for plot_bills_per_faction (Knesset %s): %s",
+                    single_knesset_num,
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No bill data found for Knesset {single_knesset_num} with the current filters."
+                    )
+                    return None
+
+                df["BillCount"] = pd.to_numeric(
+                    df["BillCount"], errors="coerce"
+                ).fillna(0)
+                df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
+
+                fig = px.bar(
+                    df,
+                    x="FactionName",
+                    y="BillCount",
+                    color="FactionName",
+                    title=f"<b>Bills per Initiating Faction (Knesset {single_knesset_num})</b>",
+                    labels={
+                        "FactionName": "Faction",
+                        "BillCount": "Number of Bills",
+                    },
+                    hover_name="FactionName",
+                    custom_data=["BillCount"],
+                    color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE,
+                )
+
+                fig.update_traces(
+                    hovertemplate="<b>Faction:</b> %{x}<br><b>Bills:</b> %{customdata[0]}<extra></extra>"
+                )
+
+                fig.update_layout(
+                    xaxis_title="Initiating Faction",
+                    yaxis_title="Number of Bills",
+                    title_x=0.5,
+                    xaxis_tickangle=-45,
+                    showlegend=False,
+                )
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                "Error generating 'plot_bills_per_faction' for Knesset %s: %s",
+                single_knesset_num,
+                e,
+                exc_info=True,
+            )
+            st.error(f"Could not generate 'Bills per Faction' plot: {e}")
+            return None
+
+    def plot_bills_by_coalition_status(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate bill distribution by coalition/opposition status."""
+        if not self.check_database_exists():
+            return None
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Bills by Coalition Status' plot."
+            )
+            self.logger.info(
+                "plot_bills_by_coalition_status requires a single Knesset filter."
+            )
+            return None
+
+        single_knesset_num = knesset_filter[0]
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Bill",
+                    "KNS_BillInitiator",
+                    "KNS_PersonToPosition",
+                    "UserFactionCoalitionStatus",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                query = f"""
+                SELECT
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    COUNT(DISTINCT b.BillID) AS BillCount
+                FROM KNS_Bill b
+                JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
+                    AND b.KnessetNum = p2p.KnessetNum
+                    AND CAST(b.PublicationDate AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
+                    AND b.KnessetNum = ufs.KnessetNum
+                WHERE b.KnessetNum = ?
+                """
+
+                params: List[Any] = [single_knesset_num]
+                if faction_filter:
+                    valid_ids = [
+                        str(fid) for fid in faction_filter if str(fid).isdigit()
+                    ]
+                    if valid_ids:
+                        placeholders = ", ".join("?" for _ in valid_ids)
+                        query += f" AND p2p.FactionID IN ({placeholders})"
+                        params.extend(valid_ids)
+
+                query += """
+                GROUP BY CoalitionStatus
+                HAVING BillCount > 0
+                ORDER BY BillCount DESC;
+                """
+
+                self.logger.debug(
+                    "Executing SQL for plot_bills_by_coalition_status (Knesset %s): %s",
+                    single_knesset_num,
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No bill data for Knesset {single_knesset_num} to visualize 'Bills by Coalition Status'."
+                    )
+                    return None
+
+                df["BillCount"] = pd.to_numeric(
+                    df["BillCount"], errors="coerce"
+                ).fillna(0)
+                df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
+
+                fig = px.pie(
+                    df,
+                    values="BillCount",
+                    names="CoalitionStatus",
+                    title=f"<b>Bills by Initiator Coalition Status (Knesset {single_knesset_num})</b>",
+                    color="CoalitionStatus",
+                    color_discrete_map=self.config.COALITION_OPPOSITION_COLORS,
+                )
+
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(title_x=0.5)
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                "Error generating 'plot_bills_by_coalition_status' for Knesset %s: %s",
+                single_knesset_num,
+                e,
+                exc_info=True,
+            )
+            st.error(f"Could not generate 'Bills by Coalition Status' plot: {e}")
+            return None
+
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Generate the requested comparison chart."""
         chart_methods = {
@@ -540,6 +772,8 @@ class ComparisonCharts(BaseChart):
             "query_status_by_faction": self.plot_query_status_by_faction,
             "agendas_per_faction": self.plot_agendas_per_faction,
             "agendas_by_coalition_status": self.plot_agendas_by_coalition_status,
+            "bills_per_faction": self.plot_bills_per_faction,
+            "bills_by_coalition_status": self.plot_bills_by_coalition_status,
         }
 
         method = chart_methods.get(chart_type)

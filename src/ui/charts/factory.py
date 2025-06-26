@@ -56,7 +56,7 @@ class ChartFactory:
     def get_available_charts(self) -> Dict[str, list]:
         """Get list of available chart types by category."""
         return {
-            "time_series": ["queries_by_time", "agendas_by_time"],
+            "time_series": ["queries_by_time", "agendas_by_time", "bills_by_time"],
             "distribution": [
                 "query_types_distribution",
                 "agenda_classifications_pie",
@@ -64,6 +64,7 @@ class ChartFactory:
                 "query_status_by_faction",
                 "agenda_status_distribution",
                 "bill_status_distribution",
+                "bill_subtype_distribution",
             ],
             "comparison": [
                 "queries_per_faction",
@@ -71,6 +72,8 @@ class ChartFactory:
                 "queries_by_ministry",
                 "agendas_per_faction",
                 "agendas_by_coalition_status",
+                "bills_per_faction",
+                "bills_by_coalition_status",
             ],
         }
 
