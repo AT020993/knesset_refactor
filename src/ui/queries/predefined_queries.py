@@ -282,7 +282,7 @@ SELECT
               AND BI.IsInitiator = TRUE
               AND B.PublicationDate IS NOT NULL
               AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN CAST(PTP.StartDate AS TIMESTAMP) AND CAST(COALESCE(PTP.FinishDate, '9999-12-31') AS TIMESTAMP)
-            ORDER BY BI.Ordinal
+            ORDER BY BI.Ordinal, PTP.StartDate DESC
             LIMIT 1
         ),
         ( -- Fallback to latest faction in that knesset
