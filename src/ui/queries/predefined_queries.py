@@ -264,25 +264,61 @@ SELECT
     ) AS BillInitiatorLastNames,
     COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount,
     COALESCE(
-        (SELECT P2.FirstName || ' ' || P2.LastName 
+        (SELECT P2.FirstName || ' ' || P2.LastName
          FROM KNS_BillInitiator BI2
          INNER JOIN KNS_Person P2 ON BI2.PersonID = P2.PersonID
-         WHERE BI2.BillID = B.BillID 
+         WHERE BI2.BillID = B.BillID
            AND BI2.IsInitiator = true
          ORDER BY BI2.Ordinal ASC
          LIMIT 1),
         'Unknown'
     ) AS MainInitiatorName,
     COALESCE(
-        (SELECT UCS2.CoalitionStatus
-         FROM KNS_BillInitiator BI2
-         INNER JOIN KNS_Person P2 ON BI2.PersonID = P2.PersonID
-         INNER JOIN KNS_PersonToPosition PTP2 ON P2.PersonID = PTP2.PersonID
-         INNER JOIN UserFactionCoalitionStatus UCS2 ON PTP2.FactionID = UCS2.FactionID
-         WHERE BI2.BillID = B.BillID 
-           AND BI2.IsInitiator = true
-         ORDER BY BI2.Ordinal ASC, PTP2.StartDate DESC
-         LIMIT 1),
+        ( -- Active faction on publication date
+            SELECT PTP.FactionName
+            FROM KNS_BillInitiator BI
+            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
+            WHERE BI.BillID = B.BillID
+              AND BI.IsInitiator = TRUE
+              AND B.PublicationDate IS NOT NULL
+              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN PTP.StartDate AND COALESCE(PTP.FinishDate, '9999-12-31')
+            ORDER BY BI.Ordinal
+            LIMIT 1
+        ),
+        ( -- Fallback to latest faction in that knesset
+            SELECT PTP.FactionName
+            FROM KNS_BillInitiator BI
+            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
+            WHERE BI.BillID = B.BillID
+              AND BI.IsInitiator = TRUE
+            ORDER BY BI.Ordinal, PTP.StartDate DESC
+            LIMIT 1
+        ),
+        'Unknown'
+    ) AS MainInitiatorFactionName,
+    COALESCE(
+        ( -- Active coalition status on publication date
+            SELECT UCS.CoalitionStatus
+            FROM KNS_BillInitiator BI
+            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
+            JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID AND B.KnessetNum = UCS.KnessetNum
+            WHERE BI.BillID = B.BillID
+              AND BI.IsInitiator = TRUE
+              AND B.PublicationDate IS NOT NULL
+              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN PTP.StartDate AND COALESCE(PTP.FinishDate, '9999-12-31')
+            ORDER BY BI.Ordinal
+            LIMIT 1
+        ),
+        ( -- Fallback to latest coalition status in that knesset
+            SELECT UCS.CoalitionStatus
+            FROM KNS_BillInitiator BI
+            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
+            JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID AND B.KnessetNum = UCS.KnessetNum
+            WHERE BI.BillID = B.BillID
+              AND BI.IsInitiator = TRUE
+            ORDER BY BI.Ordinal, PTP.StartDate DESC
+            LIMIT 1
+        ),
         'Unknown'
     ) AS MainInitiatorCoalitionStatus,
     COALESCE(
