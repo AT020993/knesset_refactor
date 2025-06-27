@@ -281,7 +281,7 @@ SELECT
             WHERE BI.BillID = B.BillID
               AND BI.IsInitiator = TRUE
               AND B.PublicationDate IS NOT NULL
-              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN PTP.StartDate AND COALESCE(PTP.FinishDate, '9999-12-31')
+              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN CAST(PTP.StartDate AS TIMESTAMP) AND CAST(COALESCE(PTP.FinishDate, '9999-12-31') AS TIMESTAMP)
             ORDER BY BI.Ordinal
             LIMIT 1
         ),
@@ -305,7 +305,7 @@ SELECT
             WHERE BI.BillID = B.BillID
               AND BI.IsInitiator = TRUE
               AND B.PublicationDate IS NOT NULL
-              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN PTP.StartDate AND COALESCE(PTP.FinishDate, '9999-12-31')
+              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN CAST(PTP.StartDate AS TIMESTAMP) AND CAST(COALESCE(PTP.FinishDate, '9999-12-31') AS TIMESTAMP)
             ORDER BY BI.Ordinal
             LIMIT 1
         ),
