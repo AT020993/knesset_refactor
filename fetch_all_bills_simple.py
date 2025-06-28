@@ -13,13 +13,17 @@ from pathlib import Path
 import sys
 from datetime import datetime
 
-def fetch_with_urllib(url, timeout=30):
+def fetch_with_urllib(url, timeout=60):
     """Fetch JSON data using urllib (built-in library)."""
     try:
-        # Create request with proper headers
+        # Create request with proper headers to mimic browser behavior
         req = urllib.request.Request(url)
-        req.add_header('Accept', 'application/json')
-        req.add_header('User-Agent', 'Mozilla/5.0 (compatible; Knesset-Data-Fetcher)')
+        req.add_header('Accept', 'application/json, text/plain, */*')
+        req.add_header('Accept-Language', 'he,en-US;q=0.9,en;q=0.8')
+        req.add_header('Accept-Encoding', 'gzip, deflate')
+        req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        req.add_header('Referer', 'http://knesset.gov.il/')
+        req.add_header('Connection', 'keep-alive')
         
         with urllib.request.urlopen(req, timeout=timeout) as response:
             content = response.read().decode('utf-8')
@@ -35,18 +39,19 @@ def fetch_with_urllib(url, timeout=30):
         return None
 
 def fetch_all_bills():
-    """Fetch all bills from the Knesset OData API."""
+    """Fetch all bills from the Knesset OData API using cursor-based paging."""
     print("🏛️ Fetching ALL Bills from Knesset OData API...")
     print("=" * 60)
     
-    base_url = "https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Bill"
+    base_url = "http://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Bill()"
     all_bills = []
-    skip = 0
+    last_bill_id = -1  # Start from -1 to get all records
     top = 100  # API limit
     
     while True:
-        url = f"{base_url}?$skip={skip}&$top={top}"
-        print(f"📥 Fetching records {skip} to {skip + top}...")
+        # Use cursor-based paging with BillID filter and ordering
+        url = f"{base_url}?$format=json&$top={top}&$filter=BillID%20gt%20{last_bill_id}&$orderby=BillID%20asc"
+        print(f"📥 Fetching records with BillID > {last_bill_id}...")
         
         data = fetch_with_urllib(url)
         if not data:
@@ -61,12 +66,13 @@ def fetch_all_bills():
         all_bills.extend(bills)
         print(f"   Fetched {len(bills)} bills. Total so far: {len(all_bills)}")
         
+        # Update last_bill_id to the highest BillID from this batch
+        last_bill_id = max(bill.get('BillID', last_bill_id) for bill in bills)
+        
         # If we got fewer records than requested, we've reached the end
         if len(bills) < top:
             print("✅ Reached end of available data")
             break
-            
-        skip += len(bills)
     
     print(f"\n🎉 TOTAL BILLS FETCHED: {len(all_bills)}")
     return all_bills

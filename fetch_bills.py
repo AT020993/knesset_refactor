@@ -11,7 +11,7 @@ def fetch_kns_bill():
     print("🏛️ Fetching KNS_Bill data from Knesset OData API...")
     
     # Knesset OData API endpoint for Bills
-    base_url = "https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Bill"
+    base_url = "http://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Bill"
     
     all_bills = []
     skip = 0
