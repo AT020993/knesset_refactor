@@ -213,6 +213,12 @@ class PlotsPageRenderer:
             "Query Types Distribution",
         ]:
             self._render_date_filter_options(selected_chart)
+            
+        # Populate available filter options from database
+        self._populate_filter_options()
+        
+        # Add advanced filters for all charts
+        self._render_advanced_filters(selected_chart)
 
     def _render_time_period_plot_options(
         self,
@@ -321,6 +327,182 @@ class PlotsPageRenderer:
                 key=f"end_date_{selected_chart.replace(' ', '_')}",
                 help="Filter queries up to this date",
             )
+
+    def _render_advanced_filters(self, selected_chart: str) -> None:
+        """Render advanced filters specific to each chart type."""
+        if not selected_chart:
+            return
+            
+        st.markdown("**Additional Filters:**")
+        
+        # Query-specific filters
+        if "Query" in selected_chart or "Queries" in selected_chart:
+            self._render_query_filters(selected_chart)
+        
+        # Agenda-specific filters  
+        elif "Agenda" in selected_chart or "Agendas" in selected_chart:
+            self._render_agenda_filters(selected_chart)
+            
+        # Bill-specific filters
+        elif "Bill" in selected_chart or "Bills" in selected_chart:
+            self._render_bill_filters(selected_chart)
+
+    def _render_query_filters(self, selected_chart: str) -> None:
+        """Render query-specific filter options."""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Query Type filter
+            query_types = st.session_state.get('available_query_types', [
+                'שאילתה', 'בקשה לקדימות דיון', 'שאילתה לשם דיון בכנסת', 
+                'הצעה לסדר היום', 'הודעה על בעיית התרחשות'
+            ])
+            selected_query_types = st.multiselect(
+                "Query Types",
+                options=query_types,
+                default=st.session_state.get('plot_query_type_filter', []),
+                key=f"query_type_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by specific query types"
+            )
+            st.session_state.plot_query_type_filter = selected_query_types
+            
+        with col2:
+            # Query Status filter
+            query_statuses = st.session_state.get('available_query_statuses', [
+                'הוגשה', 'נתקבלה תשובה', 'טרם נתקבלה תשובה', 'נדחתה'
+            ])
+            selected_query_statuses = st.multiselect(
+                "Query Status",
+                options=query_statuses,
+                default=st.session_state.get('plot_query_status_filter', []),
+                key=f"query_status_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by query answer status"
+            )
+            st.session_state.plot_query_status_filter = selected_query_statuses
+
+    def _render_agenda_filters(self, selected_chart: str) -> None:
+        """Render agenda-specific filter options."""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Agenda Session Type filter
+            session_types = st.session_state.get('available_session_types', [
+                'מליאה', 'ועדה', 'ועדת משנה'
+            ])
+            selected_session_types = st.multiselect(
+                "Session Types",
+                options=session_types,
+                default=st.session_state.get('plot_session_type_filter', []),
+                key=f"session_type_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by session type"
+            )
+            st.session_state.plot_session_type_filter = selected_session_types
+            
+        with col2:
+            # Agenda Status filter
+            agenda_statuses = st.session_state.get('available_agenda_statuses', [
+                'קיים', 'בוטל', 'נדחה'
+            ])
+            selected_agenda_statuses = st.multiselect(
+                "Agenda Status",
+                options=agenda_statuses,
+                default=st.session_state.get('plot_agenda_status_filter', []),
+                key=f"agenda_status_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by agenda status"
+            )
+            st.session_state.plot_agenda_status_filter = selected_agenda_statuses
+
+    def _render_bill_filters(self, selected_chart: str) -> None:
+        """Render bill-specific filter options."""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Bill Type filter
+            bill_types = st.session_state.get('available_bill_types', [
+                'הצעת חוק', 'הצעת חוק פרטית', 'הצעת חוק ממשלתית'
+            ])
+            selected_bill_types = st.multiselect(
+                "Bill Types",
+                options=bill_types,
+                default=st.session_state.get('plot_bill_type_filter', []),
+                key=f"bill_type_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by bill type"
+            )
+            st.session_state.plot_bill_type_filter = selected_bill_types
+            
+        with col2:
+            # Bill Status filter
+            bill_statuses = st.session_state.get('available_bill_statuses', [
+                'טיוטה', 'בהכנה', 'הוגשה', 'אושרה', 'נדחתה', 'בוטלה'
+            ])
+            selected_bill_statuses = st.multiselect(
+                "Bill Status",
+                options=bill_statuses,
+                default=st.session_state.get('plot_bill_status_filter', []),
+                key=f"bill_status_filter_{selected_chart.replace(' ', '_')}",
+                help="Filter by bill status"
+            )
+            st.session_state.plot_bill_status_filter = selected_bill_statuses
+
+    def _populate_filter_options(self) -> None:
+        """Populate available filter options from the database."""
+        if not self.db_path.exists():
+            return
+            
+        try:
+            from backend.connection_manager import get_db_connection, safe_execute_query
+            
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                # Query types
+                query_types_query = "SELECT DISTINCT TypeDesc FROM KNS_Query WHERE TypeDesc IS NOT NULL ORDER BY TypeDesc"
+                query_types_df = safe_execute_query(con, query_types_query, self.logger)
+                if not query_types_df.empty:
+                    st.session_state.available_query_types = query_types_df['TypeDesc'].tolist()
+                
+                # Query statuses
+                query_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Query WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                query_status_df = safe_execute_query(con, query_status_query, self.logger)
+                if not query_status_df.empty:
+                    st.session_state.available_query_statuses = query_status_df['StatusDesc'].tolist()
+                
+                # Agenda session types (if table exists)
+                try:
+                    session_types_query = "SELECT DISTINCT SessionType FROM KNS_Agenda WHERE SessionType IS NOT NULL ORDER BY SessionType"
+                    session_types_df = safe_execute_query(con, session_types_query, self.logger)
+                    if not session_types_df.empty:
+                        st.session_state.available_session_types = session_types_df['SessionType'].tolist()
+                except:
+                    pass  # Table might not exist or column might be different
+                
+                # Agenda statuses (if table exists)
+                try:
+                    agenda_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Agenda WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                    agenda_status_df = safe_execute_query(con, agenda_status_query, self.logger)
+                    if not agenda_status_df.empty:
+                        st.session_state.available_agenda_statuses = agenda_status_df['StatusDesc'].tolist()
+                except:
+                    pass
+                
+                # Bill types (if table exists)
+                try:
+                    bill_types_query = "SELECT DISTINCT BillTypeDesc FROM KNS_Bill WHERE BillTypeDesc IS NOT NULL ORDER BY BillTypeDesc"
+                    bill_types_df = safe_execute_query(con, bill_types_query, self.logger)
+                    if not bill_types_df.empty:
+                        st.session_state.available_bill_types = bill_types_df['BillTypeDesc'].tolist()
+                except:
+                    pass
+                
+                # Bill statuses (if table exists)
+                try:
+                    bill_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Bill WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                    bill_status_df = safe_execute_query(con, bill_status_query, self.logger)
+                    if not bill_status_df.empty:
+                        st.session_state.available_bill_statuses = bill_status_df['StatusDesc'].tolist()
+                except:
+                    pass
+                    
+        except Exception as e:
+            self.logger.error(f"Error populating filter options: {e}", exc_info=True)
 
     def _generate_and_display_plot(
         self,
@@ -462,5 +644,18 @@ class PlotsPageRenderer:
                 start_date.strftime("%Y-%m-%d") if start_date else None
             )
             plot_args["end_date"] = end_date.strftime("%Y-%m-%d") if end_date else None
+
+        # Add advanced filters based on chart type
+        if "Query" in selected_chart or "Queries" in selected_chart:
+            plot_args["query_type_filter"] = st.session_state.get('plot_query_type_filter', [])
+            plot_args["query_status_filter"] = st.session_state.get('plot_query_status_filter', [])
+            
+        elif "Agenda" in selected_chart or "Agendas" in selected_chart:
+            plot_args["session_type_filter"] = st.session_state.get('plot_session_type_filter', [])
+            plot_args["agenda_status_filter"] = st.session_state.get('plot_agenda_status_filter', [])
+            
+        elif "Bill" in selected_chart or "Bills" in selected_chart:
+            plot_args["bill_type_filter"] = st.session_state.get('plot_bill_type_filter', [])
+            plot_args["bill_status_filter"] = st.session_state.get('plot_bill_status_filter', [])
 
         return plot_args
