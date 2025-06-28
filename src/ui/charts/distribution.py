@@ -38,7 +38,8 @@ class DistributionCharts(BaseChart):
             )
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q", 
+                                     start_date=start_date, end_date=end_date, **kwargs)
 
         try:
             with get_db_connection(
@@ -47,27 +48,17 @@ class DistributionCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Query"]):
                     return None
 
-                date_conditions = []
-                if start_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) >= '{start_date}'"
-                    )
-                if end_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) <= '{end_date}'"
-                    )
-
-                date_filter_sql = " AND ".join(date_conditions)
-                if date_filter_sql:
-                    date_filter_sql = f" AND {date_filter_sql}"
-
                 query = f"""
                     SELECT
                         COALESCE(q.TypeDesc, 'Unknown') AS QueryType,
                         COUNT(q.QueryID) AS Count
                     FROM KNS_Query q
                     WHERE q.KnessetNum IS NOT NULL
-                        AND {filters["knesset_condition"]}{date_filter_sql}
+                        AND {filters["knesset_condition"]}
+                        AND {filters["query_type_condition"]}
+                        AND {filters["query_status_condition"]}
+                        AND {filters["start_date_condition"]}
+                        AND {filters["end_date_condition"]}
                     GROUP BY q.TypeDesc
                     ORDER BY Count DESC
                 """
@@ -86,7 +77,7 @@ class DistributionCharts(BaseChart):
                         date_range_text = f" ({start_date} to {end_date})"
                     elif start_date:
                         date_range_text = f" (from {start_date})"
-                    else:
+                    elif end_date:
                         date_range_text = f" (until {end_date})"
 
                 fig = px.pie(

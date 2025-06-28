@@ -85,7 +85,72 @@ class BaseChart(ABC):
         else:
             filters['faction_condition'] = "1=1"  # No filter
             
+        # Add advanced filters
+        self._add_advanced_filters(filters, prefix, **kwargs)
+        
         return filters
+        
+    def _add_advanced_filters(self, filters: Dict[str, Any], prefix: str = "", **kwargs) -> None:
+        """Add advanced filter conditions based on provided kwargs."""
+        
+        # Query-specific filters
+        query_type_filter = kwargs.get('query_type_filter', [])
+        if query_type_filter:
+            type_list = "', '".join(query_type_filter)
+            filters['query_type_condition'] = f"{prefix}TypeDesc IN ('{type_list}')"
+        else:
+            filters['query_type_condition'] = "1=1"
+            
+        query_status_filter = kwargs.get('query_status_filter', [])
+        if query_status_filter:
+            status_list = "', '".join(query_status_filter)
+            filters['query_status_condition'] = f"{prefix}StatusDesc IN ('{status_list}')"
+        else:
+            filters['query_status_condition'] = "1=1"
+            
+        # Agenda-specific filters
+        session_type_filter = kwargs.get('session_type_filter', [])
+        if session_type_filter:
+            session_list = "', '".join(session_type_filter)
+            filters['session_type_condition'] = f"{prefix}SessionType IN ('{session_list}')"
+        else:
+            filters['session_type_condition'] = "1=1"
+            
+        agenda_status_filter = kwargs.get('agenda_status_filter', [])
+        if agenda_status_filter:
+            agenda_status_list = "', '".join(agenda_status_filter)
+            filters['agenda_status_condition'] = f"{prefix}StatusDesc IN ('{agenda_status_list}')"
+        else:
+            filters['agenda_status_condition'] = "1=1"
+            
+        # Bill-specific filters
+        bill_type_filter = kwargs.get('bill_type_filter', [])
+        if bill_type_filter:
+            bill_type_list = "', '".join(bill_type_filter)
+            filters['bill_type_condition'] = f"{prefix}BillTypeDesc IN ('{bill_type_list}')"
+        else:
+            filters['bill_type_condition'] = "1=1"
+            
+        bill_status_filter = kwargs.get('bill_status_filter', [])
+        if bill_status_filter:
+            bill_status_list = "', '".join(bill_status_filter)
+            filters['bill_status_condition'] = f"{prefix}StatusDesc IN ('{bill_status_list}')"
+        else:
+            filters['bill_status_condition'] = "1=1"
+            
+        # Date filters
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        
+        if start_date:
+            filters['start_date_condition'] = f"{prefix}SubmitDate >= '{start_date}'"
+        else:
+            filters['start_date_condition'] = "1=1"
+            
+        if end_date:
+            filters['end_date_condition'] = f"{prefix}SubmitDate <= '{end_date}'"
+        else:
+            filters['end_date_condition'] = "1=1"
     
     @abstractmethod
     def generate(self, **kwargs) -> Optional[go.Figure]:

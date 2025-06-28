@@ -47,6 +47,20 @@ class SessionStateManager:
         'plot_show_average_line': False,
         'plot_start_date': None,
         'plot_end_date': None,
+        # Advanced filter keys
+        'plot_query_type_filter': lambda: [],
+        'plot_query_status_filter': lambda: [],
+        'plot_session_type_filter': lambda: [],
+        'plot_agenda_status_filter': lambda: [],
+        'plot_bill_type_filter': lambda: [],
+        'plot_bill_status_filter': lambda: [],
+        # Available options for filters (populated dynamically)
+        'available_query_types': lambda: [],
+        'available_query_statuses': lambda: [],
+        'available_session_types': lambda: [],
+        'available_agenda_statuses': lambda: [],
+        'available_bill_types': lambda: [],
+        'available_bill_statuses': lambda: [],
     }
     
     CHART_BUILDER_KEYS = {

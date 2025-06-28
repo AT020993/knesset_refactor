@@ -21,7 +21,8 @@ class TimeSeriesCharts(BaseChart):
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[str]] = None,
         aggregation_level: str = "Yearly",
-        show_average_line: bool = False
+        show_average_line: bool = False,
+        **kwargs
     ) -> Optional[go.Figure]:
         """Generate a bar chart of Knesset queries per time period."""
         
@@ -29,7 +30,7 @@ class TimeSeriesCharts(BaseChart):
             return None
         
         # Build filter conditions
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q", **kwargs)
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -73,6 +74,10 @@ class TimeSeriesCharts(BaseChart):
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) > 1940
                         AND {filters['knesset_condition']}
+                        AND {filters['query_type_condition']}
+                        AND {filters['query_status_condition']}
+                        AND {filters['start_date_condition']}
+                        AND {filters['end_date_condition']}
                 """
                 
                 group_by_terms = ["TimePeriod"]
