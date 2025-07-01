@@ -21,6 +21,11 @@ class DatabaseConfig:
         "KNS_KnessetDates",
         "KNS_Bill",
         "KNS_BillInitiator",
+        "KNS_BillName",
+        "KNS_BillHistoryInitiator",
+        "KNS_BillUnion",
+        "KNS_BillSplit",
+        "KNS_DocumentBill",
         "KNS_Law",
         "KNS_IsraelLaw"
     ]
