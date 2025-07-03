@@ -189,3 +189,36 @@ def get_last_updated_for_table(parquet_dir: Path, table_name: str, _logger_obj: 
             return "Error reading timestamp"
     return "Never (or N/A)"
 
+
+def format_dataframe_dates(df: pd.DataFrame, _logger_obj: logging.Logger | None = None) -> pd.DataFrame:
+    """Formats date columns in a dataframe to show only the date part (YYYY-MM-DD)."""
+    if df.empty:
+        return df
+    
+    formatted_df = df.copy()
+    
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            sample_values = df[col].dropna().head(5)
+            if sample_values.empty:
+                continue
+                
+            is_date_column = False
+            for value in sample_values:
+                if isinstance(value, str) and 'T' in value:
+                    try:
+                        pd.to_datetime(value)
+                        is_date_column = True
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            
+            if is_date_column:
+                try:
+                    formatted_df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                    if _logger_obj: _logger_obj.debug(f"Formatted date column: {col}")
+                except Exception as e:
+                    if _logger_obj: _logger_obj.warning(f"Could not format date column {col}: {e}")
+    
+    return formatted_df
+

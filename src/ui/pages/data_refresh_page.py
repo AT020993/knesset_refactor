@@ -78,8 +78,9 @@ class DataRefreshPageRenderer:
         st.markdown(subheader_text)
         
         if not results_df.empty:
-            # Display results
-            st.dataframe(results_df, use_container_width=True, height=400)
+            # Display results with formatted dates
+            formatted_df = ui_utils.format_dataframe_dates(results_df, _logger_obj=self.logger)
+            st.dataframe(formatted_df, use_container_width=True, height=400)
             
             # Download options
             safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", query_name)
@@ -148,8 +149,9 @@ class DataRefreshPageRenderer:
         st.markdown(f"Active Sidebar Filters: {'; '.join(filter_display_parts)}")
         
         if not results_df.empty:
-            # Display results
-            st.dataframe(results_df, use_container_width=True, height=400)
+            # Display results with formatted dates
+            formatted_df = ui_utils.format_dataframe_dates(results_df, _logger_obj=self.logger)
+            st.dataframe(formatted_df, use_container_width=True, height=400)
             
             # Download options
             safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", table_name)
@@ -221,7 +223,8 @@ class DataRefreshPageRenderer:
             con = connect_func(read_only=True)
             adhoc_result_df = ui_utils.safe_execute_query(con, sql_query, _logger_obj=self.logger)
             
-            st.dataframe(adhoc_result_df, use_container_width=True)
+            formatted_adhoc_df = ui_utils.format_dataframe_dates(adhoc_result_df, _logger_obj=self.logger)
+            st.dataframe(formatted_adhoc_df, use_container_width=True)
             
             if not adhoc_result_df.empty:
                 csv_data = adhoc_result_df.to_csv(index=False).encode("utf-8-sig")

@@ -241,7 +241,7 @@ SELECT
     B.PrivateNumber,
     C.Name AS CommitteeName,
     B.PostponementReasonDesc,
-    B.PublicationDate,
+    strftime(CAST(B.PublicationDate AS TIMESTAMP), '%Y-%m-%d') AS PublicationDate,
     B.MagazineNumber,
     B.PageNumber,
     B.IsContinuationBill,
