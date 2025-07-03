@@ -63,12 +63,18 @@ class TimeSeriesCharts(BaseChart):
                 # Build SQL query
                 knesset_select = "" if filters['is_single_knesset'] else "q.KnessetNum,"
                 
+                # Add JOIN with KNS_Status table if status filters are used
+                status_join = ""
+                if filters['query_status_condition'] != "1=1":
+                    status_join = "LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID"
+                
                 query = f"""
                     SELECT
                         {time_period_sql} AS TimePeriod,
                         {knesset_select}
                         COUNT(q.QueryID) AS QueryCount
                     FROM KNS_Query q
+                    {status_join}
                     WHERE {date_column} IS NOT NULL
                         AND q.KnessetNum IS NOT NULL
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}
@@ -208,17 +214,27 @@ class TimeSeriesCharts(BaseChart):
                 # Build SQL query
                 knesset_select = "" if filters['is_single_knesset'] else "a.KnessetNum,"
                 
+                # Add JOIN with KNS_Status table if status filters are used
+                status_join = ""
+                if filters['agenda_status_condition'] != "1=1":
+                    status_join = "LEFT JOIN KNS_Status s ON a.StatusID = s.StatusID"
+                
                 query = f"""
                     SELECT
                         {time_period_sql} AS TimePeriod,
                         {knesset_select}
                         COUNT(a.AgendaID) AS AgendaCount
                     FROM KNS_Agenda a
+                    {status_join}
                     WHERE {date_column} IS NOT NULL
                         AND a.KnessetNum IS NOT NULL
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) > 1940
                         AND {filters['knesset_condition']}
+                        AND {filters['session_type_condition']}
+                        AND {filters['agenda_status_condition']}
+                        AND {filters['start_date_condition']}
+                        AND {filters['end_date_condition']}
                 """
                 
                 group_by_terms = ["TimePeriod"]
@@ -349,17 +365,27 @@ class TimeSeriesCharts(BaseChart):
                 # Build SQL query
                 knesset_select = "" if filters['is_single_knesset'] else "b.KnessetNum,"
                 
+                # Add JOIN with KNS_Status table if status filters are used
+                status_join = ""
+                if filters['bill_status_condition'] != "1=1":
+                    status_join = "LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID"
+                
                 query = f"""
                     SELECT
                         {time_period_sql} AS TimePeriod,
                         {knesset_select}
                         COUNT(b.BillID) AS BillCount
                     FROM KNS_Bill b
+                    {status_join}
                     WHERE {date_column} IS NOT NULL
                         AND b.KnessetNum IS NOT NULL
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) > 1940
                         AND {filters['knesset_condition']}
+                        AND {filters['bill_type_condition']}
+                        AND {filters['bill_status_condition']}
+                        AND {filters['start_date_condition']}
+                        AND {filters['end_date_condition']}
                 """
                 
                 group_by_terms = ["TimePeriod"]

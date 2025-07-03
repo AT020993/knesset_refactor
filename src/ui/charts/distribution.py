@@ -48,11 +48,17 @@ class DistributionCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Query"]):
                     return None
 
+                # Add JOIN with KNS_Status table if status filters are used
+                status_join = ""
+                if filters['query_status_condition'] != "1=1":
+                    status_join = "LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID"
+                
                 query = f"""
                     SELECT
                         COALESCE(q.TypeDesc, 'Unknown') AS QueryType,
                         COUNT(q.QueryID) AS Count
                     FROM KNS_Query q
+                    {status_join}
                     WHERE q.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
                         AND {filters["query_type_condition"]}

@@ -459,42 +459,60 @@ class PlotsPageRenderer:
                 if not query_types_df.empty:
                     st.session_state.available_query_types = query_types_df['TypeDesc'].tolist()
                 
-                # Query statuses
-                query_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Query WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                # Query statuses - join with KNS_Status table
+                query_status_query = """
+                    SELECT DISTINCT s."Desc" as StatusDesc 
+                    FROM KNS_Query q 
+                    JOIN KNS_Status s ON q.StatusID = s.StatusID 
+                    WHERE s."Desc" IS NOT NULL 
+                    ORDER BY s."Desc"
+                """
                 query_status_df = safe_execute_query(con, query_status_query, self.logger)
                 if not query_status_df.empty:
                     st.session_state.available_query_statuses = query_status_df['StatusDesc'].tolist()
                 
-                # Agenda session types (if table exists)
+                # Agenda session types - use SubTypeDesc instead of SessionType
                 try:
-                    session_types_query = "SELECT DISTINCT SessionType FROM KNS_Agenda WHERE SessionType IS NOT NULL ORDER BY SessionType"
+                    session_types_query = "SELECT DISTINCT SubTypeDesc FROM KNS_Agenda WHERE SubTypeDesc IS NOT NULL ORDER BY SubTypeDesc"
                     session_types_df = safe_execute_query(con, session_types_query, self.logger)
                     if not session_types_df.empty:
-                        st.session_state.available_session_types = session_types_df['SessionType'].tolist()
+                        st.session_state.available_session_types = session_types_df['SubTypeDesc'].tolist()
                 except:
                     pass  # Table might not exist or column might be different
                 
-                # Agenda statuses (if table exists)
+                # Agenda statuses - join with KNS_Status table
                 try:
-                    agenda_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Agenda WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                    agenda_status_query = """
+                        SELECT DISTINCT s."Desc" as StatusDesc 
+                        FROM KNS_Agenda a 
+                        JOIN KNS_Status s ON a.StatusID = s.StatusID 
+                        WHERE s."Desc" IS NOT NULL 
+                        ORDER BY s."Desc"
+                    """
                     agenda_status_df = safe_execute_query(con, agenda_status_query, self.logger)
                     if not agenda_status_df.empty:
                         st.session_state.available_agenda_statuses = agenda_status_df['StatusDesc'].tolist()
                 except:
                     pass
                 
-                # Bill types (if table exists)
+                # Bill types - use SubTypeDesc instead of BillTypeDesc
                 try:
-                    bill_types_query = "SELECT DISTINCT BillTypeDesc FROM KNS_Bill WHERE BillTypeDesc IS NOT NULL ORDER BY BillTypeDesc"
+                    bill_types_query = "SELECT DISTINCT SubTypeDesc FROM KNS_Bill WHERE SubTypeDesc IS NOT NULL ORDER BY SubTypeDesc"
                     bill_types_df = safe_execute_query(con, bill_types_query, self.logger)
                     if not bill_types_df.empty:
-                        st.session_state.available_bill_types = bill_types_df['BillTypeDesc'].tolist()
+                        st.session_state.available_bill_types = bill_types_df['SubTypeDesc'].tolist()
                 except:
                     pass
                 
-                # Bill statuses (if table exists)
+                # Bill statuses - join with KNS_Status table
                 try:
-                    bill_status_query = "SELECT DISTINCT StatusDesc FROM KNS_Bill WHERE StatusDesc IS NOT NULL ORDER BY StatusDesc"
+                    bill_status_query = """
+                        SELECT DISTINCT s."Desc" as StatusDesc 
+                        FROM KNS_Bill b 
+                        JOIN KNS_Status s ON b.StatusID = s.StatusID 
+                        WHERE s."Desc" IS NOT NULL 
+                        ORDER BY s."Desc"
+                    """
                     bill_status_df = safe_execute_query(con, bill_status_query, self.logger)
                     if not bill_status_df.empty:
                         st.session_state.available_bill_statuses = bill_status_df['StatusDesc'].tolist()

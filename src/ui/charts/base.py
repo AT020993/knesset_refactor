@@ -148,10 +148,10 @@ class BaseChart(ABC):
             's."Desc"', query_status_filter
         )
 
-        # Agenda-specific filters
+        # Agenda-specific filters - use SubTypeDesc instead of SessionType
         session_type_filter = kwargs.get("session_type_filter", [])
         filters["session_type_condition"] = self._build_in_clause(
-            f"{prefix}SessionType", session_type_filter
+            f"{prefix}SubTypeDesc", session_type_filter
         )
 
         agenda_status_filter = kwargs.get("agenda_status_filter", [])
@@ -159,10 +159,10 @@ class BaseChart(ABC):
             's."Desc"', agenda_status_filter
         )
 
-        # Bill-specific filters
+        # Bill-specific filters - use SubTypeDesc instead of BillTypeDesc
         bill_type_filter = kwargs.get("bill_type_filter", [])
         filters["bill_type_condition"] = self._build_in_clause(
-            f"{prefix}BillTypeDesc", bill_type_filter
+            f"{prefix}SubTypeDesc", bill_type_filter
         )
 
         bill_status_filter = kwargs.get("bill_status_filter", [])
