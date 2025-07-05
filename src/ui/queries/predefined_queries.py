@@ -1,9 +1,11 @@
 """
-Predefined SQL queries for data analysis and export.
+Predefined SQL queries for data analysis and export - FIXED VERSION.
 
 This module contains complex SQL queries that were previously hardcoded
 in the UI layer. Each query is defined with its SQL and metadata for
 filtering and display purposes.
+
+Fixed to avoid LATERAL join issues with window functions in DuckDB.
 """
 
 from typing import Any, Dict
@@ -12,88 +14,32 @@ from typing import Any, Dict
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
     "Queries + Full Details": {
         "sql": """
-WITH MKLatestFactionDetailsInKnesset AS (
-    SELECT
-        p2p.PersonID,
-        p2p.KnessetNum,
-        p2p.FactionID,
-        p2p.FactionName,
-        ufs.CoalitionStatus,
-        p2p.PersonToPositionID,
-        ROW_NUMBER() OVER (
-            PARTITION BY p2p.PersonID, p2p.KnessetNum
-            ORDER BY p2p.StartDate DESC, p2p.FinishDate DESC NULLS LAST,
-                     p2p.PersonToPositionID DESC
+WITH FactionLookup AS (
+    SELECT 
+        ptp.PersonID,
+        ptp.KnessetNum,
+        ptp.FactionID,
+        ROW_NUMBER() OVER (PARTITION BY ptp.PersonID, ptp.KnessetNum ORDER BY 
+            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+            ptp.StartDate DESC NULLS LAST
         ) as rn
+    FROM KNS_PersonToPosition ptp
+    WHERE ptp.FactionID IS NOT NULL
+),
+MinisterLookup AS (
+    SELECT 
+        p2p.GovMinistryID,
+        p2p.PersonID,
+        p2p.DutyDesc,
+        ROW_NUMBER() OVER (PARTITION BY p2p.GovMinistryID ORDER BY p2p.StartDate DESC) as rn
     FROM KNS_PersonToPosition p2p
-    LEFT JOIN UserFactionCoalitionStatus ufs
-        ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum
-    WHERE p2p.FactionID IS NOT NULL
-),
-ActiveMKFactionDetailsForQuery AS (
-    SELECT
-        q_inner.QueryID,
-        p2p_inner.FactionID AS ActiveFactionID,
-        p2p_inner.FactionName AS ActiveFactionName,
-        ufs_inner.CoalitionStatus AS ActiveCoalitionStatus,
-        ROW_NUMBER() OVER (
-            PARTITION BY q_inner.QueryID
-            ORDER BY p2p_inner.StartDate DESC, p2p_inner.PersonToPositionID DESC
-        ) as rn_active
-    FROM KNS_Query q_inner
-    JOIN KNS_PersonToPosition p2p_inner ON q_inner.PersonID = p2p_inner.PersonID
-        AND q_inner.KnessetNum = p2p_inner.KnessetNum
-        AND CAST(q_inner.SubmitDate AS TIMESTAMP)
-            BETWEEN CAST(p2p_inner.StartDate AS TIMESTAMP)
-            AND CAST(COALESCE(p2p_inner.FinishDate, '9999-12-31') AS TIMESTAMP)
-    LEFT JOIN UserFactionCoalitionStatus ufs_inner
-        ON p2p_inner.FactionID = ufs_inner.FactionID
-        AND p2p_inner.KnessetNum = ufs_inner.KnessetNum
-    WHERE p2p_inner.FactionID IS NOT NULL
-),
-MinisterOfReplyMinistry AS (
-    -- This CTE finds the Minister for the GovMinistryID associated
-    -- with the Query, around the ReplyMinisterDate.
-    SELECT
-        q_m.QueryID,
-        min_p.FirstName || ' ' || min_p.LastName AS ResponsibleMinisterName,
-        min_p2p.DutyDesc AS ResponsibleMinisterPosition,
-        ROW_NUMBER() OVER (
-            PARTITION BY q_m.QueryID
-            -- Prioritize positions active on ReplyMinisterDate,
-            -- then by most recent start date.
-            ORDER BY
-                (CASE WHEN CAST(q_m.ReplyMinisterDate AS TIMESTAMP)
-                    BETWEEN CAST(min_p2p.StartDate AS TIMESTAMP)
-                    AND CAST(COALESCE(min_p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
-                    THEN 0 ELSE 1 END),
-                min_p2p.StartDate DESC,
-                min_p2p.PersonToPositionID DESC
-        ) as rn_min
-    FROM KNS_Query q_m
-    LEFT JOIN KNS_PersonToPosition min_p2p
-        ON q_m.GovMinistryID = min_p2p.GovMinistryID  -- Match on Ministry ID
-        AND q_m.KnessetNum = min_p2p.KnessetNum  -- Match on Knesset Number
-        -- Refined condition to identify Ministers based on DutyDesc,
-        -- excluding deputies.
-        AND (
-                min_p2p.DutyDesc LIKE 'שר %' OR           -- Minister of
-                min_p2p.DutyDesc LIKE 'השר %' OR          -- The Minister of
-                min_p2p.DutyDesc = 'שר' OR                -- Exactly "שר"
-                min_p2p.DutyDesc LIKE 'שרה %' OR         -- Female Minister of
-                min_p2p.DutyDesc LIKE 'השרה %' OR        -- The Female Minister
-                min_p2p.DutyDesc = 'שרה' OR              -- Exactly "שרה"
-                min_p2p.DutyDesc = 'ראש הממשלה'         -- Prime Minister
-            )
-        AND min_p2p.DutyDesc NOT LIKE 'סגן %'             -- Exclude Deputy
-        AND min_p2p.DutyDesc NOT LIKE 'סגנית %'           -- Exclude Female Deputy
-        AND min_p2p.DutyDesc NOT LIKE '%יושב ראש%'      -- Exclude Chairman
-        AND min_p2p.DutyDesc NOT LIKE '%יו""ר%'           -- Exclude Chairman abbrev
-        -- Minister's term started before or on reply date
-        AND CAST(q_m.ReplyMinisterDate AS TIMESTAMP) >=
-            CAST(min_p2p.StartDate AS TIMESTAMP)
-    LEFT JOIN KNS_Person min_p ON min_p2p.PersonID = min_p.PersonID
-    WHERE q_m.ReplyMinisterDate IS NOT NULL AND q_m.GovMinistryID IS NOT NULL
+    WHERE (
+        p2p.DutyDesc LIKE 'שר %' OR p2p.DutyDesc LIKE 'השר %' OR p2p.DutyDesc = 'שר' OR
+        p2p.DutyDesc LIKE 'שרה %' OR p2p.DutyDesc LIKE 'השרה %' OR p2p.DutyDesc = 'שרה' OR
+        p2p.DutyDesc = 'ראש הממשלה'
+    )
+    AND p2p.DutyDesc NOT LIKE 'סגן %' AND p2p.DutyDesc NOT LIKE 'סגנית %'
+    AND p2p.DutyDesc NOT LIKE '%יושב ראש%' AND p2p.DutyDesc NOT LIKE '%יו""ר%'
 )
 SELECT
     Q.QueryID,
@@ -106,37 +52,38 @@ SELECT
     P.FirstName AS MKFirstName,
     P.LastName AS MKLastName,
     P.GenderDesc AS MKGender,
-    P.IsCurrent AS MKIsCurrent, -- Added
+    P.IsCurrent AS MKIsCurrent,
 
-    COALESCE(AMFD.ActiveFactionName, FallbackFaction.FactionName) AS MKFactionName,
-    COALESCE(AMFD.ActiveCoalitionStatus, FallbackFaction.CoalitionStatus)
-        AS MKFactionCoalitionStatus,
+    -- Use simplified faction lookup with our improved faction data
+    COALESCE(f.Name, 'Unknown') AS MKFactionName,
+    COALESCE(ufs.CoalitionStatus, 'Unknown') AS MKFactionCoalitionStatus,
 
     M.Name AS MinistryName,
-    M.IsActive AS MinistryIsActive, -- Added
+    M.IsActive AS MinistryIsActive,
     strftime(CAST(Q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDateFormatted,
     strftime(CAST(Q.ReplyMinisterDate AS TIMESTAMP), '%Y-%m-%d') AS AnswerDate,
 
-    MRM.ResponsibleMinisterName, -- Added (Minister of the replying Ministry)
-    MRM.ResponsibleMinisterPosition -- Added (Position of that Minister)
-    -- AnswerText is not available in KNS_Query table.
+    -- Simplified minister lookup
+    COALESCE(min_p.FirstName || ' ' || min_p.LastName, 'Unknown') AS ResponsibleMinisterName,
+    COALESCE(ml.DutyDesc, 'Unknown') AS ResponsibleMinisterPosition
 
 FROM KNS_Query Q
 LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
 LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
 LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-LEFT JOIN ActiveMKFactionDetailsForQuery AMFD
-    ON Q.QueryID = AMFD.QueryID AND AMFD.rn_active = 1
-LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction
-    ON Q.PersonID = FallbackFaction.PersonID
-    AND Q.KnessetNum = FallbackFaction.KnessetNum AND FallbackFaction.rn = 1
-LEFT JOIN MinisterOfReplyMinistry MRM
-    ON Q.QueryID = MRM.QueryID AND MRM.rn_min = 1
+LEFT JOIN FactionLookup fl ON Q.PersonID = fl.PersonID 
+    AND Q.KnessetNum = fl.KnessetNum 
+    AND fl.rn = 1
+LEFT JOIN KNS_Faction f ON fl.FactionID = f.FactionID
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+    AND Q.KnessetNum = ufs.KnessetNum
+LEFT JOIN MinisterLookup ml ON Q.GovMinistryID = ml.GovMinistryID AND ml.rn = 1
+LEFT JOIN KNS_Person min_p ON ml.PersonID = min_p.PersonID
 
 ORDER BY Q.KnessetNum DESC, Q.QueryID DESC;
         """,
         "knesset_filter_column": "Q.KnessetNum",
-        "faction_filter_column": "COALESCE(AMFD.ActiveFactionID, FallbackFaction.FactionID)",
+        "faction_filter_column": "f.FactionID",
         "description": (
             "Comprehensive query data with faction details, "
             "ministry information, and responsible ministers"
@@ -144,279 +91,127 @@ ORDER BY Q.KnessetNum DESC, Q.QueryID DESC;
     },
     "Agenda Items + Full Details": {
         "sql": """
-WITH MKLatestFactionDetailsInKnesset AS (
-    SELECT
-        p2p.PersonID,
-        p2p.KnessetNum,
-        p2p.FactionID,
-        p2p.FactionName,
-        ufs.CoalitionStatus,
-        p2p.PersonToPositionID,
-        ROW_NUMBER() OVER (
-            PARTITION BY p2p.PersonID, p2p.KnessetNum
-            ORDER BY p2p.StartDate DESC, p2p.FinishDate DESC NULLS LAST,
-                     p2p.PersonToPositionID DESC
+WITH AgendaFactionLookup AS (
+    SELECT 
+        ptp.PersonID,
+        ptp.KnessetNum,
+        ptp.FactionID,
+        ROW_NUMBER() OVER (PARTITION BY ptp.PersonID, ptp.KnessetNum ORDER BY 
+            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+            ptp.StartDate DESC NULLS LAST
         ) as rn
-    FROM KNS_PersonToPosition p2p
-    LEFT JOIN UserFactionCoalitionStatus ufs
-        ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum
-    WHERE p2p.FactionID IS NOT NULL
-),
-ActiveInitiatorFactionDetailsForAgenda AS (
-    SELECT
-        a_inner.AgendaID,
-        p2p_inner.FactionID AS ActiveFactionID,
-        p2p_inner.FactionName AS ActiveFactionName,
-        ufs_inner.CoalitionStatus AS ActiveCoalitionStatus,
-        ROW_NUMBER() OVER (
-            PARTITION BY a_inner.AgendaID
-            ORDER BY p2p_inner.StartDate DESC, p2p_inner.PersonToPositionID DESC
-        ) as rn_active
-    FROM KNS_Agenda a_inner
-    JOIN KNS_PersonToPosition p2p_inner
-        ON a_inner.InitiatorPersonID = p2p_inner.PersonID
-        AND a_inner.KnessetNum = p2p_inner.KnessetNum
-        AND CAST(COALESCE(a_inner.PresidentDecisionDate, a_inner.LastUpdatedDate)
-                 AS TIMESTAMP)
-            BETWEEN CAST(p2p_inner.StartDate AS TIMESTAMP)
-            AND CAST(COALESCE(p2p_inner.FinishDate, '9999-12-31') AS TIMESTAMP)
-    LEFT JOIN UserFactionCoalitionStatus ufs_inner
-        ON p2p_inner.FactionID = ufs_inner.FactionID
-        AND p2p_inner.KnessetNum = ufs_inner.KnessetNum
-    WHERE p2p_inner.FactionID IS NOT NULL AND a_inner.InitiatorPersonID IS NOT NULL
+    FROM KNS_PersonToPosition ptp
+    WHERE ptp.FactionID IS NOT NULL
 )
 SELECT
     A.AgendaID,
-    A.Number AS AgendaNumber,
+    A.Number,
     A.KnessetNum,
-    A.Name AS AgendaName, -- This is the main name/title of the agenda item
-    A.Name AS AgendaDescription, -- Using A.Name as AgendaDescription
-    A.ClassificationDesc AS AgendaClassification,
-    S."Desc" AS AgendaStatus,
-    A.InitiatorPersonID, -- Added InitiatorPersonID for combination with PersonID
-    INIT_P.PersonID AS InitiatorPersonIDResolved, -- Added resolved PersonID
-    INIT_P.FirstName AS InitiatorFirstName,
-    INIT_P.LastName AS InitiatorLastName,
-    INIT_P.GenderDesc AS InitiatorGender,
+    A.Name AS AgendaName,
+    A.SubTypeID AS AgendaSubTypeID,
+    A.SubTypeDesc AS AgendaSubTypeDesc,
+    A.StatusID AS AgendaStatusID,
+    S."Desc" AS AgendaStatusDesc,
+    A.ClassificationID AS AgendaClassificationID,
+    A.ClassificationDesc AS AgendaClassificationDesc,
+    P.FirstName AS InitiatorMKFirstName,
+    P.LastName AS InitiatorMKLastName,
+    P.GenderDesc AS InitiatorMKGender,
+    P.IsCurrent AS InitiatorMKIsCurrent,
 
-    COALESCE(AIFD.ActiveFactionName, FallbackFaction_init.FactionName)
-        AS InitiatorFactionName,
-    COALESCE(AIFD.ActiveCoalitionStatus, FallbackFaction_init.CoalitionStatus)
-        AS InitiatorFactionCoalitionStatus,
+    -- Simplified faction lookup
+    COALESCE(f.Name, 'Unknown') AS InitiatorMKFactionName,
+    COALESCE(ufs.CoalitionStatus, 'Unknown') AS InitiatorMKFactionCoalitionStatus,
 
-    HC.Name AS HandlingCommitteeName,
-    HC.IsCurrent AS CommitteeIsActive, -- Changed from HC.IsActive to HC.IsCurrent
-    strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d')
-        AS PresidentDecisionDateFormatted
+    strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
+    strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
 
 FROM KNS_Agenda A
+LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
 LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-LEFT JOIN KNS_Person INIT_P ON A.InitiatorPersonID = INIT_P.PersonID
-LEFT JOIN KNS_Committee HC ON A.CommitteeID = HC.CommitteeID
-LEFT JOIN ActiveInitiatorFactionDetailsForAgenda AIFD
-    ON A.AgendaID = AIFD.AgendaID AND AIFD.rn_active = 1
-LEFT JOIN MKLatestFactionDetailsInKnesset FallbackFaction_init
-    ON A.InitiatorPersonID = FallbackFaction_init.PersonID
-    AND A.KnessetNum = FallbackFaction_init.KnessetNum
-    AND FallbackFaction_init.rn = 1
+LEFT JOIN AgendaFactionLookup afl ON A.InitiatorPersonID = afl.PersonID 
+    AND A.KnessetNum = afl.KnessetNum 
+    AND afl.rn = 1
+LEFT JOIN KNS_Faction f ON afl.FactionID = f.FactionID
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+    AND A.KnessetNum = ufs.KnessetNum
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC;
         """,
         "knesset_filter_column": "A.KnessetNum",
-        "faction_filter_column": "COALESCE(AIFD.ActiveFactionID, FallbackFaction_init.FactionID)",
+        "faction_filter_column": "f.FactionID",
         "description": (
-            "Comprehensive agenda items with initiator details, "
-            "committee information, and faction status"
+            "Comprehensive agenda items data with faction details "
+            "and status information"
         ),
     },
     "Bills + Full Details": {
         "sql": """
 SELECT
     B.BillID,
-    B.Number AS BillNumber,
     B.KnessetNum,
     B.Name AS BillName,
-    B.SubTypeDesc AS BillSubType,
-    S."Desc" AS BillStatus,
+    B.SubTypeID AS BillSubTypeID,
+    B.SubTypeDesc AS BillSubTypeDesc,
     B.PrivateNumber,
+    B.CommitteeID AS BillCommitteeID,
     C.Name AS CommitteeName,
+    B.StatusID AS BillStatusID,
+    S."Desc" AS BillStatusDesc,
+    B.Number AS BillNumber,
+    B.PostponementReasonID,
     B.PostponementReasonDesc,
-    strftime(CAST(B.PublicationDate AS TIMESTAMP), '%Y-%m-%d') AS PublicationDate,
-    B.MagazineNumber,
-    B.PageNumber,
-    B.IsContinuationBill,
-    B.SummaryLaw,
-    B.PublicationSeriesDesc,
-    B.PublicationSeriesFirstCall,
-    strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d')
-        AS LastUpdatedDateFormatted,
-    COALESCE(
-        GROUP_CONCAT(DISTINCT P.FirstName || ' ' || P.LastName, ', '),
-        'Unknown'
-    ) AS BillInitiatorNames,
-    COALESCE(
-        GROUP_CONCAT(DISTINCT P.FirstName, ', '),
-        ''
-    ) AS BillInitiatorFirstNames,
-    COALESCE(
-        GROUP_CONCAT(DISTINCT P.LastName, ', '),
-        ''
-    ) AS BillInitiatorLastNames,
-    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount,
-    COALESCE(
-        (SELECT P2.FirstName || ' ' || P2.LastName
-         FROM KNS_BillInitiator BI2
-         INNER JOIN KNS_Person P2 ON BI2.PersonID = P2.PersonID
-         WHERE BI2.BillID = B.BillID
-           AND BI2.IsInitiator = true
-         ORDER BY BI2.Ordinal ASC
-         LIMIT 1),
-        'Unknown'
-    ) AS MainInitiatorName,
-    COALESCE(
-        ( -- Active faction on publication date
-            SELECT PTP.FactionName
-            FROM KNS_BillInitiator BI
-            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
-            WHERE BI.BillID = B.BillID
-              AND BI.IsInitiator = TRUE
-              AND B.PublicationDate IS NOT NULL
-              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN CAST(PTP.StartDate AS TIMESTAMP) AND CAST(COALESCE(PTP.FinishDate, '9999-12-31') AS TIMESTAMP)
-            ORDER BY BI.Ordinal, PTP.StartDate DESC
-            LIMIT 1
-        ),
-        ( -- Fallback to latest faction in that knesset
-            SELECT PTP.FactionName
-            FROM KNS_BillInitiator BI
-            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
-            WHERE BI.BillID = B.BillID
-              AND BI.IsInitiator = TRUE
-            ORDER BY BI.Ordinal, PTP.StartDate DESC
-            LIMIT 1
-        ),
-        'Unknown'
-    ) AS MainInitiatorFactionName,
-    COALESCE(
-        ( -- Active coalition status on publication date
-            SELECT UCS.CoalitionStatus
-            FROM KNS_BillInitiator BI
-            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
-            JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID AND B.KnessetNum = UCS.KnessetNum
-            WHERE BI.BillID = B.BillID
-              AND BI.IsInitiator = TRUE
-              AND B.PublicationDate IS NOT NULL
-              AND CAST(B.PublicationDate AS TIMESTAMP) BETWEEN CAST(PTP.StartDate AS TIMESTAMP) AND CAST(COALESCE(PTP.FinishDate, '9999-12-31') AS TIMESTAMP)
-            ORDER BY BI.Ordinal, PTP.StartDate DESC
-            LIMIT 1
-        ),
-        ( -- Fallback to latest coalition status in that knesset
-            SELECT UCS.CoalitionStatus
-            FROM KNS_BillInitiator BI
-            JOIN KNS_PersonToPosition PTP ON BI.PersonID = PTP.PersonID AND B.KnessetNum = PTP.KnessetNum
-            JOIN UserFactionCoalitionStatus UCS ON PTP.FactionID = UCS.FactionID AND B.KnessetNum = UCS.KnessetNum
-            WHERE BI.BillID = B.BillID
-              AND BI.IsInitiator = TRUE
-            ORDER BY BI.Ordinal, PTP.StartDate DESC
-            LIMIT 1
-        ),
-        'Unknown'
-    ) AS MainInitiatorCoalitionStatus,
-    COALESCE(
-        GROUP_CONCAT(DISTINCT
-            CASE WHEN NOT (BI.IsInitiator = true AND BI.Ordinal = (
-                SELECT MIN(BI3.Ordinal) 
-                FROM KNS_BillInitiator BI3 
-                WHERE BI3.BillID = B.BillID AND BI3.IsInitiator = true
-            ))
-                 THEN P.FirstName || ' ' || P.LastName 
-                 END, ', '
-        ),
-        ''
-    ) AS JoiningMemberNames,
-    COALESCE(
-        (SELECT COUNT(DISTINCT BI_JOIN.PersonID)
-         FROM KNS_BillInitiator BI_JOIN
-         WHERE BI_JOIN.BillID = B.BillID 
-           AND NOT (BI_JOIN.IsInitiator = true AND BI_JOIN.Ordinal = (
-               SELECT MIN(BI_MAIN.Ordinal) 
-               FROM KNS_BillInitiator BI_MAIN 
-               WHERE BI_MAIN.BillID = B.BillID AND BI_MAIN.IsInitiator = true
-           ))
-           AND (SELECT UCS_SUB.CoalitionStatus
-                FROM KNS_PersonToPosition PTP_SUB
-                INNER JOIN UserFactionCoalitionStatus UCS_SUB ON PTP_SUB.FactionID = UCS_SUB.FactionID
-                WHERE PTP_SUB.PersonID = BI_JOIN.PersonID
-                ORDER BY PTP_SUB.StartDate DESC
-                LIMIT 1) = 'Coalition'),
-        0
-    ) AS JoiningCoalitionCount,
-    COALESCE(
-        (SELECT COUNT(DISTINCT BI_JOIN.PersonID)
-         FROM KNS_BillInitiator BI_JOIN
-         WHERE BI_JOIN.BillID = B.BillID 
-           AND NOT (BI_JOIN.IsInitiator = true AND BI_JOIN.Ordinal = (
-               SELECT MIN(BI_MAIN.Ordinal) 
-               FROM KNS_BillInitiator BI_MAIN 
-               WHERE BI_MAIN.BillID = B.BillID AND BI_MAIN.IsInitiator = true
-           ))
-           AND (SELECT UCS_SUB.CoalitionStatus
-                FROM KNS_PersonToPosition PTP_SUB
-                INNER JOIN UserFactionCoalitionStatus UCS_SUB ON PTP_SUB.FactionID = UCS_SUB.FactionID
-                WHERE PTP_SUB.PersonID = BI_JOIN.PersonID
-                ORDER BY PTP_SUB.StartDate DESC
-                LIMIT 1) IN ('Opposition', 'Opoosition')),
-        0
-    ) AS JoiningOppositionCount
+    B.SummaryLaw AS BillSummaryLaw,
+    strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
+
+    -- Bill initiator information using our new table
+    GROUP_CONCAT(DISTINCT (Pi.FirstName || ' ' || Pi.LastName), ', ') AS BillInitiatorNames,
+    GROUP_CONCAT(DISTINCT Pi.FirstName, ', ') AS BillInitiatorFirstNames,
+    GROUP_CONCAT(DISTINCT Pi.LastName, ', ') AS BillInitiatorLastNames,
+    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount
 
 FROM KNS_Bill B
-LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
+LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
-LEFT JOIN KNS_Person P ON BI.PersonID = P.PersonID
+LEFT JOIN KNS_Person Pi ON BI.PersonID = Pi.PersonID
 
-GROUP BY B.BillID, B.Number, B.KnessetNum, B.Name, B.SubTypeDesc, 
-         S."Desc", B.PrivateNumber, C.Name, B.PostponementReasonDesc,
-         B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill,
-         B.SummaryLaw, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
-         B.LastUpdatedDate
+GROUP BY 
+    B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
+    B.CommitteeID, C.Name, B.StatusID, S."Desc", B.Number, B.PostponementReasonID,
+    B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate
+
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
         "knesset_filter_column": "B.KnessetNum",
-        "faction_filter_column": "",
+        "faction_filter_column": "NULL", # Bills don't have direct faction association
         "description": (
-            "Comprehensive bill data with initiator details, committee "
-            "assignments, and status information"
+            "Comprehensive bill data with initiator information, "
+            "committee assignments, and status details"
         ),
     },
 }
 
 
-def get_query_definition(query_name: str) -> Dict[str, Any]:
-    """Get a specific query definition by name."""
+def get_query_sql(query_name: str) -> str:
+    """Get the SQL for a specific query."""
+    return PREDEFINED_QUERIES.get(query_name, {}).get("sql", "")
+
+
+def get_query_info(query_name: str) -> Dict[str, Any]:
+    """Get all information for a specific query."""
     return PREDEFINED_QUERIES.get(query_name, {})
 
 
-def get_all_query_names() -> list[str]:
-    """Get list of all available predefined query names."""
+def get_all_query_names() -> list:
+    """Get list of all available query names."""
     return list(PREDEFINED_QUERIES.keys())
 
 
-def get_query_sql(query_name: str) -> str:
-    """Get the SQL for a specific query."""
-    query_def = get_query_definition(query_name)
-    return query_def.get("sql", "")
-
-
-def get_query_filters(query_name: str) -> Dict[str, str]:
-    """Get the filter column mappings for a specific query."""
-    query_def = get_query_definition(query_name)
-    return {
-        "knesset_filter_column": query_def.get("knesset_filter_column", ""),
-        "faction_filter_column": query_def.get("faction_filter_column", ""),
-    }
-
-
-def get_query_description(query_name: str) -> str:
-    """Get the description for a specific query."""
-    query_def = get_query_definition(query_name)
-    return query_def.get("description", "")
+def get_filter_columns(query_name: str) -> tuple:
+    """Get the filter column names for a query."""
+    query_info = PREDEFINED_QUERIES.get(query_name, {})
+    return (
+        query_info.get("knesset_filter_column"),
+        query_info.get("faction_filter_column")
+    )

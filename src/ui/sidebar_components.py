@@ -120,6 +120,9 @@ def _handle_run_query_button_click(
             modified_sql = base_sql.strip().rstrip(";")
             applied_filters_info = []
             where_conditions = []
+            
+            # Apply filters if specified
+            ui_logger.debug(f"Applying filters - Knesset: {st.session_state.get('ms_knesset_filter', [])}, Faction: {st.session_state.get('ms_faction_filter', [])}")
 
             if knesset_filter_col and st.session_state.ms_knesset_filter:
                 selected_knesset_nums = st.session_state.ms_knesset_filter
@@ -129,12 +132,20 @@ def _handle_run_query_button_click(
                 applied_filters_info.append(
                     f"KnessetNum IN ({', '.join(map(str, selected_knesset_nums))})"
                 )
-            if faction_filter_col and st.session_state.ms_faction_filter:
-                selected_faction_ids = [
-                    faction_display_map[name]
-                    for name in st.session_state.ms_faction_filter
-                    if name in faction_display_map
-                ]
+            if faction_filter_col and faction_filter_col != "NULL" and st.session_state.ms_faction_filter:
+                selected_faction_names = st.session_state.ms_faction_filter
+                selected_faction_ids = []
+                missing_factions = []
+                
+                for name in selected_faction_names:
+                    if name in faction_display_map:
+                        selected_faction_ids.append(faction_display_map[name])
+                    else:
+                        missing_factions.append(name)
+                
+                if missing_factions:
+                    ui_logger.warning(f"Missing factions in display map: {missing_factions}")
+                
                 if selected_faction_ids:
                     where_conditions.append(
                         f"{faction_filter_col} IN ({', '.join(map(str, selected_faction_ids))})"
@@ -145,33 +156,73 @@ def _handle_run_query_button_click(
 
             if where_conditions:
                 combined_where_clause = " AND ".join(where_conditions)
-                keyword_to_use = (
-                    "AND"
-                    if re.search(r"\sWHERE\s", modified_sql, re.IGNORECASE)
-                    else "WHERE"
-                )
+                # Improved WHERE clause detection - check for WHERE anywhere in the query
+                has_where_clause = re.search(r"\bWHERE\b", modified_sql, re.IGNORECASE)
+                keyword_to_use = "AND" if has_where_clause else "WHERE"
                 filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
-                clauses_keywords_to_find = [
-                    r"GROUP\s+BY",
-                    r"HAVING",
-                    r"WINDOW",
-                    r"ORDER\s+BY",
-                    r"LIMIT",
-                    r"OFFSET",
-                    r"FETCH",
-                ]
+                
+                # Find insertion point before GROUP BY, ORDER BY, etc.
+                # For CTE-based queries, we need to find the main query's clauses, not CTE clauses
                 insertion_point = len(modified_sql)
+                found_clause = None
+                
+                # First, try to find the main SELECT statement (after CTEs)
+                main_select_match = None
+                if "WITH " in modified_sql.upper():
+                    # For CTE queries, find the main SELECT after the CTE definitions
+                    # Look for SELECT that's not inside parentheses or CTE definitions
+                    cte_end_patterns = [
+                        r"\)\s*SELECT\b",  # End of CTE followed by main SELECT
+                    ]
+                    for pattern in cte_end_patterns:
+                        matches = list(re.finditer(pattern, modified_sql, re.IGNORECASE))
+                        if matches:
+                            # Take the last match (main SELECT)
+                            main_select_match = matches[-1]
+                            break
+                
+                # Define clauses to look for after the main SELECT
+                clauses_keywords_to_find = [
+                    r"\bGROUP\s+BY\b",
+                    r"\bHAVING\b", 
+                    r"\bWINDOW\b",
+                    r"\bORDER\s+BY\b",
+                    r"\bLIMIT\b",
+                    r"\bOFFSET\b",
+                    r"\bFETCH\b",
+                ]
+                
+                # Search for clauses starting from main SELECT position
+                search_start = main_select_match.end() if main_select_match else 0
+                
                 for pattern_str in clauses_keywords_to_find:
-                    match = re.search(pattern_str, modified_sql, re.IGNORECASE)
-                    if match and match.start() < insertion_point:
-                        insertion_point = match.start()
+                    # Search from the main SELECT position onward
+                    matches = list(re.finditer(pattern_str, modified_sql[search_start:], re.IGNORECASE))
+                    if matches:
+                        # Adjust position relative to full string
+                        match_pos = search_start + matches[0].start()
+                        if match_pos < insertion_point:
+                            insertion_point = match_pos
+                            found_clause = pattern_str
+                
+                # Insert filter before the first found clause
                 prefix = modified_sql[:insertion_point].strip()
                 suffix = modified_sql[insertion_point:].strip()
-                modified_sql = f"{prefix}{filter_string_to_add} {suffix}".strip()
+                
+                if suffix:
+                    modified_sql = f"{prefix}{filter_string_to_add} {suffix}".strip()
+                else:
+                    modified_sql = f"{prefix}{filter_string_to_add}".strip()
 
+            if applied_filters_info:
+                ui_logger.info(f"Applied filters: {', '.join(applied_filters_info)}")
+            else:
+                ui_logger.info("No filters applied")
+                
             ui_logger.info(
-                f"Executing predefined query: {st.session_state.selected_query_name} with SQL:\n{modified_sql}"
+                f"Executing predefined query: {st.session_state.selected_query_name}"
             )
+            ui_logger.info(f"Final SQL:\n{modified_sql}")
 
             with get_db_connection(
                 db_path, read_only=True, logger_obj=ui_logger
@@ -464,16 +515,17 @@ def display_sidebar(
         get_filter_options_func_arg()
     )  # We only need knesset_nums_options here
 
-    st.session_state.ms_knesset_filter = st.sidebar.multiselect(
+    # Create filter widgets - Streamlit automatically stores values in session state using the key
+    st.sidebar.multiselect(
         "Knesset Number(s):",
         options=knesset_nums_options_filters,  # Use the fetched options
         default=st.session_state.get("ms_knesset_filter", []),
-        key="ms_knesset_filter_widget",
+        key="ms_knesset_filter",  # This becomes the session state variable name
     )
-    st.session_state.ms_faction_filter = st.sidebar.multiselect(
+    st.sidebar.multiselect(
         "Faction(s) (by Knesset):",
         options=list(faction_display_map_arg.keys()),  # Use the passed map
         default=st.session_state.get("ms_faction_filter", []),
         help="Select factions. The Knesset number in parentheses provides context.",
-        key="ms_faction_filter_widget",
+        key="ms_faction_filter",  # This becomes the session state variable name
     )
