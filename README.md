@@ -7,6 +7,7 @@
 [![DuckDB](https://img.shields.io/badge/DuckDB-1.2.2-yellow.svg)](https://duckdb.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.44.1-red.svg)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#-license)
+[![Architecture](https://img.shields.io/badge/Architecture-Clean%20%26%20Modular-green.svg)](#-key-features)
 
 **A comprehensive platform for fetching, storing, analyzing, and visualizing Israeli parliamentary data**
 
@@ -76,14 +77,15 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
 
 ## ✨ Key Features
 
-### Backend Architecture (Modular & Clean)
+### Backend Architecture (Clean & Modular - Recently Refactored)
 * **Data Services Layer (`src/data/`):**
     * **Automated OData Fetching:** Retrieves data directly from the official Knesset OData API with circuit breaker pattern
     * **Repository Pattern:** Clean separation between data access and business logic
     * **Dependency Injection:** Testable, maintainable architecture with centralized configuration
+    * **Resume State Management:** Advanced checkpoint system for interrupted downloads
 * **API Layer (`src/api/`):**
     * **Robust OData Client:** Implements circuit breaker, retry logic, and proper error categorization
-    * **Checkpoint-Resume:** For large, cursor-paged tables, download progress is saved for interruption recovery
+    * **Fault Tolerance:** Circuit breaker pattern prevents cascade failures
     * **Parallel Downloads:** Utilizes `asyncio` for concurrent fetching, significantly speeding up data acquisition
     * **Connection Management:** Monitors and prevents database connection leaks
 * **Storage & Configuration:**
@@ -95,12 +97,14 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * Enriches parliamentary analysis by providing context on faction alignments
 * **Logging:** Comprehensive logging using the `src/utils/logger_setup.py` module
 
-### Frontend - Modular Streamlit UI (Refactored Architecture)
+### Frontend - Modular Streamlit UI (Major Refactoring Complete)
 * **Clean Architecture (`src/ui/`):**
     * **Page-based Structure:** Separate modules for different UI sections (`pages/`, `queries/`, `state/`)
     * **Centralized State Management:** Type-safe session state management with proper encapsulation
     * **Query Separation:** Complex SQL queries extracted to dedicated modules with metadata
     * **Component-based UI:** Reusable UI components with clear separation of concerns
+    * **Factory Pattern Charts:** Modular chart system with inheritance hierarchy
+    * **Service Layer:** Decoupled UI from backend logic through service pattern
 * **Self-Service Data Refresh:**
     * Select specific OData tables or refresh all predefined tables
     * Monitor live progress of data fetching with real-time updates
@@ -230,14 +234,16 @@ knesset_refactor/
 * **Python 3.12+** (Required)
 * **DuckDB 1.2.2:** High-performance analytical database for the data warehouse
 * **Pandas 2.2.3:** Data manipulation and analysis
-* **Parquet:** Efficient columnar storage format
+* **PyArrow 19.0.1:** Columnar data format support
+* **FastParquet 2024.11.0:** Fast parquet file I/O
 
-### Architecture & Patterns
+### Architecture & Patterns (Recently Implemented)
 * **Clean Architecture:** Layered separation with dependency injection
 * **Repository Pattern:** Abstracted data access layer
-* **Circuit Breaker Pattern:** Resilient API communication
-* **Factory Pattern:** Modular chart generation system
-* **Dependency Injection:** Testable, maintainable codebase
+* **Circuit Breaker Pattern:** Resilient API communication with fault tolerance
+* **Factory Pattern:** Modular chart generation system with inheritance
+* **Dependency Injection:** Centralized container for testable, maintainable codebase
+* **Service Layer:** Decoupled business logic from UI concerns
 
 ### Frontend & Visualization
 * **Streamlit 1.44.1:** Modern web UI framework
@@ -297,12 +303,17 @@ streamlit run src/ui/data_refresh.py
 
 🎉 **Open `http://localhost:8501`** and explore the modular UI!
 
-### ✨ What's New
+### ✨ Recent Major Updates
 
-- ⚡ **Faster loading** with modular architecture
-- 🧩 **Component-based UI** with better separation of concerns
+- 🏗️ **Architecture Refactoring**: Broke down monolithic 624-line file into focused modules (80% reduction)
+- 🧩 **Component-based UI** with clean separation of concerns
 - 🎯 **Type-safe session management** with centralized state
 - 📊 **Extracted SQL queries** for better maintainability
+- 🔄 **Circuit Breaker Pattern** for resilient API communication
+- 🏭 **Factory Pattern Charts** with inheritance hierarchy
+- 🔧 **Dependency Injection** throughout the application
+- 📈 **Enhanced Filtering** for all predefined visualizations
+- 🗃️ **SubTypeDesc Integration** for improved query accuracy
 
 ---
 
@@ -632,8 +643,9 @@ The platform includes 15+ predefined visualizations organized into three categor
 
 ## 🔮 Future Roadmap
 
-### Architecture Improvements
-* **Complete Chart Migration:** Finish migrating all chart implementations to the new modular system
+### Architecture Improvements (In Progress)
+* **Complete Chart Migration:** Finish migrating remaining chart implementations to the new modular system
+* **Legacy Code Removal:** Phase out deprecated modules once migration is complete
 * **Advanced Caching:** Redis integration for improved performance
 * **Microservices:** Split into independent, scalable services
 
@@ -694,6 +706,7 @@ pytest
 - 📱 **UI/UX improvements** using the new component-based architecture
 - 🧪 **Test coverage** expansion, especially for the new modular components
 - 📚 **Documentation** updates for the new architecture patterns and modules
+- 🗑️ **Legacy Cleanup:** Help remove deprecated code once new systems are fully tested
 
 ## 📄 License
 
