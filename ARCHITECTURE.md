@@ -116,6 +116,8 @@ src/
 - **Metadata Management**: Query descriptions and filter configurations
 - **Execution Logic**: Parameter binding and result processing
 - **Smart Initiator Detection**: Uses Ordinal field to distinguish main vs supporting bill initiators
+- **Coalition Status Integration**: Political affiliation analysis for bill initiators and query submitters  
+- **Bill Merge Tracking**: Legislative continuity through merge relationship tracking (Status ID 122)
 - **Local Filtering**: In-results Knesset filtering independent of sidebar filters
 - **Institutional Handling**: Proper labeling of government and procedural items
 
@@ -142,8 +144,9 @@ src/
 - **High Testability**: Each component can be tested independently
 - **Design Patterns**: Repository, Factory, Circuit Breaker, and Dependency Injection patterns implemented
 - **Legacy Compatibility**: Backward compatibility maintained with deprecation warnings
-- **Enhanced Query Intelligence**: Smart initiator detection, local filtering, and institutional handling
-- **Data Accuracy**: Proper distinction between main and supporting bill initiators
+- **Enhanced Query Intelligence**: Smart initiator detection, coalition status analysis, bill merge tracking, local filtering, and institutional handling
+- **Data Accuracy**: Proper distinction between main and supporting bill initiators with political affiliation context
+- **Legislative Continuity**: Complete tracking of bill merge relationships and progression
 
 ## Data Flow
 

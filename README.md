@@ -116,6 +116,8 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * Results displayed interactively with comprehensive download options
     * **Local Knesset Filtering:** Additional filter controls within query results for refined analysis
     * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
+    * **Coalition Status Analysis:** Shows coalition/opposition status for bill initiators and query submitters
+    * **Bill Merge Tracking:** Displays leading bill information for merged bills (Status ID 122)
     * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
@@ -369,7 +371,7 @@ Access the UI at `http://localhost:8501`
 |---------|-------------|
 | 🔄 **Data Refresh** | Update OData tables and faction statuses |
 | 🔍 **Table Explorer** | Browse tables with dynamic filters |
-| 📊 **Predefined Queries** | Run analytical queries with smart initiator detection and local filtering |
+| 📊 **Predefined Queries** | Run analytical queries with coalition status, bill merge tracking, and local filtering |
 | 📈 **15+ Visualizations** | Query analytics, activity patterns, collaboration networks |
 | 🎨 **Custom Charts** | Interactive chart builder for exploration |
 | 💻 **SQL Sandbox** | Execute custom SQL queries |

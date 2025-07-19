@@ -147,6 +147,29 @@ ORDER BY A.KnessetNum DESC, A.AgendaID DESC;
     },
     "Bills + Full Details": {
         "sql": """
+WITH BillMainInitiatorFaction AS (
+    SELECT 
+        BI.BillID,
+        B.KnessetNum,
+        BI.PersonID as MainInitiatorPersonID,
+        ptp.FactionID,
+        ROW_NUMBER() OVER (PARTITION BY BI.BillID ORDER BY BI.Ordinal) as rn
+    FROM KNS_BillInitiator BI
+    JOIN KNS_Bill B ON BI.BillID = B.BillID
+    LEFT JOIN KNS_PersonToPosition ptp ON BI.PersonID = ptp.PersonID 
+        AND B.KnessetNum = ptp.KnessetNum
+        AND ptp.FactionID IS NOT NULL
+    WHERE BI.Ordinal = 1
+),
+BillMergeInfo AS (
+    SELECT 
+        bu.UnionBillID as MergedBillID,
+        bu.MainBillID as LeadingBillID,
+        lb.Name as LeadingBillName,
+        lb.Number as LeadingBillNumber
+    FROM KNS_BillUnion bu
+    LEFT JOIN KNS_Bill lb ON bu.MainBillID = lb.BillID
+)
 SELECT
     B.BillID,
     B.KnessetNum,
@@ -174,6 +197,28 @@ SELECT
             END
         ELSE 'Government Initiative'
     END AS BillMainInitiatorNames,
+    
+    -- Main initiator coalition status
+    CASE 
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
+            COALESCE(
+                MAX(CASE WHEN BI.Ordinal = 1 THEN ufs.CoalitionStatus END),
+                'Unknown'
+            )
+        ELSE 'Government'
+    END AS BillMainInitiatorCoalitionStatus,
+    
+    -- Leading bill information for merged bills (Status ID 122)
+    CASE 
+        WHEN B.StatusID = 122 THEN 
+            CASE 
+                WHEN MAX(bmi.LeadingBillName) IS NOT NULL THEN 
+                    CONCAT('Bill #', COALESCE(CAST(MAX(bmi.LeadingBillNumber) AS VARCHAR), 'Unknown'), ': ', MAX(bmi.LeadingBillName))
+                ELSE 'Merged (relationship data not available in source)'
+            END
+        ELSE NULL
+    END AS MergedWithLeadingBill,
+    
     CASE 
         WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
             GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
@@ -188,6 +233,11 @@ LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
 LEFT JOIN KNS_Person Pi ON BI.PersonID = Pi.PersonID
+LEFT JOIN BillMainInitiatorFaction bmif ON B.BillID = bmif.BillID AND bmif.rn = 1
+LEFT JOIN KNS_Faction f ON bmif.FactionID = f.FactionID
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+    AND B.KnessetNum = ufs.KnessetNum
+LEFT JOIN BillMergeInfo bmi ON B.BillID = bmi.MergedBillID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,

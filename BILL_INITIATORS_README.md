@@ -20,8 +20,12 @@ Enhanced the "Bills + Full Details" query in `src/ui/queries/predefined_queries.
 - Join with `KNS_BillInitiator` table using `Ordinal` field for proper distinction
 - Join with `KNS_Person` table to get initiator names
 - **Smart Classification**: Uses `Ordinal = 1` to identify main initiators vs supporting members
+- **Coalition Status Integration**: Shows political affiliation of main bill initiators
+- **Bill Merge Tracking**: Displays leading bill information for merged bills (Status ID 122)
 - Include the following enhanced columns:
   - `BillMainInitiatorNames` - Names of actual bill initiators (Ordinal = 1)
+  - `BillMainInitiatorCoalitionStatus` - Coalition/Opposition/Government status of main initiator
+  - `MergedWithLeadingBill` - Leading bill information for merged bills
   - `BillSupportingMemberNames` - Names of supporting members (Ordinal > 1 or IsInitiator = NULL)
   - `BillMainInitiatorCount` - Number of main initiators
   - `BillSupportingMemberCount` - Number of supporting members
@@ -78,9 +82,10 @@ The `KNS_BillInitiator` table creates a many-to-many relationship between bills 
 
 When running the "Bills + Full Details" query, you'll see columns like:
 ```
-BillID | BillName | BillMainInitiatorNames | BillSupportingMemberNames | BillMainInitiatorCount | BillSupportingMemberCount
-123    | Tax Law  | John Doe               | Jane Smith, Bob Jones     | 1                      | 2
-456    | Budget   | Government Initiative  | None                      | 0                      | 0
+BillID | BillName | BillMainInitiatorNames | BillMainInitiatorCoalitionStatus | MergedWithLeadingBill | BillSupportingMemberNames | BillMainInitiatorCount | BillSupportingMemberCount
+123    | Tax Law  | John Doe               | Coalition                       | NULL                  | Jane Smith, Bob Jones     | 1                      | 2
+456    | Budget   | Government Initiative  | Government                      | NULL                  | None                      | 0                      | 0
+789    | Old Bill | Mary Johnson           | Opposition                      | Bill #123: Tax Law    | None                      | 1                      | 0
 ```
 
 ## Key Improvements
@@ -92,9 +97,12 @@ BillID | BillName | BillMainInitiatorNames | BillSupportingMemberNames | BillMai
 
 ### After Enhancement  
 - **Main Initiators**: Clear identification of bill originators (Ordinal = 1)
+- **Coalition Status**: Political affiliation analysis for main initiators
+- **Bill Merge Tracking**: Shows leading bill for merged legislation (Status ID 122)
 - **Supporting Members**: Separate list of MKs who joined later
 - **Government Bills**: Properly labeled as "Government Initiative"
 - **Accurate Counts**: Meaningful statistics for legislative analysis
+- **Legislative Continuity**: Track bill progression through merge relationships
 
 ## Troubleshooting
 

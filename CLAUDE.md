@@ -123,6 +123,19 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 - **Supporting Members**: `Ordinal > 1` or `IsInitiator = NULL`
 - Provides accurate counts and member lists for legislative analysis
 
+**Coalition Status Integration**: Enhanced queries now include political affiliation analysis:
+- **Bill Initiators**: Shows coalition/opposition status for main bill initiators via `BillMainInitiatorCoalitionStatus` column
+- **Query Submitters**: Displays faction coalition status for parliamentary question authors
+- **Government Bills**: Properly labeled as "Government" for executive-initiated legislation
+- **Data Source**: Uses `UserFactionCoalitionStatus` table joined with faction membership data
+
+**Bill Merge Tracking**: Comprehensive merge relationship analysis for legislative continuity:
+- **Merged Bills**: Status ID 122 bills show their leading bill information via `MergedWithLeadingBill` column
+- **Data Source**: Uses `KNS_BillUnion` table with MainBillID/UnionBillID relationships
+- **Display Format**: "Bill #[Number]: [Name]" for clear identification
+- **Data Coverage**: 96.8% of merged bills have complete relationship data
+- **Edge Cases**: Missing relationships show "Merged (relationship data not available in source)"
+
 **Institutional Handling**: Queries handle cases where no individual initiator exists:
 - **Agenda Items**: Show "Institutional Initiative" for procedural items without `InitiatorPersonID`
 - **Bills**: Show "Government Initiative" for government bills without MK initiators

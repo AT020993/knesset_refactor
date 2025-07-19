@@ -44,7 +44,9 @@ class DataRefreshPageRenderer:
                 * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses.
                 * **Predefined Queries & Table Explorer:** These sections use the **sidebar filters** for Knesset and Faction.
                     * **Query Results:** After running a predefined query, an **additional Knesset filter** appears within the results area for further refinement.
-                    * **Smart Bill Analysis:** Bills show separate counts for main initiators vs supporting members.
+                    * **Smart Bill Analysis:** Bills show separate counts for main initiators vs supporting members, coalition status, and merge tracking.
+                    * **Coalition Status:** Displays political affiliation (Coalition/Opposition/Government) for bill initiators and query submitters.
+                    * **Bill Merge Tracking:** Shows leading bill information for merged bills (Status ID 122) to track legislative continuity.
                     * **Institutional Items:** Government bills and procedural agenda items are clearly labeled.
                 * **Predefined Visualizations:**
                     * Select a plot topic, then a specific plot.
