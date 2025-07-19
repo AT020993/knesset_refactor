@@ -114,10 +114,10 @@ SELECT
     S."Desc" AS AgendaStatusDesc,
     A.ClassificationID AS AgendaClassificationID,
     A.ClassificationDesc AS AgendaClassificationDesc,
-    P.FirstName AS InitiatorMKFirstName,
-    P.LastName AS InitiatorMKLastName,
-    P.GenderDesc AS InitiatorMKGender,
-    P.IsCurrent AS InitiatorMKIsCurrent,
+    COALESCE(P.FirstName, 'Institutional') AS InitiatorMKFirstName,
+    COALESCE(P.LastName, 'Initiative') AS InitiatorMKLastName,
+    COALESCE(P.GenderDesc, 'N/A') AS InitiatorMKGender,
+    COALESCE(P.IsCurrent, false) AS InitiatorMKIsCurrent,
 
     -- Simplified faction lookup
     COALESCE(f.Name, 'Unknown') AS InitiatorMKFactionName,
@@ -164,11 +164,24 @@ SELECT
     B.SummaryLaw AS BillSummaryLaw,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
 
-    -- Bill initiator information using our new table
-    GROUP_CONCAT(DISTINCT (Pi.FirstName || ' ' || Pi.LastName), ', ') AS BillInitiatorNames,
-    GROUP_CONCAT(DISTINCT Pi.FirstName, ', ') AS BillInitiatorFirstNames,
-    GROUP_CONCAT(DISTINCT Pi.LastName, ', ') AS BillInitiatorLastNames,
-    COUNT(DISTINCT BI.PersonID) AS BillInitiatorCount
+    -- Bill initiator information with proper distinction using Ordinal field
+    CASE 
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
+            CASE 
+                WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN BI.PersonID END) > 0 THEN
+                    GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
+                ELSE GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
+            END
+        ELSE 'Government Initiative'
+    END AS BillMainInitiatorNames,
+    CASE 
+        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
+            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
+        ELSE 'None'
+    END AS BillSupportingMemberNames,
+    COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,
+    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN BI.PersonID END) AS BillMainInitiatorCount,
+    COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID

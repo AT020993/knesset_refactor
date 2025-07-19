@@ -114,6 +114,9 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * Dynamic query execution with type-safe parameter handling
     * Built-in examples: "Queries + Full Details", "Agenda Items + Full Details", "Bills + Full Details"
     * Results displayed interactively with comprehensive download options
+    * **Local Knesset Filtering:** Additional filter controls within query results for refined analysis
+    * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
+    * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
     * Auto-detection of filterable columns (KnessetNum, FactionID)
@@ -366,7 +369,7 @@ Access the UI at `http://localhost:8501`
 |---------|-------------|
 | 🔄 **Data Refresh** | Update OData tables and faction statuses |
 | 🔍 **Table Explorer** | Browse tables with dynamic filters |
-| 📊 **Predefined Queries** | Run analytical queries on parliamentary data |
+| 📊 **Predefined Queries** | Run analytical queries with smart initiator detection and local filtering |
 | 📈 **15+ Visualizations** | Query analytics, activity patterns, collaboration networks |
 | 🎨 **Custom Charts** | Interactive chart builder for exploration |
 | 💻 **SQL Sandbox** | Execute custom SQL queries |
@@ -429,9 +432,9 @@ streamlit run src/ui/data_refresh.py
 
 # In the UI:
 # 1. Go to "Predefined Queries" → "Queries + Full Details"
-# 2. Apply filter: Coalition Status = "Coalition" 
-# 3. Set date range for specific Knesset term
-# 4. Export results to Excel for further analysis
+# 2. Apply sidebar filter: Coalition Status = "Coalition" 
+# 3. Use local Knesset filter in results area for specific Knesset term
+# 4. Export filtered results to Excel for further analysis
 ```
 
 #### Scenario 3: Building Custom Visualizations

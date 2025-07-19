@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.state.session_manager import SessionStateManager
-from ui.queries.predefined_queries import get_all_query_names
+from ui.queries.predefined_queries import get_all_query_names, get_query_info
 import ui.ui_utils as ui_utils
 
 
@@ -43,6 +43,9 @@ class DataRefreshPageRenderer:
             st.markdown(dedent("""
                 * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses.
                 * **Predefined Queries & Table Explorer:** These sections use the **sidebar filters** for Knesset and Faction.
+                    * **Query Results:** After running a predefined query, an **additional Knesset filter** appears within the results area for further refinement.
+                    * **Smart Bill Analysis:** Bills show separate counts for main initiators vs supporting members.
+                    * **Institutional Items:** Government bills and procedural agenda items are clearly labeled.
                 * **Predefined Visualizations:**
                     * Select a plot topic, then a specific plot.
                     * **A Knesset selector will appear below these dropdowns.** This is the primary Knesset filter for the plots.
@@ -77,9 +80,16 @@ class DataRefreshPageRenderer:
                 subheader_text += f" (Active Filters: *{filters_applied_text}*)"
         st.markdown(subheader_text)
         
-        if not results_df.empty:
+        # Add local Knesset filter for query results
+        if not results_df.empty and 'KnessetNum' in results_df.columns:
+            self._render_local_knesset_filter(results_df)
+        
+        # Apply local filter if selected
+        display_df = self._apply_local_knesset_filter(results_df)
+        
+        if not display_df.empty:
             # Display results with formatted dates
-            formatted_df = ui_utils.format_dataframe_dates(results_df, _logger_obj=self.logger)
+            formatted_df = ui_utils.format_dataframe_dates(display_df, _logger_obj=self.logger)
             st.dataframe(formatted_df, use_container_width=True, height=400)
             
             # Download options
@@ -87,7 +97,7 @@ class DataRefreshPageRenderer:
             col_csv, col_excel = st.columns(2)
             
             with col_csv:
-                csv_data = results_df.to_csv(index=False).encode("utf-8-sig")
+                csv_data = display_df.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
                     "⬇️ CSV", 
                     csv_data, 
@@ -99,7 +109,7 @@ class DataRefreshPageRenderer:
             with col_excel:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-                    results_df.to_excel(writer, index=False, sheet_name="Results")
+                    display_df.to_excel(writer, index=False, sheet_name="Results")
                 st.download_button(
                     "⬇️ Excel", 
                     excel_buffer.getvalue(), 
@@ -113,6 +123,50 @@ class DataRefreshPageRenderer:
         # Show executed SQL
         with st.expander("Show Executed SQL", expanded=False):
             st.code(last_sql if last_sql else "No SQL executed yet.", language="sql")
+
+    def _render_local_knesset_filter(self, results_df: pd.DataFrame) -> None:
+        """Render local Knesset filter widget for query results."""
+        available_knessetes = sorted(results_df['KnessetNum'].unique().tolist(), reverse=True)
+        
+        # Create a container for the filter
+        st.markdown("**Additional Filtering:**")
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # Knesset filter selectbox
+            st.selectbox(
+                "Filter by Knesset Number (leave empty for all):",
+                options=["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes],
+                key="local_knesset_filter",
+                help="Filter the results by specific Knesset number. This is in addition to the sidebar filters."
+            )
+        
+        with col2:
+            # Show count of available records per Knesset
+            if st.session_state.get("local_knesset_filter", "All Knessetes") != "All Knessetes":
+                selected_knesset = int(st.session_state["local_knesset_filter"].replace("Knesset ", ""))
+                count = len(results_df[results_df['KnessetNum'] == selected_knesset])
+                st.metric("Filtered Rows", count)
+            else:
+                st.metric("Total Rows", len(results_df))
+
+    def _apply_local_knesset_filter(self, results_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply local Knesset filter to the results dataframe."""
+        if results_df.empty or 'KnessetNum' not in results_df.columns:
+            return results_df
+            
+        local_filter = st.session_state.get("local_knesset_filter", "All Knessetes")
+        
+        if local_filter and local_filter != "All Knessetes":
+            try:
+                selected_knesset = int(local_filter.replace("Knesset ", ""))
+                filtered_df = results_df[results_df['KnessetNum'] == selected_knesset].copy()
+                return filtered_df
+            except (ValueError, AttributeError):
+                # If parsing fails, return original dataframe
+                return results_df
+        
+        return results_df
 
     def render_table_explorer_section(self) -> None:
         """Render the table explorer results section."""

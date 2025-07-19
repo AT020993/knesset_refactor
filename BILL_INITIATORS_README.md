@@ -1,10 +1,10 @@
 # Bill Initiators Feature
 
-This document explains the new bill initiator functionality added to the Knesset Data system.
+This document explains the enhanced bill initiator functionality in the Knesset Data system.
 
 ## Overview
 
-The system now supports displaying bill initiator information (first and last names) in the "Bills + Full Details" query. This enhancement provides transparency about who initiated each legislative bill.
+The system now provides intelligent bill initiator analysis in the "Bills + Full Details" query, with proper distinction between main initiators and supporting members. This enhancement provides accurate transparency about the legislative process.
 
 ## Changes Made
 
@@ -14,16 +14,24 @@ Added `KNS_BillInitiator` table to the system:
 - Updated `src/config/database.py` to include the table
 - Added table metadata to `src/backend/tables.py`
 
-### 2. Query Enhancement
+### 2. Smart Initiator Detection
 
-Modified the "Bills + Full Details" query in `src/ui/queries/predefined_queries.py` to:
-- Join with `KNS_BillInitiator` table
+Enhanced the "Bills + Full Details" query in `src/ui/queries/predefined_queries.py` to:
+- Join with `KNS_BillInitiator` table using `Ordinal` field for proper distinction
 - Join with `KNS_Person` table to get initiator names
-- Include the following new columns:
-  - `BillInitiatorNames` - Full names of all initiators (comma-separated)
-  - `BillInitiatorFirstNames` - First names only (comma-separated)
-  - `BillInitiatorLastNames` - Last names only (comma-separated)
-  - `BillInitiatorCount` - Number of initiators for the bill
+- **Smart Classification**: Uses `Ordinal = 1` to identify main initiators vs supporting members
+- Include the following enhanced columns:
+  - `BillMainInitiatorNames` - Names of actual bill initiators (Ordinal = 1)
+  - `BillSupportingMemberNames` - Names of supporting members (Ordinal > 1 or IsInitiator = NULL)
+  - `BillMainInitiatorCount` - Number of main initiators
+  - `BillSupportingMemberCount` - Number of supporting members
+  - `BillTotalMemberCount` - Total members involved
+
+### 3. Institutional Handling
+
+Added proper handling for government bills:
+- Shows "Government Initiative" for bills without MK initiators
+- Distinguishes between private member bills and government bills
 
 ### 3. Data Fetching Scripts
 
@@ -70,9 +78,23 @@ The `KNS_BillInitiator` table creates a many-to-many relationship between bills 
 
 When running the "Bills + Full Details" query, you'll see columns like:
 ```
-BillID | BillName | ... | BillInitiatorNames | BillInitiatorCount
-123    | Tax Law  | ... | John Doe, Jane Smith | 2
+BillID | BillName | BillMainInitiatorNames | BillSupportingMemberNames | BillMainInitiatorCount | BillSupportingMemberCount
+123    | Tax Law  | John Doe               | Jane Smith, Bob Jones     | 1                      | 2
+456    | Budget   | Government Initiative  | None                      | 0                      | 0
 ```
+
+## Key Improvements
+
+### Before Enhancement
+- All members listed as "initiators" without distinction
+- No way to identify who actually started the bill
+- Government bills showed empty results
+
+### After Enhancement  
+- **Main Initiators**: Clear identification of bill originators (Ordinal = 1)
+- **Supporting Members**: Separate list of MKs who joined later
+- **Government Bills**: Properly labeled as "Government Initiative"
+- **Accurate Counts**: Meaningful statistics for legislative analysis
 
 ## Troubleshooting
 

@@ -89,6 +89,7 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 - `KNS_Person`: Members of Knesset information
 - `KNS_Faction`: Political parties and factions
 - `KNS_Agenda`: Parliamentary agenda items
+- `KNS_BillInitiator`: Bill initiators with `Ordinal` field for main/supporting distinction
 
 **Supporting Tables**:
 - `KNS_Committee`, `KNS_CommitteeSession`: Committee data
@@ -112,6 +113,20 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 1. Define SQL in `src/ui/queries/predefined_queries.py`
 2. Add execution logic in `src/ui/queries/query_executor.py`
 3. Update UI in `src/ui/pages/data_refresh_page.py`
+
+### Query System Enhancements
+
+**Local Knesset Filtering**: The predefined query results area includes local Knesset filtering capability. When query results contain a `KnessetNum` column, users can apply additional filtering directly within the results area, independent of sidebar filters.
+
+**Smart Initiator Detection**: Bill queries now properly distinguish between main initiators and supporting members:
+- **Main Initiators**: `Ordinal = 1` in `KNS_BillInitiator` table
+- **Supporting Members**: `Ordinal > 1` or `IsInitiator = NULL`
+- Provides accurate counts and member lists for legislative analysis
+
+**Institutional Handling**: Queries handle cases where no individual initiator exists:
+- **Agenda Items**: Show "Institutional Initiative" for procedural items without `InitiatorPersonID`
+- **Bills**: Show "Government Initiative" for government bills without MK initiators
+- **Type Safety**: Boolean fields use `false` instead of `'N/A'` to prevent type conversion errors
 
 ### Database Schema Changes
 1. Update table definitions in `src/config/database.py`

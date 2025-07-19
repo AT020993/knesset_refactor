@@ -115,6 +115,9 @@ src/
 - **SQL Separation**: Complex queries extracted from UI code
 - **Metadata Management**: Query descriptions and filter configurations
 - **Execution Logic**: Parameter binding and result processing
+- **Smart Initiator Detection**: Uses Ordinal field to distinguish main vs supporting bill initiators
+- **Local Filtering**: In-results Knesset filtering independent of sidebar filters
+- **Institutional Handling**: Proper labeling of government and procedural items
 
 #### State (`src/ui/state/`)
 - **Centralized Management**: Single source of truth for session state
@@ -139,6 +142,8 @@ src/
 - **High Testability**: Each component can be tested independently
 - **Design Patterns**: Repository, Factory, Circuit Breaker, and Dependency Injection patterns implemented
 - **Legacy Compatibility**: Backward compatibility maintained with deprecation warnings
+- **Enhanced Query Intelligence**: Smart initiator detection, local filtering, and institutional handling
+- **Data Accuracy**: Proper distinction between main and supporting bill initiators
 
 ## Data Flow
 
