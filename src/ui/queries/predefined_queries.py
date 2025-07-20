@@ -169,6 +169,34 @@ BillMergeInfo AS (
         lb.Number as LeadingBillNumber
     FROM KNS_BillUnion bu
     LEFT JOIN KNS_Bill lb ON bu.MainBillID = lb.BillID
+),
+CommitteeSessionActivity AS (
+    SELECT 
+        CAST(CommitteeID AS BIGINT) as CommitteeID,
+        COUNT(*) as TotalSessions,
+        MIN(CAST(StartDate AS TIMESTAMP)) as FirstSessionDate,
+        MAX(CAST(StartDate AS TIMESTAMP)) as LastSessionDate,
+        COUNT(DISTINCT KnessetNum) as KnessetSpan,
+        COUNT(CASE WHEN StartDate IS NOT NULL AND FinishDate IS NOT NULL THEN 1 END) as SessionsWithDuration,
+        -- Calculate realistic session frequency per year (capped and filtered)
+        CASE 
+            WHEN MIN(CAST(StartDate AS TIMESTAMP)) IS NOT NULL AND MAX(CAST(StartDate AS TIMESTAMP)) IS NOT NULL THEN
+                CASE 
+                    WHEN DATE_DIFF('day', MIN(CAST(StartDate AS TIMESTAMP)), MAX(CAST(StartDate AS TIMESTAMP))) >= 30 THEN
+                        -- Only calculate for committees active at least 30 days, cap at 260 sessions/year (5 per week)
+                        LEAST(
+                            ROUND(COUNT(*) / (DATE_DIFF('day', MIN(CAST(StartDate AS TIMESTAMP)), MAX(CAST(StartDate AS TIMESTAMP))) / 365.25), 1),
+                            260.0
+                        )
+                    ELSE 
+                        -- For short-term committees, show sessions per month instead
+                        ROUND(COUNT(*) / GREATEST(DATE_DIFF('day', MIN(CAST(StartDate AS TIMESTAMP)), MAX(CAST(StartDate AS TIMESTAMP))) / 30.0, 1), 1)
+                END
+            ELSE 0
+        END as AvgSessionsPerYear
+    FROM KNS_CommitteeSession 
+    WHERE StartDate IS NOT NULL AND CommitteeID IS NOT NULL
+    GROUP BY CAST(CommitteeID AS BIGINT)
 )
 SELECT
     B.BillID,
@@ -178,7 +206,7 @@ SELECT
     B.SubTypeDesc AS BillSubTypeDesc,
     B.PrivateNumber,
     B.CommitteeID AS BillCommitteeID,
-    C.Name AS CommitteeName,
+    COALESCE(C.Name, CASE WHEN B.CommitteeID IS NOT NULL THEN 'Committee ID ' || CAST(B.CommitteeID AS VARCHAR) ELSE NULL END) AS CommitteeName,
     B.StatusID AS BillStatusID,
     S."Desc" AS BillStatusDesc,
     B.Number AS BillNumber,
@@ -226,10 +254,37 @@ SELECT
     END AS BillSupportingMemberNames,
     COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN BI.PersonID END) AS BillMainInitiatorCount,
-    COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount
+    COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount,
+    
+    -- Committee session activity data
+    COALESCE(csa.TotalSessions, 0) AS CommitteeTotalSessions,
+    strftime(csa.FirstSessionDate, '%Y-%m-%d') as CommitteeFirstSession,
+    strftime(csa.LastSessionDate, '%Y-%m-%d') as CommitteeLastSession,
+    COALESCE(csa.KnessetSpan, 0) AS CommitteeKnessetSpan,
+    COALESCE(csa.SessionsWithDuration, 0) AS CommitteeSessionsWithDuration,
+    COALESCE(csa.AvgSessionsPerYear, 0) AS CommitteeAvgSessionsPerYear,
+    
+    -- Calculate potential processing timeline (days from publication to last committee session)
+    CASE 
+        WHEN B.PublicationDate IS NOT NULL AND csa.LastSessionDate IS NOT NULL THEN
+            DATE_DIFF('day', CAST(B.PublicationDate AS TIMESTAMP), csa.LastSessionDate)
+        ELSE NULL
+    END as DaysFromPublicationToLastCommitteeSession,
+    
+    -- Committee activity level classification
+    CASE 
+        WHEN csa.TotalSessions IS NOT NULL THEN
+            CASE 
+                WHEN csa.TotalSessions > 100 THEN 'Very Active'
+                WHEN csa.TotalSessions > 50 THEN 'Active'  
+                WHEN csa.TotalSessions > 20 THEN 'Moderate'
+                ELSE 'Limited'
+            END
+        ELSE 'No Committee'
+    END as CommitteeActivityLevel
 
 FROM KNS_Bill B
-LEFT JOIN KNS_Committee C ON B.CommitteeID = C.CommitteeID
+LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
 LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
 LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
 LEFT JOIN KNS_Person Pi ON BI.PersonID = Pi.PersonID
@@ -238,19 +293,22 @@ LEFT JOIN KNS_Faction f ON bmif.FactionID = f.FactionID
 LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
     AND B.KnessetNum = ufs.KnessetNum
 LEFT JOIN BillMergeInfo bmi ON B.BillID = bmi.MergedBillID
+LEFT JOIN CommitteeSessionActivity csa ON CAST(B.CommitteeID AS BIGINT) = csa.CommitteeID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
     B.CommitteeID, C.Name, B.StatusID, S."Desc", B.Number, B.PostponementReasonID,
-    B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate
+    B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate, B.PublicationDate,
+    csa.TotalSessions, csa.FirstSessionDate, csa.LastSessionDate, csa.KnessetSpan,
+    csa.SessionsWithDuration, csa.AvgSessionsPerYear
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
         "knesset_filter_column": "B.KnessetNum",
         "faction_filter_column": "NULL", # Bills don't have direct faction association
         "description": (
-            "Comprehensive bill data with initiator information, "
-            "committee assignments, and status details"
+            "Comprehensive bill data with initiator information, committee assignments, "
+            "status details, and committee session activity analysis"
         ),
     },
 }

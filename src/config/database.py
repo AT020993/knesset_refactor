@@ -27,7 +27,12 @@ class DatabaseConfig:
         "KNS_BillSplit",
         "KNS_DocumentBill",
         "KNS_Law",
-        "KNS_IsraelLaw"
+        "KNS_IsraelLaw",
+        "KNS_CmtSessionItem",
+        "KNS_PlmSessionItem",
+        "KNS_Vote",
+        "KNS_DocumentCommitteeSession",
+        "KNS_DocumentPlenumSession"
     ]
     
     # Tables requiring cursor-based paging: (table_name, (primary_key, chunk_size))
@@ -37,6 +42,8 @@ class DatabaseConfig:
         "KNS_PlenumSession": ("PlenumSessionID", 100),
         "KNS_Bill": ("BillID", 100),
         "KNS_Query": ("QueryID", 100),
+        "KNS_CmtSessionItem": ("CmtSessionItemID", 100),
+        "KNS_PlmSessionItem": ("plmPlenumSessionID", 100),
     }
     
     # Connection settings

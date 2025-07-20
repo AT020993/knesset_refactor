@@ -118,6 +118,7 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
     * **Coalition Status Analysis:** Shows coalition/opposition status for bill initiators and query submitters
     * **Bill Merge Tracking:** Displays leading bill information for merged bills (Status ID 122)
+    * **Committee Session Analysis:** Comprehensive committee activity data with 10 analytical columns including session statistics, timeline analysis, activity classification, and processing metrics calculated from historical committee session data with realistic frequency caps and edge case handling
     * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
