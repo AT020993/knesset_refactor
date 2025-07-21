@@ -198,27 +198,21 @@ CommitteeSessionActivity AS (
     WHERE StartDate IS NOT NULL AND CommitteeID IS NOT NULL
     GROUP BY CAST(CommitteeID AS BIGINT)
 ),
-BillPlenumMapping AS (
-    SELECT BillID, PlenumSessionID, SessionNumber, SessionDate::DATE as SessionDate, MatchScore
-    FROM (VALUES
-        (75200, 11571, 22.0, '2003-05-19T16:00:00', 1.425), (75196, 11179, 21.0, '2003-05-14T11:00:00', 0.917), (75214, 11179, 21.0, '2003-05-14T11:00:00', 0.912), (85983, 11179, 21.0, '2003-05-14T11:00:00', 0.924), (74948, 11179, 21.0, '2003-05-14T11:00:00', 0.906), (74948, 11179, 21.0, '2003-05-14T11:00:00', 0.940), (74940, 11179, 21.0, '2003-05-14T11:00:00', 0.921), (85989, 11179, 21.0, '2003-05-14T11:00:00', 0.902), (89821, 11179, 21.0, '2003-05-14T11:00:00', 0.927), (85979, 11179, 21.0, '2003-05-14T11:00:00', 0.902), (173104, 11179, 21.0, '2003-05-14T11:00:00', 0.885), (85976, 11434, 24.0, '2003-05-21T11:00:00', 0.901), (86098, 11434, 24.0, '2003-05-21T11:00:00', 0.891), (75196, 11434, 24.0, '2003-05-21T11:00:00', 0.906), (75214, 11434, 24.0, '2003-05-21T11:00:00', 0.920), (31711, 11434, 24.0, '2003-05-21T11:00:00', 0.921), (84766, 11434, 24.0, '2003-05-21T11:00:00', 0.901)
-    ) AS mapping(BillID, PlenumSessionID, SessionNumber, SessionDate, MatchScore)
-),
 BillPlenumSessions AS (
     SELECT 
-        bpm.BillID,
-        COUNT(DISTINCT bpm.PlenumSessionID) as PlenumSessionCount,
-        MIN(bpm.SessionDate) as FirstPlenumSession,
-        MAX(bpm.SessionDate) as LastPlenumSession,
+        psi.ItemID as BillID,
+        COUNT(DISTINCT psi.PlenumSessionID) as PlenumSessionCount,
+        MIN(CAST(ps.StartDate AS TIMESTAMP)) as FirstPlenumSession,
+        MAX(CAST(ps.StartDate AS TIMESTAMP)) as LastPlenumSession,
         AVG(CASE 
             WHEN ps.StartDate IS NOT NULL AND ps.FinishDate IS NOT NULL 
             THEN DATE_DIFF('minute', CAST(ps.StartDate AS TIMESTAMP), CAST(ps.FinishDate AS TIMESTAMP))
         END) as AvgPlenumSessionDurationMinutes,
-        GROUP_CONCAT(DISTINCT CAST(bpm.SessionNumber AS VARCHAR) || ': ' || ps.Name, ' | ') as PlenumSessionNames,
-        AVG(bpm.MatchScore) as AvgMatchScore
-    FROM BillPlenumMapping bpm
-    JOIN KNS_PlenumSession ps ON bpm.PlenumSessionID = ps.PlenumSessionID
-    GROUP BY bpm.BillID
+        GROUP_CONCAT(DISTINCT CAST(ps.Number AS VARCHAR) || ': ' || ps.Name, ' | ') as PlenumSessionNames
+    FROM KNS_PlmSessionItem psi
+    JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+    WHERE psi.ItemID IS NOT NULL
+    GROUP BY psi.ItemID
 )
 SELECT
     B.BillID,
@@ -315,7 +309,7 @@ SELECT
             SUBSTRING(bps.PlenumSessionNames, 1, 197) || '...'
         ELSE bps.PlenumSessionNames
     END AS BillPlenumSessionNames,
-    ROUND(bps.AvgMatchScore, 3) AS BillPlenumMatchScore
+    psi.ItemTypeDesc AS BillPlenumItemType
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
@@ -329,6 +323,7 @@ LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
 LEFT JOIN BillMergeInfo bmi ON B.BillID = bmi.MergedBillID
 LEFT JOIN CommitteeSessionActivity csa ON CAST(B.CommitteeID AS BIGINT) = csa.CommitteeID
 LEFT JOIN BillPlenumSessions bps ON B.BillID = bps.BillID
+LEFT JOIN KNS_PlmSessionItem psi ON B.BillID = psi.ItemID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
@@ -337,7 +332,7 @@ GROUP BY
     csa.TotalSessions, csa.FirstSessionDate, csa.LastSessionDate, csa.KnessetSpan,
     csa.SessionsWithDuration, csa.AvgSessionsPerYear,
     bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
-    bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, bps.AvgMatchScore
+    bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,

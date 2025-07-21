@@ -1,14 +1,23 @@
 """Chart configuration and color schemes."""
 
-import plotly.express as px
 from typing import Dict, List
+
+try:
+    import plotly.express as px
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
+    px = None
 
 
 class ChartConfig:
     """Chart styling and configuration."""
     
     # Color schemes
-    KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly
+    KNESSET_COLOR_SEQUENCE = px.colors.qualitative.Plotly if HAS_PLOTLY else [
+        "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A", "#19D3F3", "#FF6692",
+        "#B6E880", "#FF97FF", "#FECB52"
+    ]
     
     COALITION_OPPOSITION_COLORS = {
         "Coalition": "#1f77b4",
