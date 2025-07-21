@@ -40,12 +40,13 @@ class ComparisonCharts(BaseChart):
 
                 query = f"""
                     SELECT
-                        COALESCE(p2p.FactionName, 'Unknown') AS FactionName,
+                        p2p.FactionName AS FactionName,
                         COUNT(q.QueryID) AS QueryCount
                     FROM KNS_Query q
                     LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID 
                         AND q.KnessetNum = p2p.KnessetNum
                     WHERE q.KnessetNum IS NOT NULL
+                        AND p2p.FactionName IS NOT NULL
                         AND {filters["knesset_condition"]}
                     GROUP BY p2p.FactionName
                     ORDER BY QueryCount DESC
@@ -131,7 +132,7 @@ class ComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+                    COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                     p2p.FactionID,
                     COUNT(DISTINCT a.AgendaID) AS AgendaCount
                 FROM KNS_Agenda a
@@ -144,6 +145,7 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND a.KnessetNum = f_fallback.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
+                    AND COALESCE(p2p.FactionName, f_fallback.Name) IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -157,7 +159,7 @@ class ComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), p2p.FactionID
                 HAVING AgendaCount > 0
                 ORDER BY AgendaCount DESC;
                 """
@@ -178,7 +180,6 @@ class ComparisonCharts(BaseChart):
                 df["AgendaCount"] = pd.to_numeric(
                     df["AgendaCount"], errors="coerce"
                 ).fillna(0)
-                df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
 
                 fig = px.bar(
                     df,
@@ -257,7 +258,7 @@ class ComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    ufs.CoalitionStatus AS CoalitionStatus,
                     COUNT(DISTINCT a.AgendaID) AS AgendaCount
                 FROM KNS_Agenda a
                 JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
@@ -269,6 +270,7 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
                     AND a.KnessetNum = ufs.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
+                    AND ufs.CoalitionStatus IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -303,7 +305,6 @@ class ComparisonCharts(BaseChart):
                 df["AgendaCount"] = pd.to_numeric(
                     df["AgendaCount"], errors="coerce"
                 ).fillna(0)
-                df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
 
                 fig = px.pie(
                     df,
@@ -410,7 +411,7 @@ class ComparisonCharts(BaseChart):
                     SELECT
                         q.QueryID,
                         COALESCE(s.Desc, 'Unknown Status') AS StatusDescription,
-                        COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+                        COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                         p2p.FactionID
                     FROM KNS_Query q
                     JOIN KNS_Person p ON q.PersonID = p.PersonID
@@ -426,6 +427,7 @@ class ComparisonCharts(BaseChart):
                     qsfi.FactionName,
                     COUNT(DISTINCT qsfi.QueryID) AS QueryCount
                 FROM QueryStatusFactionInfo qsfi
+                WHERE qsfi.FactionName IS NOT NULL
                 GROUP BY
                     qsfi.StatusDescription,
                     qsfi.FactionName
@@ -463,7 +465,6 @@ class ComparisonCharts(BaseChart):
                 df["StatusDescription"] = df["StatusDescription"].fillna(
                     "Unknown Status"
                 )
-                df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
 
                 ids = []
                 labels = []
@@ -567,7 +568,7 @@ class ComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction') AS FactionName,
+                    COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                     p2p.FactionID,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
@@ -580,6 +581,7 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND b.KnessetNum = f_fallback.KnessetNum
                 WHERE b.KnessetNum = ?
+                    AND COALESCE(p2p.FactionName, f_fallback.Name) IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -593,7 +595,7 @@ class ComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name, 'Unknown Faction'), p2p.FactionID
+                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), p2p.FactionID
                 HAVING BillCount > 0
                 ORDER BY BillCount DESC;
                 """
@@ -614,7 +616,6 @@ class ComparisonCharts(BaseChart):
                 df["BillCount"] = pd.to_numeric(
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
-                df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
 
                 fig = px.bar(
                     df,
@@ -691,7 +692,7 @@ class ComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    ufs.CoalitionStatus AS CoalitionStatus,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
@@ -703,6 +704,7 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
                     AND b.KnessetNum = ufs.KnessetNum
                 WHERE b.KnessetNum = ?
+                    AND ufs.CoalitionStatus IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -737,7 +739,6 @@ class ComparisonCharts(BaseChart):
                 df["BillCount"] = pd.to_numeric(
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
-                df["CoalitionStatus"] = df["CoalitionStatus"].fillna("Unknown")
 
                 fig = px.pie(
                     df,

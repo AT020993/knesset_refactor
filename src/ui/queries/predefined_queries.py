@@ -280,7 +280,8 @@ SELECT
     
     -- Calculate potential processing timeline (days from publication to last committee session)
     CASE 
-        WHEN B.PublicationDate IS NOT NULL AND csa.LastSessionDate IS NOT NULL THEN
+        WHEN B.PublicationDate IS NOT NULL AND csa.LastSessionDate IS NOT NULL 
+            AND CAST(csa.LastSessionDate AS TIMESTAMP) >= CAST(B.PublicationDate AS TIMESTAMP) THEN
             DATE_DIFF('day', CAST(B.PublicationDate AS TIMESTAMP), csa.LastSessionDate)
         ELSE NULL
     END as DaysFromPublicationToLastCommitteeSession,
