@@ -118,7 +118,8 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
     * **Coalition Status Analysis:** Shows coalition/opposition status for bill initiators and query submitters
     * **Bill Merge Tracking:** Displays leading bill information for merged bills (Status ID 122)
-    * **Committee Session Analysis:** Comprehensive committee activity data with 10 analytical columns including session statistics, timeline analysis, activity classification, and processing metrics calculated from historical committee session data with realistic frequency caps and edge case handling
+    * **Committee Session Analysis:** Comprehensive committee activity data including session statistics, timeline analysis, activity classification, and processing metrics
+    * **Plenum Session Integration:** Direct bill-to-plenum session connections with 14,411 bills linked to plenum sessions (2011-2025), showing session counts, timelines, duration analysis, and session details
     * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
@@ -601,6 +602,7 @@ The system downloads and manages these core tables:
 * **KNS_GovMinistry** - Government ministries
 * **KNS_Status** - Various status codes
 * **KNS_PlenumSession** - Plenary session records
+* **KNS_PlmSessionItem** - Plenum session agenda items *(Enhanced with 26,400 records 2011-2025)*
 * **KNS_KnessetDates** - Knesset terms and dates
 * **KNS_Bill** - Bills and legislation
 * **KNS_Law** - Laws and legal documents

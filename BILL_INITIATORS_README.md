@@ -103,6 +103,7 @@ BillID | BillName | BillMainInitiatorNames | BillMainInitiatorCoalitionStatus | 
 - **Government Bills**: Properly labeled as "Government Initiative"
 - **Accurate Counts**: Meaningful statistics for legislative analysis
 - **Legislative Continuity**: Track bill progression through merge relationships
+- **Plenum Session Integration**: Bills now connected to plenum sessions where they were discussed (14,411 bills with session data 2011-2025)
 
 ## Troubleshooting
 
@@ -117,3 +118,5 @@ The data is fetched from the Knesset OData API:
 - Bills: `https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Bill`
 - Bill Initiators: `https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_BillInitiator`
 - People: `https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Person`
+- Plenum Sessions: `https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_PlenumSession`
+- Plenum Session Items: `https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_PlmSessionItem`

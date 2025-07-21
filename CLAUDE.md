@@ -93,6 +93,7 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 
 **Supporting Tables**:
 - `KNS_Committee`, `KNS_CommitteeSession`: Committee data and session history
+- `KNS_PlenumSession`, `KNS_PlmSessionItem`: Plenum session data and agenda items
 - `KNS_GovMinistry`: Government ministries
 - `KNS_Status`: Various status codes
 - `KNS_Bill`, `KNS_BillInitiator`: Legislative data with initiator information
@@ -124,8 +125,6 @@ The "Bills + Full Details" query includes the following committee-related column
 
 **Session Statistics**:
 - `CommitteeTotalSessions`: Total number of sessions held by the committee
-- `CommitteeSessionsWithDuration`: Number of sessions with both start and end times recorded
-- `CommitteeAvgSessionsPerYear`: Average sessions per year calculated from committee's active period
 
 **Timeline Data**:
 - `CommitteeFirstSession`: Date of the committee's first recorded session (YYYY-MM-DD format)
@@ -142,13 +141,10 @@ The "Bills + Full Details" query includes the following committee-related column
   - "No Committee": Bill has no committee assignment
 
 **Calculation Methodology**:
-- **Session Frequency**: Average sessions per year calculated using committee's full active period from first to last session
-- **Edge Case Handling**: Committees active for less than 30 days use monthly frequency calculations instead of annual
-- **Realistic Caps**: Session frequency capped at 260 sessions/year (5 per week) to handle calculation anomalies
 - **Timeline Analysis**: Uses bill publication date from `KNS_Bill.PublicationDate` field to calculate processing timelines
+- **Activity Classification**: Based on total session counts with realistic thresholds
 
 **Data Quality Considerations**:
-- Session duration data available for approximately 70% of committee sessions
 - Committee assignment coverage: 99.8% success rate for bills with committee assignments
 - Historical data may be incomplete for older Knesset terms
 - Edge cases with missing timeline data show appropriate fallback values (NULL or 0)
@@ -187,13 +183,24 @@ The "Bills + Full Details" query includes the following committee-related column
 - **Type Safety**: Boolean fields use `false` instead of `'N/A'` to prevent type conversion errors
 
 **Committee Session Analysis**: Enhanced bill queries now include comprehensive committee activity data:
-- **Session Statistics**: Total sessions, session frequency, and activity periods for assigned committees
+- **Session Statistics**: Total sessions and activity periods for assigned committees
 - **Timeline Analysis**: Days from bill publication to last committee session
 - **Activity Classification**: Committees categorized as "Very Active" (100+ sessions), "Active" (50+), "Moderate" (20+), "Limited", or "No Committee"
 - **Historical Context**: Committee first/last session dates and Knesset term spans
-- **Processing Metrics**: Session duration data and average sessions per year
+- **Processing Metrics**: Session processing timelines and committee engagement levels
 - **Integration**: All committee data included as additional columns in "Bills + Full Details" query
 - **Data Source**: Calculated from `KNS_CommitteeSession` table joined with bill committee assignments
+
+**Plenum Session Integration**: Bills are now connected to the plenum sessions where they were discussed:
+- **Direct Linking**: Uses `KNS_PlmSessionItem.ItemID` to match with `KNS_Bill.BillID` for accurate bill-to-session connections
+- **Session Counts**: `BillPlenumSessionCount` shows how many plenum sessions discussed each bill
+- **Timeline Data**: `BillFirstPlenumSession` and `BillLastPlenumSession` provide date ranges for bill discussion periods
+- **Session Details**: `BillPlenumSessionNames` lists all plenum sessions (with truncation for long lists)
+- **Duration Analysis**: `BillAvgPlenumSessionDurationMinutes` shows average session length for bills with duration data
+- **Item Classification**: `BillPlenumItemType` indicates the type of agenda item (e.g., "הצעת חוק" for bill proposals)
+- **Data Coverage**: 14,411 bills connected to plenum sessions spanning Knessets 1-25 (2011-2025 data)
+- **Data Source**: Direct joins between `KNS_Bill`, `KNS_PlmSessionItem`, and `KNS_PlenumSession` tables
+- **Complete Dataset**: 26,400 plenum session items downloaded, significant improvement over previous 100-record limitation
 
 ### Database Schema Changes
 1. Update table definitions in `src/config/database.py`

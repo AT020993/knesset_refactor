@@ -277,8 +277,6 @@ SELECT
     strftime(csa.FirstSessionDate, '%Y-%m-%d') as CommitteeFirstSession,
     strftime(csa.LastSessionDate, '%Y-%m-%d') as CommitteeLastSession,
     COALESCE(csa.KnessetSpan, 0) AS CommitteeKnessetSpan,
-    COALESCE(csa.SessionsWithDuration, 0) AS CommitteeSessionsWithDuration,
-    COALESCE(csa.AvgSessionsPerYear, 0) AS CommitteeAvgSessionsPerYear,
     
     -- Calculate potential processing timeline (days from publication to last committee session)
     CASE 
@@ -330,7 +328,6 @@ GROUP BY
     B.CommitteeID, C.Name, B.StatusID, S."Desc", B.Number, B.PostponementReasonID,
     B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate, B.PublicationDate,
     csa.TotalSessions, csa.FirstSessionDate, csa.LastSessionDate, csa.KnessetSpan,
-    csa.SessionsWithDuration, csa.AvgSessionsPerYear,
     bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
     bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc
 
