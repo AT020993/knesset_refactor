@@ -77,9 +77,15 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 ## Data Flow
 
 1. **External API**: Fetch from Knesset OData API (`http://knesset.gov.il/Odata/ParliamentInfo.svc`)
-2. **Storage**: Store in DuckDB warehouse + Parquet files
-3. **Processing**: Business logic in service layer with committee session analysis
-4. **Presentation**: Interactive Streamlit UI with 15+ visualizations and committee timeline insights
+2. **Storage**: Store in DuckDB warehouse + Parquet files with complete schema coverage
+3. **Processing**: Advanced business logic with comprehensive analysis:
+   - Committee session activity and classification
+   - Political coalition/opposition analysis
+   - Bill-to-plenum session integration
+   - Document link aggregation
+   - Legislative merge tracking
+   - Member faction analysis with percentages
+4. **Presentation**: Interactive Streamlit UI with 15+ visualizations and enhanced query capabilities
 
 ## Key Data Tables
 
@@ -92,15 +98,17 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 - `KNS_BillInitiator`: Bill initiators with `Ordinal` field for main/supporting distinction
 
 **Supporting Tables**:
-- `KNS_Committee`, `KNS_CommitteeSession`: Committee data and session history
-- `KNS_PlenumSession`, `KNS_PlmSessionItem`: Plenum session data and agenda items
+- `KNS_Committee`, `KNS_CommitteeSession`: Committee data and session history with enhanced classification
+- `KNS_PlenumSession`, `KNS_PlmSessionItem`: Plenum session data and agenda items with bill integration
+- `KNS_DocumentBill`: Document links and resources for bills (PDF, DOC, PPT formats)
 - `KNS_GovMinistry`: Government ministries
 - `KNS_Status`: Various status codes
-- `KNS_Bill`, `KNS_BillInitiator`: Legislative data with initiator information
+- `KNS_Bill`, `KNS_BillInitiator`: Complete legislative data with initiator information
 - `KNS_Law`, `KNS_IsraelLaw`: Legal documents
+- `KNS_BillUnion`: Bill merge relationships for legislative continuity
 
 **Special Tables**:
-- `UserFactionCoalitionStatus`: Manual coalition/opposition tracking (CSV-based)
+- `UserFactionCoalitionStatus`: Manual coalition/opposition tracking (CSV-based) for political analysis
 
 ## Common Development Tasks
 
@@ -115,24 +123,43 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
 2. Add execution logic in `src/ui/queries/query_executor.py`
 3. Update UI in `src/ui/pages/data_refresh_page.py`
 
-### Committee Session Data Fields
+### Bills Query Comprehensive Data Schema
 
-The "Bills + Full Details" query includes the following committee-related columns:
+The "Bills + Full Details" query is the most comprehensive query in the system, containing **65+ columns** with complete bill information, initiator details, committee data, political analysis, and document links.
 
-**Core Committee Information**:
-- `BillCommitteeID`: The ID of the committee assigned to the bill
-- `CommitteeName`: Name of the assigned committee (e.g., "ועדת החוקה, חוק ומשפט")
+#### Core Bill Information (KNS_Bill Table - Complete Coverage)
+- `BillID`: Unique bill identifier
+- `KnessetNum`: Knesset term number
+- `BillName`: Full bill name in Hebrew
+- `BillSubTypeID`, `BillSubTypeDesc`: Bill subtype classification
+- `BillNumber`: Official bill number
+- `PrivateNumber`: Private member bill number
+- `BillStatusID`, `BillStatusDesc`: Current bill status
+- `PostponementReasonID`, `PostponementReasonDesc`: Reason for delays
+- `BillSummaryLaw`: Summary of the law
+- `LastUpdatedDateFormatted`: Last modification date
+- `BillPublicationDate`: Official publication date
+- `BillMagazineNumber`: Official Gazette magazine number
+- `BillPageNumber`: Page number in official publication
+- `BillIsContinuationBill`: Whether bill continues from previous term
+- `BillPublicationSeriesID`, `BillPublicationSeriesDesc`: Publication series info
+- `BillPublicationSeriesFirstCall`: First call information
 
-**Session Statistics**:
+#### Committee Information (Enhanced KNS_Committee Integration)
+**Basic Committee Data**:
+- `BillCommitteeName`: Name of assigned committee (e.g., "ועדת החוקה, חוק ומשפט")
+
+**Committee Classification**:
+- `BillCommitteeTypeID`, `BillCommitteeTypeDesc`: Committee type (70="ועדת הכנסת", 71="ועדה ראשית")
+- `BillCommitteeAdditionalTypeID`, `BillCommitteeAdditionalTypeDesc`: Additional classification (991="קבועה" for permanent committees)
+- `BillCommitteeParentName`: Parent committee name for sub-committees
+
+**Committee Activity Analysis**:
 - `CommitteeTotalSessions`: Total number of sessions held by the committee
-
-**Timeline Data**:
-- `CommitteeFirstSession`: Date of the committee's first recorded session (YYYY-MM-DD format)
-- `CommitteeLastSession`: Date of the committee's last recorded session (YYYY-MM-DD format)
+- `CommitteeFirstSession`: Date of committee's first recorded session (YYYY-MM-DD)
+- `CommitteeLastSession`: Date of committee's last recorded session (YYYY-MM-DD)
 - `CommitteeKnessetSpan`: Number of different Knesset terms the committee was active
 - `DaysFromPublicationToLastCommitteeSession`: Days between bill publication and committee's last session
-
-**Analysis Fields**:
 - `CommitteeActivityLevel`: Classification based on session count:
   - "Very Active": 100+ sessions
   - "Active": 50-99 sessions  
@@ -140,20 +167,54 @@ The "Bills + Full Details" query includes the following committee-related column
   - "Limited": 1-19 sessions
   - "No Committee": Bill has no committee assignment
 
-**Calculation Methodology**:
-- **Timeline Analysis**: Uses bill publication date from `KNS_Bill.PublicationDate` field to calculate processing timelines
-- **Activity Classification**: Based on total session counts with realistic thresholds
+#### Bill Initiator and Member Analysis
+**Main Initiator Information**:
+- `BillMainInitiatorNames`: Names of main initiators (Ordinal = 1)
+- `BillMainInitiatorFactionName`: Faction name of the first/main initiator
+- `BillMainInitiatorCoalitionStatus`: Coalition/Opposition status of main initiator
 
-**Data Quality Considerations**:
-- Committee assignment coverage: 99.8% success rate for bills with committee assignments
-- Historical data may be incomplete for older Knesset terms
-- Edge cases with missing timeline data show appropriate fallback values (NULL or 0)
+**Supporting Members**:
+- `BillSupportingMemberNames`: Names of supporting members (Ordinal > 1) - names only
+- `BillSupportingMembersWithFactions`: Supporting members with their faction names in parentheses
 
-**Usage Notes**:
-- Committee data shows historical activity patterns for the assigned committee
-- Timeline analysis helps understand bill processing context
-- Activity levels provide quick assessment of committee engagement
-- NULL values indicate bills without committee assignments
+**Member Statistics**:
+- `BillTotalMemberCount`: Total number of MKs involved in the bill
+- `BillMainInitiatorCount`: Number of main initiators (usually 1)
+- `BillSupportingMemberCount`: Number of supporting members
+
+**Political Composition Analysis**:
+- `BillCoalitionMemberCount`: Number of coalition members (main + supporting)
+- `BillOppositionMemberCount`: Number of opposition members (main + supporting)  
+- `BillCoalitionMemberPercentage`: Percentage of coalition members (rounded to 1 decimal)
+- `BillOppositionMemberPercentage`: Percentage of opposition members (rounded to 1 decimal)
+
+#### Legislative Process Integration
+**Bill Merge Tracking**:
+- `MergedWithLeadingBill`: For merged bills (Status ID 122), shows leading bill info as "Bill #[Number]: [Name]"
+
+**Plenum Session Integration**:
+- `BillPlenumSessionCount`: Number of plenum sessions that discussed the bill
+- `BillFirstPlenumSession`, `BillLastPlenumSession`: Date range of plenum discussions
+- `BillAvgPlenumSessionDurationMinutes`: Average duration of plenum sessions discussing the bill
+- `BillPlenumSessionNames`: List of plenum sessions (truncated if > 200 chars)
+- `BillPlenumItemType`: Type of agenda item (e.g., "הצעת חוק")
+
+#### Document Links and Resources
+**Document Information**:
+- `BillDocumentCount`: Total number of documents available for the bill
+- `BillDocumentLinks`: Formatted document links with type and format information
+  - Format: `[Document Type] ([Format]): [URL]`
+  - Types: "חוק - פרסום ברשומות", "הצעת חוק לקריאה הראשונה", etc.
+  - Formats: DOC, PDF, PPT, PIC
+  - Multiple documents separated by ` | `, truncated at 500 chars
+
+**Data Quality and Coverage**:
+- **Complete KNS_Bill Coverage**: All 20 fields from KNS_Bill table included
+- **Committee Data**: 99.8% success rate for bills with committee assignments
+- **Plenum Integration**: 14,411 bills connected to plenum sessions (Knessets 1-25)
+- **Document Coverage**: Links to official documents from KNS_DocumentBill table
+- **Political Analysis**: Uses UserFactionCoalitionStatus for coalition/opposition classification
+- **Historical Scope**: Data spans multiple Knesset terms with appropriate fallback values
 
 ### Query System Enhancements
 
@@ -201,6 +262,32 @@ The "Bills + Full Details" query includes the following committee-related column
 - **Data Coverage**: 14,411 bills connected to plenum sessions spanning Knessets 1-25 (2011-2025 data)
 - **Data Source**: Direct joins between `KNS_Bill`, `KNS_PlmSessionItem`, and `KNS_PlenumSession` tables
 - **Complete Dataset**: 26,400 plenum session items downloaded, significant improvement over previous 100-record limitation
+
+### Advanced Query Capabilities
+
+**Political Analysis Features**:
+- **Coalition/Opposition Tracking**: Real-time political affiliation analysis using `UserFactionCoalitionStatus` 
+- **Cross-Party Collaboration**: Percentage breakdowns of coalition vs. opposition participation
+- **Faction Integration**: Complete faction information for all bill participants
+- **Government vs. MK Bills**: Automatic detection and classification of bill origins
+
+**Legislative Process Tracking**:
+- **Bill Lifecycle**: From initial proposal through committee review to plenum discussion
+- **Document Integration**: Direct links to official documents in multiple formats
+- **Merge Analysis**: Complete tracking of bill consolidation and relationships
+- **Timeline Analysis**: Processing duration calculations and committee engagement metrics
+
+**Committee Intelligence**:
+- **Activity Classification**: Automated committee activity level assessment
+- **Historical Context**: Multi-term committee performance tracking  
+- **Committee Hierarchy**: Parent-child committee relationships and classifications
+- **Session Analysis**: Comprehensive committee session statistics and trends
+
+**Data Export and Analysis**:
+- **Comprehensive Coverage**: 65+ columns per bill with complete relational data
+- **Filtered Results**: Local Knesset filtering within query results
+- **Format Flexibility**: Support for various output formats and analysis tools
+- **Research Ready**: Academic and policy research optimized data structure
 
 ### Database Schema Changes
 1. Update table definitions in `src/config/database.py`
@@ -280,9 +367,12 @@ The application uses **centralized session state** in `src/ui/state/session_mana
 
 ## Important Notes
 
-- This is a **defensive security application** for parliamentary data analysis
-- All database operations are **read-only** by default
-- SQL queries are **parameterized** to prevent injection
+- This is a **defensive security application** for comprehensive parliamentary data analysis
+- All database operations are **read-only** by default with secure connection management
+- SQL queries are **parameterized** to prevent injection attacks
 - **Circuit breaker** prevents API abuse and handles failures gracefully
-- **Clean architecture** enables testing and maintainability
-- **Modular design** supports incremental improvements and maintenance
+- **Clean architecture** enables testing, maintainability, and feature expansion
+- **Modular design** supports incremental improvements and comprehensive data integration
+- **Research-grade data quality** with complete schema coverage and relationship mapping
+- **Political analysis capabilities** provide coalition/opposition insights and cross-party collaboration metrics
+- **Legislative process intelligence** tracks bills from initiation through passage with complete document integration

@@ -16,6 +16,7 @@ class DatabaseConfig:
         "KNS_Query",
         "KNS_Agenda",
         "KNS_Committee",
+        "KNS_CmtSiteCode",
         "KNS_CommitteeSession",
         "KNS_PlenumSession",
         "KNS_KnessetDates",
@@ -38,6 +39,7 @@ class DatabaseConfig:
     # Tables requiring cursor-based paging: (table_name, (primary_key, chunk_size))
     CURSOR_TABLES: Dict[str, Tuple[str, int]] = {
         "KNS_Person": ("PersonID", 100),
+        "KNS_Committee": ("CommitteeID", 100),
         "KNS_CommitteeSession": ("CommitteeSessionID", 100),
         "KNS_PlenumSession": ("PlenumSessionID", 100),
         "KNS_Bill": ("BillID", 100),

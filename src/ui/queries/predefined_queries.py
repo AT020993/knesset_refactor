@@ -161,6 +161,23 @@ WITH BillMainInitiatorFaction AS (
         AND ptp.FactionID IS NOT NULL
     WHERE BI.Ordinal = 1
 ),
+BillSupportingMemberFactions AS (
+    SELECT 
+        BI.BillID,
+        BI.PersonID,
+        B.KnessetNum,
+        ptp.FactionID,
+        ROW_NUMBER() OVER (PARTITION BY BI.BillID, BI.PersonID ORDER BY 
+            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+            ptp.StartDate DESC NULLS LAST
+        ) as rn
+    FROM KNS_BillInitiator BI
+    JOIN KNS_Bill B ON BI.BillID = B.BillID
+    LEFT JOIN KNS_PersonToPosition ptp ON BI.PersonID = ptp.PersonID 
+        AND B.KnessetNum = ptp.KnessetNum
+        AND ptp.FactionID IS NOT NULL
+    WHERE (BI.Ordinal > 1 OR BI.IsInitiator IS NULL)
+),
 BillMergeInfo AS (
     SELECT 
         bu.UnionBillID as MergedBillID,
@@ -213,6 +230,15 @@ BillPlenumSessions AS (
     JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
     WHERE psi.ItemID IS NOT NULL
     GROUP BY psi.ItemID
+),
+BillDocuments AS (
+    SELECT 
+        db.BillID,
+        COUNT(*) as DocumentCount,
+        GROUP_CONCAT(DISTINCT db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath, ' | ') as DocumentLinks
+    FROM KNS_DocumentBill db
+    WHERE db.FilePath IS NOT NULL
+    GROUP BY db.BillID
 )
 SELECT
     B.BillID,
@@ -221,8 +247,14 @@ SELECT
     B.SubTypeID AS BillSubTypeID,
     B.SubTypeDesc AS BillSubTypeDesc,
     B.PrivateNumber,
-    B.CommitteeID AS BillCommitteeID,
-    COALESCE(C.Name, CASE WHEN B.CommitteeID IS NOT NULL THEN 'Committee ID ' || CAST(B.CommitteeID AS VARCHAR) ELSE NULL END) AS CommitteeName,
+    COALESCE(C.Name, CASE WHEN B.CommitteeID IS NOT NULL THEN 'Committee ' || CAST(B.CommitteeID AS VARCHAR) ELSE NULL END) AS BillCommitteeName,
+    
+    -- Committee additional information from KNS_Committee
+    C.CommitteeTypeDesc AS BillCommitteeTypeDesc,
+    C.AdditionalTypeID AS BillCommitteeAdditionalTypeID,
+    C.AdditionalTypeDesc AS BillCommitteeAdditionalTypeDesc,
+    C.CommitteeParentName AS BillCommitteeParentName,
+    
     B.StatusID AS BillStatusID,
     S."Desc" AS BillStatusDesc,
     B.Number AS BillNumber,
@@ -230,6 +262,15 @@ SELECT
     B.PostponementReasonDesc,
     B.SummaryLaw AS BillSummaryLaw,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
+    
+    -- Additional KNS_Bill fields
+    strftime(CAST(B.PublicationDate AS TIMESTAMP), '%Y-%m-%d') AS BillPublicationDate,
+    B.MagazineNumber AS BillMagazineNumber,
+    B.PageNumber AS BillPageNumber,
+    COALESCE(B.IsContinuationBill, false) AS BillIsContinuationBill,
+    B.PublicationSeriesID AS BillPublicationSeriesID,
+    B.PublicationSeriesDesc AS BillPublicationSeriesDesc,
+    B.PublicationSeriesFirstCall AS BillPublicationSeriesFirstCall,
 
     -- Bill initiator information with proper distinction using Ordinal field
     CASE 
@@ -241,6 +282,16 @@ SELECT
             END
         ELSE 'Government Initiative'
     END AS BillMainInitiatorNames,
+    
+    -- Main initiator faction name
+    CASE 
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
+            COALESCE(
+                MAX(CASE WHEN BI.Ordinal = 1 THEN f.Name END),
+                'Unknown'
+            )
+        ELSE 'Government'
+    END AS BillMainInitiatorFactionName,
     
     -- Main initiator coalition status
     CASE 
@@ -268,9 +319,36 @@ SELECT
             GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
         ELSE 'None'
     END AS BillSupportingMemberNames,
+    CASE 
+        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
+            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sf.Name, 'Unknown Faction') || ')') END, ', ')
+        ELSE 'None'
+    END AS BillSupportingMembersWithFactions,
     COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN BI.PersonID END) AS BillMainInitiatorCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount,
+    
+    -- Coalition/Opposition member counts
+    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID 
+                        WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) AS BillCoalitionMemberCount,
+    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID 
+                        WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) AS BillOppositionMemberCount,
+    
+    -- Coalition/Opposition member percentages
+    CASE 
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
+            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID 
+                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) * 100.0) 
+                  / COUNT(DISTINCT BI.PersonID), 1)
+        ELSE 0.0
+    END AS BillCoalitionMemberPercentage,
+    CASE 
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
+            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID 
+                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) * 100.0) 
+                  / COUNT(DISTINCT BI.PersonID), 1)
+        ELSE 0.0
+    END AS BillOppositionMemberPercentage,
     
     -- Committee session activity data
     COALESCE(csa.TotalSessions, 0) AS CommitteeTotalSessions,
@@ -308,7 +386,15 @@ SELECT
             SUBSTRING(bps.PlenumSessionNames, 1, 197) || '...'
         ELSE bps.PlenumSessionNames
     END AS BillPlenumSessionNames,
-    psi.ItemTypeDesc AS BillPlenumItemType
+    psi.ItemTypeDesc AS BillPlenumItemType,
+    
+    -- Document information
+    COALESCE(bd.DocumentCount, 0) AS BillDocumentCount,
+    CASE 
+        WHEN LENGTH(bd.DocumentLinks) > 500 THEN 
+            SUBSTRING(bd.DocumentLinks, 1, 497) || '...'
+        ELSE bd.DocumentLinks
+    END AS BillDocumentLinks
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
@@ -319,18 +405,29 @@ LEFT JOIN BillMainInitiatorFaction bmif ON B.BillID = bmif.BillID AND bmif.rn = 
 LEFT JOIN KNS_Faction f ON bmif.FactionID = f.FactionID
 LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
     AND B.KnessetNum = ufs.KnessetNum
+LEFT JOIN BillSupportingMemberFactions bsmf ON BI.BillID = bsmf.BillID 
+    AND BI.PersonID = bsmf.PersonID 
+    AND bsmf.rn = 1
+LEFT JOIN KNS_Faction sf ON bsmf.FactionID = sf.FactionID
+LEFT JOIN UserFactionCoalitionStatus sufs ON sf.FactionID = sufs.FactionID 
+    AND B.KnessetNum = sufs.KnessetNum
 LEFT JOIN BillMergeInfo bmi ON B.BillID = bmi.MergedBillID
 LEFT JOIN CommitteeSessionActivity csa ON CAST(B.CommitteeID AS BIGINT) = csa.CommitteeID
 LEFT JOIN BillPlenumSessions bps ON B.BillID = bps.BillID
 LEFT JOIN KNS_PlmSessionItem psi ON B.BillID = psi.ItemID
+LEFT JOIN BillDocuments bd ON B.BillID = bd.BillID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
-    B.CommitteeID, C.Name, B.StatusID, S."Desc", B.Number, B.PostponementReasonID,
-    B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate, B.PublicationDate,
+    B.CommitteeID, C.Name, C.CommitteeTypeDesc, C.AdditionalTypeID, 
+    C.AdditionalTypeDesc, C.CommitteeParentName, B.StatusID, S."Desc", B.Number, 
+    B.PostponementReasonID, B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate, 
+    B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill, 
+    B.PublicationSeriesID, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
     csa.TotalSessions, csa.FirstSessionDate, csa.LastSessionDate, csa.KnessetSpan,
     bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
-    bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc
+    bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc,
+    bd.DocumentCount, bd.DocumentLinks
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
