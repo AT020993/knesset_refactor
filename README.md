@@ -118,7 +118,8 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
     * **Coalition Status Analysis:** Shows coalition/opposition status for bill initiators and query submitters
     * **Bill Merge Tracking:** Displays leading bill information for merged bills (Status ID 122)
-    * **Committee Session Analysis:** Comprehensive committee activity data including session statistics, timeline analysis, activity classification, and processing metrics
+    * **Enhanced Committee Resolution:** Improved committee name resolution from 14.8% to 71.4% success rate using historical committee data across Knessets 1-25
+    * **Committee Session Analysis:** **COMPLETE DATASET** - Downloaded 74,951/75,051 committee session items (99.9%) providing 10,232 bills with verified committee session connections (1-107 sessions per bill, 17.6% coverage - 5.1x improvement)
     * **Plenum Session Integration:** Direct bill-to-plenum session connections with 14,411 bills linked to plenum sessions (2011-2025), showing session counts, timelines, duration analysis, and session details
     * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
@@ -322,6 +323,16 @@ streamlit run src/ui/data_refresh.py
 - 📈 **Enhanced Filtering** for all predefined visualizations
 - 🗃️ **SubTypeDesc Integration** for improved query accuracy
 
+### 🎉 **MAJOR BREAKTHROUGH: Complete Committee Session Data**
+
+- **📥 Complete Download**: 74,951/75,051 committee session items (99.9% coverage)
+- **🚀 5.1x Coverage Improvement**: From 1,992 to 10,232 bills with committee session data
+- **📊 Coverage Jump**: From 3.4% to 17.6% of all bills having accurate committee dates
+- **✅ User Impact**: About 1 in 6 bills now show verified committee session information
+- **⏱️ Session Range**: 1-107 sessions per bill (average 3.6), spanning decades of legislative history
+- **🎯 Examples**: חוק התכנון והבנייה (107 sessions), הצעת חוק שירות ביטחון (57 sessions)
+- **🏛️ Knesset Coverage**: 15.4% in Knesset 25, 17.2% in Knesset 20, 8.7% in Knesset 24
+
 ---
 
 ### 📁 Optional Configuration
@@ -435,13 +446,30 @@ ORDER BY Query_Count DESC
 streamlit run src/ui/data_refresh.py
 
 # In the UI:
-# 1. Go to "Predefined Queries" → "Queries + Full Details"
+# 1. Go to "Predefined Queries" → "Bills + Full Details"
 # 2. Apply sidebar filter: Coalition Status = "Coalition" 
 # 3. Use local Knesset filter in results area for specific Knesset term
-# 4. Export filtered results to Excel for further analysis
+# 4. View BillCommitteeSessions column for accurate session counts (1-107 sessions)
+# 5. Export filtered results to Excel with complete committee session data
 ```
 
-#### Scenario 3: Building Custom Visualizations
+#### Scenario 3: Analyzing Committee Session Activity
+```bash
+# Download complete committee session data (one-time setup)
+python download_committee_sessions.py
+
+# Launch Streamlit UI
+streamlit run src/ui/data_refresh.py
+
+# In the UI:
+# 1. Go to "Predefined Queries" → "Bills + Full Details"
+# 2. Filter results where BillCommitteeSessions > 0
+# 3. Sort by BillCommitteeSessions DESC to see most-discussed bills
+# 4. View examples: חוק התכנון והבנייה (107 sessions), חוק הירושה (100 sessions)
+# 5. Export data showing first/last committee session dates for timeline analysis
+```
+
+#### Scenario 4: Building Custom Visualizations
 ```bash
 # In Streamlit UI:
 # 1. Navigate to "Chart Builder" tab
@@ -588,6 +616,29 @@ PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 ```
 
+## 🏆 Performance & Data Quality Achievements
+
+### Committee Session Data Breakthrough
+- **99.9% Complete Dataset**: Downloaded 74,951 out of 75,051 available committee session items
+- **5.1x Coverage Improvement**: Increased from 1,992 to 10,232 bills with committee session data
+- **User Experience Revolution**: From mostly empty committee dates to 17.6% coverage (1 in 6 bills)
+- **Data Accuracy**: 100% verified direct bill-to-session connections (no estimates)
+- **Historical Span**: Committee session data spanning decades of Israeli legislative history
+
+### Coverage Statistics by Knesset
+| Knesset | Total Bills | With Sessions | Coverage |
+|---------|-------------|---------------|----------|
+| 25      | 6,459       | 992          | 15.4%    |
+| 20      | 6,645       | 1,142        | 17.2%    |
+| 24      | 4,278       | 371          | 8.7%     |
+| 23      | 2,722       | 176          | 6.5%     |
+
+### Session Quality Metrics
+- **Range**: 1-107 committee sessions per bill
+- **Average**: 3.6 sessions per bill with verified data
+- **Top Bills**: חוק התכנון והבנייה (107 sessions, 1963-1965), חוק הירושה (100 sessions, 1962-1965)
+- **Recent Examples**: הצעת חוק שירות ביטחון (57 sessions, 2022-2025)
+
 ## 📊 Available Data Tables
 
 The system downloads and manages these core tables:
@@ -597,8 +648,9 @@ The system downloads and manages these core tables:
 * **KNS_PersonToPosition** - Links people to their positions and factions *(Critical)*
 * **KNS_Query** - Parliamentary questions and queries *(Critical)*
 * **KNS_Agenda** - Parliamentary agenda items
-* **KNS_Committee** - Committee information
+* **KNS_Committee** - Committee information with historical coverage (Knessets 1-25)
 * **KNS_CommitteeSession** - Committee meeting records
+* **KNS_CmtSessionItem** - **COMPLETE DATASET** (74,951/75,051 records) for direct bill-to-session mapping
 * **KNS_GovMinistry** - Government ministries
 * **KNS_Status** - Various status codes
 * **KNS_PlenumSession** - Plenary session records

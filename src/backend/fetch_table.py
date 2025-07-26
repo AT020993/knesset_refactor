@@ -3,6 +3,15 @@ Legacy compatibility layer for fetch_table.
 
 This module provides backward compatibility for existing code that imports
 from the old fetch_table module.
+
+IMPORTANT NOTE: Committee Data Fetching
+The default fetch for KNS_Committee only retrieves recent committees (Knessets 15-16).
+For complete historical committee data across Knessets 1-25, manual KnessetNum filtering
+is required using the API endpoint:
+https://knesset.gov.il/Odata/ParliamentInfo.svc/KNS_Committee()?$filter=KnessetNum%20eq%20{N}
+
+This limitation affects committee name resolution in bill queries, which show
+"Committee [number]" instead of actual names for historical committees.
 """
 
 import warnings
