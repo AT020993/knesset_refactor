@@ -934,7 +934,9 @@ class ComparisonCharts(BaseChart):
                         y=1,
                         xanchor="left", 
                         x=1.02
-                    )
+                    ),
+                    height=800,
+                    margin=dict(t=180, b=150, l=80, r=50),
                 )
 
                 return fig
@@ -946,6 +948,352 @@ class ComparisonCharts(BaseChart):
                 exc_info=True,
             )
             st.error(f"Could not generate 'Top Bill Initiators' plot: {e}")
+            return None
+
+    def plot_bill_initiators_by_faction(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate chart showing count of MKs who were main bill initiators by faction."""
+        if not self.check_database_exists():
+            return None
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Bill",
+                    "KNS_BillInitiator", 
+                    "KNS_Person",
+                    "KNS_PersonToPosition",
+                    "KNS_Faction",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                params: List[Any] = []
+                
+                # Build base query - structure depends on Knesset selection
+                if knesset_filter and len(knesset_filter) == 1:
+                    # Single Knesset - simpler query without KnessetNum in SELECT
+                    query = """
+                    SELECT 
+                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COUNT(DISTINCT p.PersonID) AS MKCount
+                    FROM KNS_Bill b
+                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                        AND b.KnessetNum = ptp.KnessetNum
+                        AND ptp.FactionID IS NOT NULL
+                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                        AND bi.PersonID IS NOT NULL
+                        AND b.KnessetNum = ?
+                    """
+                    params.append(knesset_filter[0])
+                    knesset_title = f"Knesset {knesset_filter[0]}"
+                    
+                    # Add faction filter for single Knesset
+                    if faction_filter:
+                        valid_ids = [
+                            str(fid) for fid in faction_filter if str(fid).isdigit()
+                        ]
+                        if valid_ids:
+                            placeholders = ", ".join("?" for _ in valid_ids)
+                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            params.extend(valid_ids)
+                    
+                    query += """
+                    GROUP BY f.Name
+                    ORDER BY MKCount DESC;
+                    """
+                    
+                else:
+                    # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
+                    query = """
+                    SELECT 
+                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COUNT(DISTINCT CONCAT(p.PersonID, '-', b.KnessetNum)) AS MKCount,
+                        b.KnessetNum
+                    FROM KNS_Bill b
+                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                        AND b.KnessetNum = ptp.KnessetNum
+                        AND ptp.FactionID IS NOT NULL
+                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                        AND bi.PersonID IS NOT NULL
+                    """
+                    
+                    # Add Knesset filter for multiple Knessets
+                    if knesset_filter:
+                        knesset_placeholders = ", ".join("?" for _ in knesset_filter)
+                        query += f" AND b.KnessetNum IN ({knesset_placeholders})"
+                        params.extend(knesset_filter)
+                        knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
+                    else:
+                        knesset_title = "All Knessets"
+
+                    # Add faction filter for multiple Knessets
+                    if faction_filter:
+                        valid_ids = [
+                            str(fid) for fid in faction_filter if str(fid).isdigit()
+                        ]
+                        if valid_ids:
+                            placeholders = ", ".join("?" for _ in valid_ids)
+                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            params.extend(valid_ids)
+
+                    query += """
+                    GROUP BY f.Name, b.KnessetNum
+                    ORDER BY MKCount DESC;
+                    """
+
+                self.logger.debug(
+                    "Executing SQL for plot_bill_initiators_by_faction: %s",
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No bill initiator data found for {knesset_title} with the current filters."
+                    )
+                    return None
+
+                df["MKCount"] = pd.to_numeric(
+                    df["MKCount"], errors="coerce"
+                ).fillna(0)
+
+                # For multiple Knessets, aggregate by faction
+                if not (knesset_filter and len(knesset_filter) == 1):
+                    df = df.groupby(["FactionName"]).agg({
+                        "MKCount": "sum"
+                    }).reset_index().sort_values("MKCount", ascending=False)
+                else:
+                    # For single Knesset, ensure proper sorting
+                    df = df.sort_values("MKCount", ascending=False)
+
+                # Create bar chart
+                fig = go.Figure()
+                
+                fig.add_trace(
+                    go.Bar(
+                        x=df["FactionName"],
+                        y=df["MKCount"],
+                        name="MK Count",
+                        marker=dict(
+                            color=self.config.KNESSET_COLOR_SEQUENCE[0], 
+                            line=dict(color="black", width=1)
+                        ),
+                        text=df["MKCount"],
+                        textposition="outside",
+                        hovertemplate="<b>%{x}</b><br>MKs with Bills: %{y}<extra></extra>",
+                    )
+                )
+
+                # Update layout
+                fig.update_layout(
+                    title=f"<b>Bill Main Initiators by Faction ({knesset_title})</b>",
+                    xaxis_title="<b>Faction</b>",
+                    yaxis_title="<b>Number of MKs Who Initiated Bills</b>",
+                    showlegend=False,
+                    height=800,
+                    margin=dict(t=180, b=150, l=80, r=50),
+                    font=dict(size=12),
+                    title_font=dict(size=16),
+                    xaxis=dict(
+                        tickangle=-45,
+                        categoryorder="array",
+                        categoryarray=df["FactionName"].tolist(),
+                    ),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white",
+                )
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(f"Error in plot_bill_initiators_by_faction: {e}", exc_info=True)
+            st.error(f"Could not generate 'Bill Initiators by Faction' plot: {e}")
+            return None
+
+    def plot_total_bills_per_faction(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate chart showing total number of bills initiated per faction."""
+        if not self.check_database_exists():
+            return None
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Bill",
+                    "KNS_BillInitiator", 
+                    "KNS_Person",
+                    "KNS_PersonToPosition",
+                    "KNS_Faction",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                params: List[Any] = []
+                
+                # Build base query - structure depends on Knesset selection
+                if knesset_filter and len(knesset_filter) == 1:
+                    # Single Knesset - simpler query without KnessetNum in SELECT
+                    query = """
+                    SELECT 
+                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COUNT(DISTINCT b.BillID) AS BillCount
+                    FROM KNS_Bill b
+                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                        AND b.KnessetNum = ptp.KnessetNum
+                        AND ptp.FactionID IS NOT NULL
+                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                        AND bi.PersonID IS NOT NULL
+                        AND b.KnessetNum = ?
+                    """
+                    params.append(knesset_filter[0])
+                    knesset_title = f"Knesset {knesset_filter[0]}"
+                    
+                    # Add faction filter for single Knesset
+                    if faction_filter:
+                        valid_ids = [
+                            str(fid) for fid in faction_filter if str(fid).isdigit()
+                        ]
+                        if valid_ids:
+                            placeholders = ", ".join("?" for _ in valid_ids)
+                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            params.extend(valid_ids)
+                    
+                    query += """
+                    GROUP BY f.Name
+                    ORDER BY BillCount DESC;
+                    """
+                    
+                else:
+                    # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
+                    query = """
+                    SELECT 
+                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COUNT(DISTINCT b.BillID) AS BillCount,
+                        b.KnessetNum
+                    FROM KNS_Bill b
+                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                        AND b.KnessetNum = ptp.KnessetNum
+                        AND ptp.FactionID IS NOT NULL
+                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                        AND bi.PersonID IS NOT NULL
+                    """
+                    
+                    # Add Knesset filter for multiple Knessets
+                    if knesset_filter:
+                        knesset_placeholders = ", ".join("?" for _ in knesset_filter)
+                        query += f" AND b.KnessetNum IN ({knesset_placeholders})"
+                        params.extend(knesset_filter)
+                        knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
+                    else:
+                        knesset_title = "All Knessets"
+
+                    # Add faction filter for multiple Knessets
+                    if faction_filter:
+                        valid_ids = [
+                            str(fid) for fid in faction_filter if str(fid).isdigit()
+                        ]
+                        if valid_ids:
+                            placeholders = ", ".join("?" for _ in valid_ids)
+                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            params.extend(valid_ids)
+
+                    query += """
+                    GROUP BY f.Name, b.KnessetNum
+                    ORDER BY BillCount DESC;
+                    """
+
+                self.logger.debug(
+                    "Executing SQL for plot_total_bills_per_faction: %s",
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No bill data found for {knesset_title} with the current filters."
+                    )
+                    return None
+
+                df["BillCount"] = pd.to_numeric(
+                    df["BillCount"], errors="coerce"
+                ).fillna(0)
+
+                # For multiple Knessets, aggregate by faction
+                if not (knesset_filter and len(knesset_filter) == 1):
+                    df = df.groupby(["FactionName"]).agg({
+                        "BillCount": "sum"
+                    }).reset_index().sort_values("BillCount", ascending=False)
+                else:
+                    # For single Knesset, ensure proper sorting
+                    df = df.sort_values("BillCount", ascending=False)
+
+                # Create bar chart
+                fig = go.Figure()
+                
+                fig.add_trace(
+                    go.Bar(
+                        x=df["FactionName"],
+                        y=df["BillCount"],
+                        name="Bill Count",
+                        marker=dict(
+                            color=self.config.KNESSET_COLOR_SEQUENCE[1], 
+                            line=dict(color="black", width=1)
+                        ),
+                        text=df["BillCount"],
+                        textposition="outside",
+                        hovertemplate="<b>%{x}</b><br>Total Bills: %{y}<extra></extra>",
+                    )
+                )
+
+                # Update layout
+                fig.update_layout(
+                    title=f"<b>Total Bills Initiated by Faction ({knesset_title})</b>",
+                    xaxis_title="<b>Faction</b>",
+                    yaxis_title="<b>Total Number of Bills Initiated</b>",
+                    showlegend=False,
+                    height=800,
+                    margin=dict(t=180, b=150, l=80, r=50),
+                    font=dict(size=12),
+                    title_font=dict(size=16),
+                    xaxis=dict(
+                        tickangle=-45,
+                        categoryorder="array",
+                        categoryarray=df["FactionName"].tolist(),
+                    ),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white",
+                )
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(f"Error in plot_total_bills_per_faction: {e}", exc_info=True)
+            st.error(f"Could not generate 'Total Bills per Faction' plot: {e}")
             return None
 
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
@@ -960,6 +1308,8 @@ class ComparisonCharts(BaseChart):
             "bills_per_faction": self.plot_bills_per_faction,
             "bills_by_coalition_status": self.plot_bills_by_coalition_status,
             "top_bill_initiators": self.plot_top_bill_initiators,
+            "bill_initiators_by_faction": self.plot_bill_initiators_by_faction,
+            "total_bills_per_faction": self.plot_total_bills_per_faction,
         }
 
         method = chart_methods.get(chart_type)

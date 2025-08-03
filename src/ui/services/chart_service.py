@@ -94,3 +94,11 @@ class ChartService:
     def plot_top_bill_initiators(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for top bill initiators."""
         return self.create_chart("comparison", "top_bill_initiators", **kwargs)
+
+    def plot_bill_initiators_by_faction(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for bill initiators by faction."""
+        return self.create_chart("comparison", "bill_initiators_by_faction", **kwargs)
+
+    def plot_total_bills_per_faction(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for total bills per faction."""
+        return self.create_chart("comparison", "total_bills_per_faction", **kwargs)

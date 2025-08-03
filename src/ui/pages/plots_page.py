@@ -333,8 +333,8 @@ class PlotsPageRenderer:
         if not selected_chart:
             return
         
-        # COMPLETELY SKIP for Top 10 Bill Initiators - NO FILTERS AT ALL
-        if selected_chart == "Top 10 Bill Initiators":
+        # COMPLETELY SKIP for ALL bill charts - NO ADDITIONAL FILTERS
+        if "Bill" in selected_chart or "Bills" in selected_chart:
             return
             
         # Query-specific filters
@@ -346,11 +346,6 @@ class PlotsPageRenderer:
         elif "Agenda" in selected_chart or "Agendas" in selected_chart:
             st.markdown("**Additional Filters:**")
             self._render_agenda_filters(selected_chart)
-            
-        # Bill-specific filters
-        elif "Bill" in selected_chart or "Bills" in selected_chart:
-            st.markdown("**Additional Filters:**")
-            self._render_bill_filters(selected_chart)
 
     def _render_query_filters(self, selected_chart: str) -> None:
         """Render query-specific filter options."""

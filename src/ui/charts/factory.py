@@ -75,6 +75,8 @@ class ChartFactory:
                 "bills_per_faction",
                 "bills_by_coalition_status",
                 "top_bill_initiators",
+                "bill_initiators_by_faction",
+                "total_bills_per_faction",
             ],
         }
 
