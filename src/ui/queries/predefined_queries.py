@@ -354,6 +354,7 @@ SELECT
     -- Plenum session data (from KNS_PlmSessionItem text analysis)
     COALESCE(bps.PlenumSessionCount, 0) AS BillPlenumSessionCount,
     strftime(bps.FirstPlenumSession, '%Y-%m-%d') as BillFirstPlenumSession,
+    strftime(bps.FirstPlenumSession, '%Y-%m-%d') as FirstPlenumDiscussionDate,
     strftime(bps.LastPlenumSession, '%Y-%m-%d') as BillLastPlenumSession,
     ROUND(bps.AvgPlenumSessionDurationMinutes, 1) AS BillAvgPlenumSessionDurationMinutes,
     CASE 
@@ -410,8 +411,8 @@ ORDER BY B.KnessetNum DESC, B.BillID DESC;
         "faction_filter_column": "NULL", # Bills don't have direct faction association
         "description": (
             "Comprehensive bill data with initiator information, committee assignments, "
-            "status details, committee session activity analysis, and plenum session information "
-            "extracted from document file paths"
+            "status details, committee session activity analysis, plenum session information "
+            "with FirstPlenumDiscussionDate showing when each bill was first discussed in plenum"
         ),
     },
 }

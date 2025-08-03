@@ -178,6 +178,12 @@ def plot_bills_by_coalition_status(db_path, connect_func, logger_obj, **kwargs):
     return chart_service.plot_bills_by_coalition_status(**kwargs)
 
 
+def plot_top_bill_initiators(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for top bill initiators chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_top_bill_initiators(**kwargs)
+
+
 def get_available_plots():
     """Return available plot categories and their functions for the UI."""
     return {
@@ -200,5 +206,6 @@ def get_available_plots():
             "Bill SubType Distribution": plot_bill_subtype_distribution,
             "Bills per Faction": plot_bills_per_faction,
             "Bills by Coalition Status": plot_bills_by_coalition_status,
+            "Top 10 Bill Initiators": plot_top_bill_initiators,
         },
     }

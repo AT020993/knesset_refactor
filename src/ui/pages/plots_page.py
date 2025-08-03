@@ -332,19 +332,24 @@ class PlotsPageRenderer:
         """Render advanced filters specific to each chart type."""
         if not selected_chart:
             return
-            
-        st.markdown("**Additional Filters:**")
         
+        # COMPLETELY SKIP for Top 10 Bill Initiators - NO FILTERS AT ALL
+        if selected_chart == "Top 10 Bill Initiators":
+            return
+            
         # Query-specific filters
         if "Query" in selected_chart or "Queries" in selected_chart:
+            st.markdown("**Additional Filters:**")
             self._render_query_filters(selected_chart)
         
         # Agenda-specific filters  
         elif "Agenda" in selected_chart or "Agendas" in selected_chart:
+            st.markdown("**Additional Filters:**")
             self._render_agenda_filters(selected_chart)
             
         # Bill-specific filters
         elif "Bill" in selected_chart or "Bills" in selected_chart:
+            st.markdown("**Additional Filters:**")
             self._render_bill_filters(selected_chart)
 
     def _render_query_filters(self, selected_chart: str) -> None:
@@ -672,7 +677,7 @@ class PlotsPageRenderer:
             plot_args["session_type_filter"] = st.session_state.get('plot_session_type_filter', [])
             plot_args["agenda_status_filter"] = st.session_state.get('plot_agenda_status_filter', [])
             
-        elif "Bill" in selected_chart or "Bills" in selected_chart:
+        elif ("Bill" in selected_chart or "Bills" in selected_chart) and not ("Top" in selected_chart and "Initiators" in selected_chart):
             plot_args["bill_type_filter"] = st.session_state.get('plot_bill_type_filter', [])
             plot_args["bill_status_filter"] = st.session_state.get('plot_bill_status_filter', [])
 

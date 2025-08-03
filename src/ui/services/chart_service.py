@@ -90,3 +90,7 @@ class ChartService:
     def plot_bills_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for bills by coalition status."""
         return self.create_chart("comparison", "bills_by_coalition_status", **kwargs)
+
+    def plot_top_bill_initiators(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for top bill initiators."""
+        return self.create_chart("comparison", "top_bill_initiators", **kwargs)
