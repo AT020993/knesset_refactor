@@ -48,7 +48,7 @@ Transform complex parliamentary data into actionable insights with:
 
 - 🔄 **Automated data fetching** from official Knesset OData API
 - 💾 **Efficient storage** in DuckDB with Parquet backup
-- 📊 **15+ interactive visualizations** for parliamentary analysis  
+- 📊 **18+ interactive visualizations** for parliamentary analysis  
 - 🖥️ **User-friendly Streamlit interface** for non-technical users
 - ⚙️ **Robust CLI tools** for automated workflows
 - 📈 **Custom chart builder** for exploratory data analysis
@@ -130,7 +130,7 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
 * **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries with error handling
 * **Data Export:** Multi-format download (CSV, Excel) with proper encoding support
 * **Comprehensive Visualizations:**
-    * **Predefined Charts:** Over 15 ready-to-use visualizations covering queries, agendas, and advanced analytics
+    * **Predefined Charts:** Over 18 ready-to-use visualizations covering queries, agendas, bills, and advanced analytics
     * **Query Analytics:** Response times by ministry, coalition status analysis with optional date range filtering, performance metrics
     * **Parliamentary Activity:** Calendar heatmaps showing daily activity intensity patterns
     * **Network Analysis:** MK collaboration networks based on shared ministry focus
@@ -385,7 +385,7 @@ Access the UI at `http://localhost:8501`
 | 🔄 **Data Refresh** | Update OData tables and faction statuses |
 | 🔍 **Table Explorer** | Browse tables with dynamic filters |
 | 📊 **Predefined Queries** | Run analytical queries with coalition status, bill merge tracking, and local filtering |
-| 📈 **15+ Visualizations** | Query analytics, activity patterns, collaboration networks |
+| 📈 **18+ Visualizations** | Query analytics, activity patterns, bill analysis, collaboration networks |
 | 🎨 **Custom Charts** | Interactive chart builder for exploration |
 | 💻 **SQL Sandbox** | Execute custom SQL queries |
 | 📥 **Data Export** | Download results in CSV or Excel format |
@@ -677,7 +677,7 @@ The system downloads and manages these core tables:
 
 ## 📊 Available Visualizations
 
-The platform includes 15+ predefined visualizations organized into three categories:
+The platform includes 18+ predefined visualizations organized into four categories:
 
 ### Query Analytics
 * **Queries by Time Period** - Track submission patterns over time
@@ -693,6 +693,16 @@ The platform includes 15+ predefined visualizations organized into three categor
 * **Status Distribution** - Current status of agenda items
 * **Faction Activity** - Agenda items by initiating faction
 * **Coalition Impact** - Agenda success rates by coalition/opposition status
+
+### Bills Analytics
+* **Bill Status Distribution** - Breakdown of bills by current status (active, passed, rejected)
+* **Bills by Time Period** - Track bill submission patterns over time
+* **Bill SubType Distribution** - Classification of bills by subtype (private, government, etc.)
+* **Bills per Faction** - Number of bills initiated by each faction
+* **Bills by Coalition Status** - Bill activity comparison between coalition and opposition
+* **Top 10 Bill Initiators** - Individual MKs with highest number of initiated bills
+* **Bill Initiators by Faction** - Count of MKs per faction who initiated at least one bill
+* **Total Bills per Faction** - Cumulative bill count from all members of each faction
 
 ### Advanced Analytics
 * **Parliamentary Activity Heatmap** - Calendar view of daily activity intensity
