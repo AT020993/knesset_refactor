@@ -233,7 +233,7 @@ class DistributionCharts(BaseChart):
         faction_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate bill status distribution chart."""
+        """Generate bill status distribution chart with legislative stage categorization."""
         if not self.check_database_exists():
             return None
 
@@ -246,15 +246,20 @@ class DistributionCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_Status"]):
                     return None
 
+                # Categorize statuses into legislative stages
                 query = f"""
                     SELECT
-                        COALESCE(s."Desc", 'Unknown') AS Status,
+                        CASE 
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (108, 111, 141, 109, 101, 106, 142, 150) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(b.BillID) AS Count
                     FROM KNS_Bill b
                     LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
                     WHERE b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
-                    GROUP BY s."Desc"
+                    GROUP BY Stage
                     ORDER BY Count DESC
                 """
 
@@ -266,15 +271,47 @@ class DistributionCharts(BaseChart):
                     )
                     return None
 
-                fig = px.pie(
-                    df,
-                    values="Count",
-                    names="Status",
-                    title=f"<b>Bill Status Distribution for {filters['knesset_title']}</b>",
-                )
+                # Calculate percentages and prepare labels with counts
+                total_bills = df['Count'].sum()
+                df['Percentage'] = (df['Count'] / total_bills * 100).round(1)
+                
+                # Define colors for each stage
+                colors = {
+                    'התקבלה בקריאה שלישית': '#2E8B57',      # Sea Green - success
+                    'קריאה ראשונה': '#4682B4',                # Steel Blue - in progress
+                    'הופסק/לא פעיל': '#CD5C5C'               # Indian Red - stopped
+                }
 
-                fig.update_traces(textposition="inside", textinfo="percent+label")
-                fig.update_layout(title_x=0.5)
+                # Create pie chart with custom hover and text
+                fig = go.Figure(data=[go.Pie(
+                    labels=df['Stage'],
+                    values=df['Count'],
+                    textinfo='percent',
+                    texttemplate='%{percent}<br><b>%{value}</b>',
+                    hovertemplate='<b>%{label}</b><br>' +
+                                  'Bills: %{value}<br>' +
+                                  'Percentage: %{percent}<br>' +
+                                  '<extra></extra>',
+                    marker_colors=[colors.get(stage, '#808080') for stage in df['Stage']],
+                    textposition='auto',
+                    textfont_size=14,
+                    textfont_color='white'
+                )])
+
+                fig.update_layout(
+                    title=f"<b>Bill Status Distribution by Legislative Stage<br>{filters['knesset_title']}</b>",
+                    title_x=0.5,
+                    font_size=12,
+                    height=600,
+                    showlegend=True,
+                    legend=dict(
+                        orientation="v",
+                        yanchor="middle",
+                        y=0.5,
+                        xanchor="left",
+                        x=1.05
+                    )
+                )
 
                 return fig
 

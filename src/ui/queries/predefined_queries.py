@@ -235,6 +235,56 @@ BillDocuments AS (
     FROM KNS_DocumentBill db
     WHERE db.FilePath IS NOT NULL
     GROUP BY db.BillID
+),
+BillFirstSubmission AS (
+    -- Get the earliest activity date for each bill (true submission date)
+    -- This considers initiator assignment, committee sessions, plenum sessions, and publication
+    SELECT 
+        B.BillID,
+        MIN(earliest_date) as FirstSubmissionDate
+    FROM KNS_Bill B
+    LEFT JOIN (
+        -- Initiator assignment dates (often the earliest/true submission)
+        SELECT 
+            BI.BillID,
+            MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+        FROM KNS_BillInitiator BI
+        WHERE BI.LastUpdatedDate IS NOT NULL
+        GROUP BY BI.BillID
+        
+        UNION ALL
+        
+        -- Committee session dates
+        SELECT 
+            csi.ItemID as BillID,
+            MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+        FROM KNS_CmtSessionItem csi
+        JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL
+        GROUP BY csi.ItemID
+        
+        UNION ALL
+        
+        -- Plenum session dates
+        SELECT 
+            psi.ItemID as BillID,
+            MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+        FROM KNS_PlmSessionItem psi
+        JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL
+        GROUP BY psi.ItemID
+        
+        UNION ALL
+        
+        -- Publication dates
+        SELECT 
+            B.BillID,
+            CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+        FROM KNS_Bill B
+        WHERE B.PublicationDate IS NOT NULL
+    ) all_dates ON B.BillID = all_dates.BillID
+    WHERE all_dates.earliest_date IS NOT NULL
+    GROUP BY B.BillID
 )
 SELECT
     B.BillID,
@@ -370,7 +420,10 @@ SELECT
         WHEN LENGTH(bd.DocumentLinks) > 500 THEN 
             SUBSTRING(bd.DocumentLinks, 1, 497) || '...'
         ELSE bd.DocumentLinks
-    END AS BillDocumentLinks
+    END AS BillDocumentLinks,
+    
+    -- First Bill Submission Date (earliest activity: initiator assignment, committee, plenum, or publication)
+    strftime(bfs.FirstSubmissionDate, '%Y-%m-%d') AS FirstBillSubmissionDate
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
@@ -392,6 +445,7 @@ LEFT JOIN BillCommitteeSessions bcs ON B.BillID = bcs.BillID
 LEFT JOIN BillPlenumSessions bps ON B.BillID = bps.BillID
 LEFT JOIN KNS_PlmSessionItem psi ON B.BillID = psi.ItemID
 LEFT JOIN BillDocuments bd ON B.BillID = bd.BillID
+LEFT JOIN BillFirstSubmission bfs ON B.BillID = bfs.BillID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
@@ -403,7 +457,7 @@ GROUP BY
     bcs.BillSpecificSessions, bcs.FirstRelevantSession, bcs.LastRelevantSession,
     bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
     bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc,
-    bd.DocumentCount, bd.DocumentLinks
+    bd.DocumentCount, bd.DocumentLinks, bfs.FirstSubmissionDate
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
@@ -412,7 +466,8 @@ ORDER BY B.KnessetNum DESC, B.BillID DESC;
         "description": (
             "Comprehensive bill data with initiator information, committee assignments, "
             "status details, committee session activity analysis, plenum session information "
-            "with FirstPlenumDiscussionDate showing when each bill was first discussed in plenum"
+            "with FirstPlenumDiscussionDate showing when each bill was first discussed in plenum, "
+            "and FirstBillSubmissionDate showing the earliest activity date (true submission: initiator assignment, committee, plenum, or publication)"
         ),
     },
 }

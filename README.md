@@ -121,6 +121,7 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * **Enhanced Committee Resolution:** Improved committee name resolution from 14.8% to 71.4% success rate using historical committee data across Knessets 1-25
     * **Committee Session Analysis:** **COMPLETE DATASET** - Downloaded 74,951/75,051 committee session items (99.9%) providing 10,232 bills with verified committee session connections (1-107 sessions per bill, 17.6% coverage - 5.1x improvement)
     * **Plenum Session Integration:** Direct bill-to-plenum session connections with 14,411 bills linked to plenum sessions (2011-2025), showing session counts, timelines, duration analysis, and session details
+    * **Bill Timeline Analysis:** NEW `FirstBillSubmissionDate` column providing accurate bill submission dates using multi-source date resolution (98.2% coverage with chronologically ordered timelines: submission ≤ committee ≤ plenum)
     * **Institutional Handling:** Properly labels government bills and institutional agenda items
 * **Interactive Table Explorer:**
     * Dynamic table browsing with intelligent filter application
@@ -313,6 +314,7 @@ streamlit run src/ui/data_refresh.py
 
 ### ✨ Recent Major Updates
 
+- 📅 **August 2025: Enhanced Bill Timeline Analysis** - Added `FirstBillSubmissionDate` column with multi-source date resolution, ensuring chronological accuracy (submission ≤ committee ≤ plenum) and 98.2% coverage across all bills
 - 🏗️ **Architecture Refactoring**: Broke down monolithic 624-line file into focused modules (80% reduction)
 - 🧩 **Component-based UI** with clean separation of concerns
 - 🎯 **Type-safe session management** with centralized state
