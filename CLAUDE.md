@@ -93,7 +93,7 @@ This is a **Knesset parliamentary data analysis platform** built with **clean ar
    - Document link aggregation
    - Legislative merge tracking
    - Member faction analysis with percentages
-4. **Presentation**: Interactive Streamlit UI with 18+ visualizations and enhanced query capabilities
+4. **Presentation**: Interactive Streamlit UI with 21+ visualizations including network analysis and enhanced query capabilities
 
 ## Bill Initiator Analysis System
 
@@ -177,6 +177,12 @@ All charts containing "Bill" or "Bills" in the name now use simplified filtering
 - Top 10 Bill Initiators
 - Bill Initiators by Faction
 - Total Bills per Faction
+
+### Network Charts
+Network collaboration charts use Knesset filtering only (no additional filters):
+- MK Collaboration Network
+- Faction Collaboration Network
+- Coalition/Opposition Network
 
 ### Chart Spacing Standards
 - **Height**: 800px for all bill charts (ensures adequate space for data labels)
@@ -268,3 +274,99 @@ The algorithm prioritizes dates in this logical order:
 3. **PublicationDate**: Final fallback for published bills
 
 This approach provides the most accurate representation of when bills actually entered the legislative process.
+
+## Collaboration Network Analysis System
+
+### Network/Connection Map Charts (2025-08-05)
+
+The platform includes three interactive network visualization charts that analyze collaboration patterns in Israeli parliamentary bill legislation:
+
+#### 1. MK Collaboration Network (`plot_mk_collaboration_network`)
+- **Purpose**: Visualizes individual MK collaboration patterns through bill co-sponsorship
+- **Data**: Shows which MKs collaborate most frequently as primary and supporting bill initiators
+- **Visualization**: Interactive network with nodes (MKs) and edges (collaboration relationships)
+- **Features**:
+  - Node size reflects total bills initiated by each MK
+  - Node colors group MKs by faction affiliation
+  - Minimum collaboration threshold (configurable, default 3+ bills)
+  - Circular network layout with hover details
+- **Location**: `src/ui/charts/network.py:21`
+
+#### 2. Faction Collaboration Network (`plot_faction_collaboration_network`)
+- **Purpose**: Shows inter-faction collaboration patterns in bill initiation
+- **Data**: Analyzes which factions work together across party lines on legislative initiatives
+- **Visualization**: Network showing faction-to-faction collaboration relationships
+- **Features**:
+  - Nodes represent political factions
+  - Edges show collaboration strength between factions
+  - Minimum collaboration threshold (configurable, default 5+ bills)
+  - Coalition/opposition status integration
+- **Location**: `src/ui/charts/network.py:116`
+
+#### 3. Coalition/Opposition Network (`plot_coalition_opposition_network`)
+- **Purpose**: Analyzes cross-party cooperation between coalition and opposition members
+- **Data**: Identifies bills where coalition and opposition MKs collaborate
+- **Visualization**: Specialized network highlighting bi-partisan legislative cooperation
+- **Features**:
+  - Focuses specifically on coalition-opposition collaboration
+  - Shows faction-level details in annotations
+  - Minimum collaboration threshold (configurable, default 3+ bills)
+  - Cross-party cooperation metrics
+- **Location**: `src/ui/charts/network.py:191`
+
+### Technical Implementation
+
+**Network Chart Architecture**:
+- Built on the modular chart system extending `BaseChart`
+- Uses Plotly interactive network visualizations with circular layouts
+- Implements robust Hebrew text handling for faction names
+- Database queries analyze `KNS_BillInitiator` table with `Ordinal` field for proper collaboration detection
+
+**SQL Analysis Logic**:
+- **Primary Initiators**: `main.Ordinal = 1` (bill sponsors)
+- **Supporting Initiators**: `supp.Ordinal > 1` (co-sponsors)
+- **Collaboration Detection**: JOIN on same BillID between primary and supporting initiators
+- **Faction Mapping**: LEFT JOIN with `KNS_PersonToPosition` and `KNS_Faction` for proper faction resolution
+- **Coalition Status**: Integration with `UserFactionCoalitionStatus` for cross-party analysis
+
+**Data Processing Features**:
+- Configurable minimum collaboration thresholds
+- Proper handling of Hebrew faction names and MK names
+- Error handling and fallback visualizations
+- Node sizing based on activity levels (total bills initiated)
+- Color coding by faction or coalition status
+
+**UI Integration**:
+- Available in "Collaboration Networks" section of Streamlit interface
+- Registered in `ChartFactory` under "network" category
+- Service layer methods in `chart_service.py`
+- Legacy compatibility wrappers in `plot_generators.py`
+
+### Network Visualization Features
+
+**Interactive Elements**:
+- **Hover Information**: Shows collaboration counts, faction affiliations, and bill totals
+- **Node Sizing**: Proportional to legislative activity (total bills initiated)
+- **Color Grouping**: Visual distinction by faction (MK networks) or coalition status
+- **Circular Layout**: Optimized for readability with proper spacing
+- **Legend Support**: Faction-based legends for easy identification
+
+**Error Handling**:
+- Robust Hebrew text processing with safe string conversion
+- Fallback visualizations when data processing fails
+- Database connection error handling
+- Empty data state management
+
+### Use Cases
+
+**Research Applications**:
+- **Political Science**: Study cross-party collaboration patterns in parliamentary systems
+- **Legislative Analysis**: Identify most collaborative MKs and factions
+- **Coalition Dynamics**: Analyze bi-partisan cooperation trends
+- **Faction Relationships**: Understand inter-faction legislative partnerships
+
+**Data Insights**:
+- Which MKs work together most frequently across party lines
+- How often coalition and opposition collaborate on legislation
+- Which factions have the strongest inter-party relationships
+- Patterns of legislative cooperation by Knesset term

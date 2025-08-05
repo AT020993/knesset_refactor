@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from .comparison import ComparisonCharts
 from .distribution import DistributionCharts
 from .time_series import TimeSeriesCharts
+from .network import NetworkCharts
 
 
 class ChartFactory:
@@ -23,6 +24,7 @@ class ChartFactory:
             "time_series": TimeSeriesCharts(db_path, logger_obj),
             "distribution": DistributionCharts(db_path, logger_obj),
             "comparison": ComparisonCharts(db_path, logger_obj),
+            "network": NetworkCharts(db_path, logger_obj),
         }
 
     def create_chart(
@@ -77,6 +79,11 @@ class ChartFactory:
                 "top_bill_initiators",
                 "bill_initiators_by_faction",
                 "total_bills_per_faction",
+            ],
+            "network": [
+                "mk_collaboration_network",
+                "faction_collaboration_network",
+                "coalition_opposition_network",
             ],
         }
 

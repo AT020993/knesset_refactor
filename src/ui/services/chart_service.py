@@ -102,3 +102,16 @@ class ChartService:
     def plot_total_bills_per_faction(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for total bills per faction."""
         return self.create_chart("comparison", "total_bills_per_faction", **kwargs)
+
+    # Network chart methods
+    def plot_mk_collaboration_network(self, **kwargs) -> Optional[go.Figure]:
+        """Generate MK collaboration network chart."""
+        return self.create_chart("network", "mk_collaboration_network", **kwargs)
+
+    def plot_faction_collaboration_network(self, **kwargs) -> Optional[go.Figure]:
+        """Generate faction collaboration network chart."""
+        return self.create_chart("network", "faction_collaboration_network", **kwargs)
+
+    def plot_coalition_opposition_network(self, **kwargs) -> Optional[go.Figure]:
+        """Generate coalition/opposition collaboration network chart."""
+        return self.create_chart("network", "coalition_opposition_network", **kwargs)

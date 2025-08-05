@@ -196,6 +196,25 @@ def plot_total_bills_per_faction(db_path, connect_func, logger_obj, **kwargs):
     return chart_service.plot_total_bills_per_faction(**kwargs)
 
 
+# Network chart wrappers
+def plot_mk_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for MK collaboration network chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_mk_collaboration_network(**kwargs)
+
+
+def plot_faction_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for faction collaboration network chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_faction_collaboration_network(**kwargs)
+
+
+def plot_coalition_opposition_network(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for coalition/opposition collaboration network chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_coalition_opposition_network(**kwargs)
+
+
 def get_available_plots():
     """Return available plot categories and their functions for the UI."""
     return {
@@ -221,5 +240,10 @@ def get_available_plots():
             "Top 10 Bill Initiators": plot_top_bill_initiators,
             "Bill Initiators by Faction": plot_bill_initiators_by_faction,
             "Total Bills per Faction": plot_total_bills_per_faction,
+        },
+        "Collaboration Networks": {
+            "MK Collaboration Network": plot_mk_collaboration_network,
+            "Faction Collaboration Network": plot_faction_collaboration_network,
+            "Coalition/Opposition Network": plot_coalition_opposition_network,
         },
     }
