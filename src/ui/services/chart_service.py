@@ -112,6 +112,6 @@ class ChartService:
         """Generate faction collaboration network chart."""
         return self.create_chart("network", "faction_collaboration_network", **kwargs)
 
-    def plot_coalition_opposition_network(self, **kwargs) -> Optional[go.Figure]:
-        """Generate coalition/opposition collaboration network chart."""
-        return self.create_chart("network", "coalition_opposition_network", **kwargs)
+    def plot_faction_coalition_breakdown(self, **kwargs) -> Optional[go.Figure]:
+        """Generate faction collaboration breakdown chart showing Coalition vs Opposition percentages."""
+        return self.create_chart("network", "faction_coalition_breakdown", **kwargs)

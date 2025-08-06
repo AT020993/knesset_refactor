@@ -209,10 +209,10 @@ def plot_faction_collaboration_network(db_path, connect_func, logger_obj, **kwar
     return chart_service.plot_faction_collaboration_network(**kwargs)
 
 
-def plot_coalition_opposition_network(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper for coalition/opposition collaboration network chart."""
+def plot_faction_coalition_breakdown(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for faction collaboration breakdown chart."""
     chart_service = ChartService(db_path, logger_obj)
-    return chart_service.plot_coalition_opposition_network(**kwargs)
+    return chart_service.plot_faction_coalition_breakdown(**kwargs)
 
 
 def get_available_plots():
@@ -244,6 +244,6 @@ def get_available_plots():
         "Collaboration Networks": {
             "MK Collaboration Network": plot_mk_collaboration_network,
             "Faction Collaboration Network": plot_faction_collaboration_network,
-            "Coalition/Opposition Network": plot_coalition_opposition_network,
+            "Faction Coalition Breakdown": plot_faction_coalition_breakdown,
         },
     }

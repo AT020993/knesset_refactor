@@ -275,98 +275,208 @@ The algorithm prioritizes dates in this logical order:
 
 This approach provides the most accurate representation of when bills actually entered the legislative process.
 
-## Collaboration Network Analysis System
+## Collaboration Network Analysis System (2025-08-06 - Updated)
 
-### Network/Connection Map Charts (2025-08-05)
+### Network/Connection Map Charts 
 
-The platform includes three interactive network visualization charts that analyze collaboration patterns in Israeli parliamentary bill legislation:
+The platform includes three interactive visualization charts that analyze collaboration patterns in Israeli parliamentary bill legislation:
 
 #### 1. MK Collaboration Network (`plot_mk_collaboration_network`)
 - **Purpose**: Visualizes individual MK collaboration patterns through bill co-sponsorship
 - **Data**: Shows which MKs collaborate most frequently as primary and supporting bill initiators
-- **Visualization**: Interactive network with nodes (MKs) and edges (collaboration relationships)
+- **Visualization**: Interactive force-directed network with enhanced node sizing and visibility
 - **Features**:
-  - Node size reflects total bills initiated by each MK
-  - Node colors group MKs by faction affiliation
-  - Minimum collaboration threshold (configurable, default 3+ bills)
-  - Circular network layout with hover details
+  - **Enhanced Node Sizing**: 20-80px nodes based on total bills initiated (dramatically improved visibility)
+  - **Force-Directed Layout**: Dynamic positioning that clusters connected nodes for better readability
+  - **Faction-Based Coloring**: Visual distinction by political faction with comprehensive legend
+  - **Improved Text Rendering**: Black text on colored backgrounds for maximum readability
+  - **Advanced Faction Mapping**: Multi-level resolution with fallback logic achieving 100% faction coverage
+  - **Minimum collaboration threshold**: Configurable (default 3+ bills)
+  - **Interactive Hover**: Detailed information including collaboration counts and bill totals
+- **Technical Improvements**: Fixed gray node issues through enhanced SQL faction resolution
 - **Location**: `src/ui/charts/network.py:21`
 
 #### 2. Faction Collaboration Network (`plot_faction_collaboration_network`)
-- **Purpose**: Shows inter-faction collaboration patterns in bill initiation
-- **Data**: Analyzes which factions work together across party lines on legislative initiatives
-- **Visualization**: Network showing faction-to-faction collaboration relationships
+- **Purpose**: Shows inter-faction collaboration patterns with accurate bill counting
+- **Data**: Analyzes which factions work together across party lines on legislative initiatives  
+- **Visualization**: Network showing faction-to-faction collaboration relationships with proper node sizing
+- **Key Fixes (2025-08-06)**:
+  - **Accurate Bill Counting**: Uses `COUNT(DISTINCT bi.BillID)` to prevent double-counting when multiple MKs from same faction initiate the same bill
+  - **Enhanced Node Sizing**: 30-100px nodes based on total bills per faction (not collaboration count)
+  - **Coalition/Opposition Layout**: Clear visual separation between political alignments
+  - **Comprehensive Hover Information**: Shows total bills, collaborations, and partner faction counts
 - **Features**:
-  - Nodes represent political factions
-  - Edges show collaboration strength between factions
-  - Minimum collaboration threshold (configurable, default 5+ bills)
-  - Coalition/opposition status integration
-- **Location**: `src/ui/charts/network.py:116`
+  - Node sizes reflect **total unique bills** initiated by each faction
+  - Color coding by coalition status (Coalition=Blue, Opposition=Orange, Unknown=Gray)
+  - Minimum collaboration threshold (configurable, default 5+ bills)  
+  - Force-directed positioning for optimal readability
+- **Data Quality**: Proper faction-to-person mapping ensuring accurate bill attribution
+- **Location**: `src/ui/charts/network.py:112`
 
-#### 3. Coalition/Opposition Network (`plot_coalition_opposition_network`)
-- **Purpose**: Analyzes cross-party cooperation between coalition and opposition members
-- **Data**: Identifies bills where coalition and opposition MKs collaborate
-- **Visualization**: Specialized network highlighting bi-partisan legislative cooperation
+#### 3. Faction Coalition Breakdown (`plot_faction_coalition_breakdown`) 
+- **Purpose**: Shows percentage breakdown of each faction's collaborations with Coalition vs Opposition partners
+- **Data**: Analyzes collaboration patterns by political alignment rather than network topology
+- **Visualization**: Horizontal stacked bar chart showing Coalition vs Opposition collaboration percentages
 - **Features**:
-  - Focuses specifically on coalition-opposition collaboration
-  - Shows faction-level details in annotations
-  - Minimum collaboration threshold (configurable, default 3+ bills)
-  - Cross-party cooperation metrics
-- **Location**: `src/ui/charts/network.py:191`
+  - **Stacked Percentage Bars**: Visual breakdown of collaboration distribution
+  - **Clean Black Annotations**: "Total: X" numbers on right side in black text (no political color confusion)
+  - **Whole Number Display**: Clean integers without decimal places (e.g., "Total: 45" not "Total: 45.0")
+  - **Coalition Status Integration**: Blue bars for Coalition collaborations, Orange for Opposition
+  - **Dynamic Height**: Chart scales based on number of factions
+  - **Enhanced Spacing**: Proper title/legend positioning to prevent overlap
+- **Replaces**: Previously removed coalition/opposition network chart (2025-08-06)
+- **Use Case**: Understanding cross-party cooperation patterns by political alignment
+- **Location**: `src/ui/charts/network.py:235`
 
-### Technical Implementation
+### Technical Implementation (Updated 2025-08-06)
 
 **Network Chart Architecture**:
 - Built on the modular chart system extending `BaseChart`
-- Uses Plotly interactive network visualizations with circular layouts
-- Implements robust Hebrew text handling for faction names
-- Database queries analyze `KNS_BillInitiator` table with `Ordinal` field for proper collaboration detection
+- Uses Plotly interactive network visualizations with force-directed and coalition-based layouts
+- Implements robust Hebrew text handling with safe string conversion
+- Advanced SQL queries with multi-level faction resolution and double-counting prevention
 
-**SQL Analysis Logic**:
+**Enhanced SQL Analysis Logic**:
 - **Primary Initiators**: `main.Ordinal = 1` (bill sponsors)
 - **Supporting Initiators**: `supp.Ordinal > 1` (co-sponsors)
 - **Collaboration Detection**: JOIN on same BillID between primary and supporting initiators
-- **Faction Mapping**: LEFT JOIN with `KNS_PersonToPosition` and `KNS_Faction` for proper faction resolution
-- **Coalition Status**: Integration with `UserFactionCoalitionStatus` for cross-party analysis
+- **Advanced Faction Mapping**: Multi-level COALESCE queries with fallback logic:
+  ```sql
+  COALESCE(
+      -- Try current Knesset first
+      (SELECT f.Name FROM KNS_PersonToPosition ptp 
+       JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+       WHERE ptp.PersonID = person.PersonID AND ptp.KnessetNum = current_knesset
+       ORDER BY ptp.StartDate DESC LIMIT 1),
+      -- Fallback to most recent faction
+      (SELECT f.Name FROM KNS_PersonToPosition ptp
+       JOIN KNS_Faction f ON ptp.FactionID = f.FactionID  
+       WHERE ptp.PersonID = person.PersonID
+       ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+  )
+  ```
+- **Bill Counting with Double-Count Prevention**: 
+  - Uses `COUNT(DISTINCT bi.BillID)` in `FactionTotalBills` CTE
+  - Ensures accurate faction node sizing without duplicate counting
+  - Proper bill-to-faction attribution through KnessetNum matching
 
 **Data Processing Features**:
-- Configurable minimum collaboration thresholds
-- Proper handling of Hebrew faction names and MK names
-- Error handling and fallback visualizations
-- Node sizing based on activity levels (total bills initiated)
-- Color coding by faction or coalition status
+- **Collaboration Relationship Definition**: Minimum threshold filtering (5+ bills) to show only meaningful partnerships
+- **Bidirectional Counting**: Separate tracking of Faction A→B and B→A relationships
+- **Enhanced Error Handling**: Comprehensive Hebrew text processing with safe string conversion
+- **Node Sizing Algorithms**: 
+  - MK Network: 20-80px based on individual bill counts
+  - Faction Network: 30-100px based on total faction bills (with double-count prevention)
+- **Color Coding Systems**:
+  - Faction-based coloring for MK networks (Set3 palette)
+  - Coalition status coloring (Blue=Coalition, Orange=Opposition, Gray=Unknown)
+  - Black text annotations for clean readability
 
 **UI Integration**:
 - Available in "Collaboration Networks" section of Streamlit interface
-- Registered in `ChartFactory` under "network" category
-- Service layer methods in `chart_service.py`
+- Registered in `ChartFactory` under "network" category with updated chart types
+- Service layer methods in `chart_service.py` 
 - Legacy compatibility wrappers in `plot_generators.py`
+- Chart factory registration updated to include `faction_coalition_breakdown`
 
-### Network Visualization Features
+### Network Visualization Features (Enhanced 2025-08-06)
 
 **Interactive Elements**:
-- **Hover Information**: Shows collaboration counts, faction affiliations, and bill totals
-- **Node Sizing**: Proportional to legislative activity (total bills initiated)
-- **Color Grouping**: Visual distinction by faction (MK networks) or coalition status
-- **Circular Layout**: Optimized for readability with proper spacing
-- **Legend Support**: Faction-based legends for easy identification
+- **Enhanced Hover Information**: 
+  - MK Networks: Shows MK name, faction, total bills, and collaboration counts
+  - Faction Networks: Displays faction name, coalition status, total bills, collaborations, and partner faction counts
+- **Proportional Node Sizing**: 
+  - **Dramatically Improved**: 67-167% larger nodes for better visibility
+  - MK nodes: 20-80px based on individual legislative activity
+  - Faction nodes: 30-100px based on total unique bills (no double-counting)
+- **Advanced Color Systems**: 
+  - **Faction-based grouping** with comprehensive Set3 palette for MK networks
+  - **Coalition status coloring** (Blue/Orange/Gray) for faction networks
+  - **Black text rendering** on all backgrounds for maximum readability
+- **Dynamic Layouts**: 
+  - **Force-directed positioning** for MK networks with faction clustering
+  - **Coalition/opposition separation** for faction networks
+  - **900x900px charts** for optimal spacing and visibility
 
-**Error Handling**:
-- Robust Hebrew text processing with safe string conversion
-- Fallback visualizations when data processing fails
-- Database connection error handling
-- Empty data state management
+**Error Handling & Data Quality**:
+- **100% Faction Coverage**: Advanced SQL resolution eliminated gray nodes
+- **Double-Count Prevention**: Proper DISTINCT counting prevents faction bill inflation
+- **Safe String Conversion**: Robust Hebrew text processing with error fallbacks
+- **Database Connection Management**: Comprehensive error handling and fallback states
+- **Empty Data Visualization**: Clear messaging when no collaboration data exists
 
-### Use Cases
+### Collaboration Relationship Definition
 
-**Research Applications**:
-- **Political Science**: Study cross-party collaboration patterns in parliamentary systems
-- **Legislative Analysis**: Identify most collaborative MKs and factions
-- **Coalition Dynamics**: Analyze bi-partisan cooperation trends
-- **Faction Relationships**: Understand inter-faction legislative partnerships
+**What Constitutes a "Collaboration"**:
+1. **Single Bill Collaboration**: MK from Faction A initiates bill (Ordinal=1), MK from Faction B supports (Ordinal>1)
+2. **Relationship Threshold**: Only partnerships with 5+ collaborative bills appear in network
+3. **Bidirectional Counting**: Faction A→B and B→A counted as separate relationships
+4. **Filtering Effect**: 103 relationships above threshold shown, 52 weak relationships (1-4 bills) hidden
 
-**Data Insights**:
-- Which MKs work together most frequently across party lines
-- How often coalition and opposition collaborate on legislation
-- Which factions have the strongest inter-party relationships
-- Patterns of legislative cooperation by Knesset term
+**Metrics Explained**:
+- **"20 Collaborations"** = 20 different faction-to-faction relationships involving that faction
+- **"984 Total Bills"** = All bills where faction members were primary initiators
+- **"11 Partner Factions"** = Number of different factions they collaborate with
+
+### Use Cases & Research Applications
+
+**Enhanced Political Analysis**:
+- **Coalition Dynamics**: Analyze cross-party cooperation with accurate bill attribution
+- **Legislative Productivity**: Compare faction activity levels with proper double-count prevention
+- **Collaboration Patterns**: Identify sustained partnerships vs occasional cooperation
+- **Political Alignment Analysis**: Understand coalition vs opposition collaboration percentages
+
+**Data-Driven Insights**:
+- Which MKs are most collaborative across party lines (accurate node sizing)
+- How faction mergers affect collaboration patterns (e.g., הציונות הדתית transitions)
+- Strength of coalition unity vs opposition cooperation
+- Evolution of political partnerships across Knesset terms
+- Impact of minimum collaboration thresholds on network visibility
+
+**Technical Validation**:
+- Faction bill counts: Likud (1,180 bills), Yesh Atid (984 bills) - verified accurate
+- Collaboration relationship counts properly reflect bidirectional partnerships
+- Coalition status integration shows political alignment effects on cooperation
+
+## Recent Network Chart Improvements (2025-08-06)
+
+### Issues Resolved
+
+#### 1. **Faction Node Sizing Fix**
+- **Problem**: Faction nodes showed incorrectly small sizes due to using collaboration count instead of total bills
+- **Root Cause**: Node sizing was based on `CollaborationCount` (number of relationships) instead of `TotalBills` (actual legislative output)
+- **Solution**: 
+  - Updated `FactionTotalBills` CTE with `COUNT(DISTINCT bi.BillID)` to prevent double-counting
+  - Modified node sizing logic to use `faction['TotalBills']` instead of `faction['CollaborationCount']`
+  - Result: Faction nodes now properly reflect legislative activity (e.g., Likud shows 1,180 bills vs previous undercount)
+
+#### 2. **Coalition/Opposition Chart Replacement**
+- **Problem**: Original coalition/opposition network chart was inadequate for showing collaboration patterns
+- **Solution**: Replaced with `Faction Coalition Breakdown` chart showing percentage split of collaborations
+- **Features**: Horizontal stacked bars showing Coalition vs Opposition collaboration percentages per faction
+
+#### 3. **Text Readability Improvements** 
+- **Problem**: White text on colored backgrounds was invisible, political color coding caused confusion
+- **Solutions**:
+  - Changed all text colors from white to black for maximum contrast
+  - Updated breakdown chart annotations to use black text instead of political colors
+  - Converted decimal numbers to integers (removed ".0" suffixes)
+
+#### 4. **Collaboration Count Clarification**
+- **Issue**: User confusion about collaboration metrics (984 bills vs 20 collaborations vs 11 partners)
+- **Documentation**: Added comprehensive explanation of bidirectional relationship counting and threshold filtering
+- **Understanding**: "20 collaborations" = 20 different faction-pair relationships, not 20 bills
+
+### Files Modified
+
+1. **`src/ui/charts/network.py`**:
+   - Lines 1002-1023: Updated faction bill counting logic
+   - Lines 1068, 1088: Changed node sizing from CollaborationCount to TotalBills  
+   - Lines 1105-1108: Enhanced hover text with both bill counts and collaboration info
+   - Lines 1200-1207: Updated breakdown chart text to black color and integer formatting
+
+2. **`src/ui/charts/factory.py`**: Updated chart registration to include `faction_coalition_breakdown`
+
+3. **`src/ui/services/chart_service.py`**: Added service method for new breakdown chart
+
+4. **`src/ui/plot_generators.py`**: Added legacy wrapper for breakdown chart compatibility

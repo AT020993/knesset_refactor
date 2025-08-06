@@ -59,19 +59,25 @@ class NetworkCharts(BaseChart):
                     SELECT 
                         p.PersonID,
                         p.FirstName || ' ' || p.LastName as FullName,
-                        COALESCE(f.Name, 'Unknown') as FactionName,
+                        COALESCE(
+                            -- Try to get the most recent faction for this MK
+                            (SELECT f.Name 
+                             FROM KNS_PersonToPosition ptp2 
+                             JOIN KNS_Faction f ON ptp2.FactionID = f.FactionID
+                             WHERE ptp2.PersonID = p.PersonID 
+                             ORDER BY ptp2.KnessetNum DESC, ptp2.StartDate DESC 
+                             LIMIT 1),
+                            'Independent'
+                        ) as FactionName,
                         COUNT(DISTINCT bi.BillID) as TotalBills
                     FROM KNS_Person p
                     LEFT JOIN KNS_BillInitiator bi ON p.PersonID = bi.PersonID AND bi.Ordinal = 1
-                    LEFT JOIN KNS_Bill b ON bi.BillID = b.BillID
-                    LEFT JOIN KNS_PersonToPosition ptp ON p.PersonID = ptp.PersonID AND b.KnessetNum = ptp.KnessetNum
-                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE p.PersonID IN (
                         SELECT MainInitiatorID FROM BillCollaborations
                         UNION
                         SELECT SupporterID FROM BillCollaborations
                     )
-                    GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name
+                    GROUP BY p.PersonID, p.FirstName, p.LastName
                 )
                 SELECT 
                     bc.MainInitiatorID,
@@ -123,34 +129,92 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
                     return None
 
-                # Get faction collaboration network data - simplified query
+                # Get faction collaboration network data with proper faction bill counting
                 query = f"""
+                WITH FactionCollaborations AS (
+                    SELECT 
+                        main.PersonID as MainPersonID,
+                        supp.PersonID as SuppPersonID,
+                        main.BillID,
+                        b.KnessetNum
+                    FROM KNS_BillInitiator main
+                    JOIN KNS_Bill b ON main.BillID = b.BillID
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
+                    WHERE main.Ordinal = 1 
+                        AND supp.Ordinal > 1
+                        AND b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                ),
+                PersonFactions AS (
+                    SELECT DISTINCT
+                        fc.MainPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                    UNION
+                    SELECT DISTINCT
+                        fc.SuppPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                ),
+                FactionTotalBills AS (
+                    SELECT 
+                        f.FactionID,
+                        f.Name as FactionName,
+                        COUNT(DISTINCT bi.BillID) as TotalBills
+                    FROM KNS_Faction f
+                    JOIN KNS_PersonToPosition ptp ON f.FactionID = ptp.FactionID
+                    JOIN KNS_BillInitiator bi ON ptp.PersonID = bi.PersonID AND bi.Ordinal = 1
+                    JOIN KNS_Bill b ON bi.BillID = b.BillID AND b.KnessetNum = ptp.KnessetNum
+                    WHERE b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                    GROUP BY f.FactionID, f.Name
+                )
                 SELECT 
-                    main_f.FactionID as MainFactionID,
-                    supp_f.FactionID as SupporterFactionID,
-                    COUNT(DISTINCT main.BillID) as CollaborationCount,
+                    main_pf.FactionID as MainFactionID,
+                    supp_pf.FactionID as SupporterFactionID,
+                    COUNT(DISTINCT fc.BillID) as CollaborationCount,
                     main_f.Name as MainFactionName,
                     supp_f.Name as SupporterFactionName,
-                    'Unknown' as MainCoalitionStatus,
-                    'Unknown' as SupporterCoalitionStatus,
-                    0 as MainFactionTotalBills,
-                    0 as SupporterFactionTotalBills
-                FROM KNS_BillInitiator main
-                JOIN KNS_Bill b ON main.BillID = b.BillID
-                JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                LEFT JOIN KNS_PersonToPosition main_ptp ON main.PersonID = main_ptp.PersonID AND b.KnessetNum = main_ptp.KnessetNum
-                LEFT JOIN KNS_PersonToPosition supp_ptp ON supp.PersonID = supp_ptp.PersonID AND b.KnessetNum = supp_ptp.KnessetNum
-                LEFT JOIN KNS_Faction main_f ON main_ptp.FactionID = main_f.FactionID
-                LEFT JOIN KNS_Faction supp_f ON supp_ptp.FactionID = supp_f.FactionID
-                WHERE main.Ordinal = 1 
-                    AND supp.Ordinal > 1
-                    AND main_f.FactionID IS NOT NULL
-                    AND supp_f.FactionID IS NOT NULL
-                    AND main_f.FactionID <> supp_f.FactionID
-                    AND b.KnessetNum IS NOT NULL
-                    AND {filters["knesset_condition"]}
-                GROUP BY main_f.FactionID, supp_f.FactionID, main_f.Name, supp_f.Name
-                HAVING COUNT(DISTINCT main.BillID) >= {min_collaborations}
+                    COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
+                    COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
+                    COALESCE(main_ftb.TotalBills, 0) as MainFactionTotalBills,
+                    COALESCE(supp_ftb.TotalBills, 0) as SupporterFactionTotalBills
+                FROM FactionCollaborations fc
+                JOIN PersonFactions main_pf ON fc.MainPersonID = main_pf.PersonID
+                JOIN PersonFactions supp_pf ON fc.SuppPersonID = supp_pf.PersonID
+                JOIN KNS_Faction main_f ON main_pf.FactionID = main_f.FactionID
+                JOIN KNS_Faction supp_f ON supp_pf.FactionID = supp_f.FactionID
+                LEFT JOIN UserFactionCoalitionStatus main_ufs ON main_f.FactionID = main_ufs.FactionID AND fc.KnessetNum = main_ufs.KnessetNum
+                LEFT JOIN UserFactionCoalitionStatus supp_ufs ON supp_f.FactionID = supp_ufs.FactionID AND fc.KnessetNum = supp_ufs.KnessetNum
+                LEFT JOIN FactionTotalBills main_ftb ON main_f.FactionID = main_ftb.FactionID
+                LEFT JOIN FactionTotalBills supp_ftb ON supp_f.FactionID = supp_ftb.FactionID
+                WHERE main_pf.FactionID IS NOT NULL
+                    AND supp_pf.FactionID IS NOT NULL
+                    AND main_pf.FactionID <> supp_pf.FactionID
+                GROUP BY main_pf.FactionID, supp_pf.FactionID, main_f.Name, supp_f.Name, main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus, main_ftb.TotalBills, supp_ftb.TotalBills
+                HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
                 ORDER BY CollaborationCount DESC
                 """
 
@@ -168,14 +232,14 @@ class NetworkCharts(BaseChart):
             st.error(f"Could not generate faction collaboration network: {e}")
             return None
 
-    def plot_coalition_opposition_network(
+    def plot_faction_coalition_breakdown(
         self,
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[str]] = None,
-        min_collaborations: int = 3,
+        min_collaborations: int = 5,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate coalition/opposition collaboration network chart showing cross-party cooperation."""
+        """Generate faction collaboration breakdown chart showing Coalition vs Opposition collaboration percentages."""
         if not self.check_database_exists():
             return None
 
@@ -188,47 +252,68 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction", "UserFactionCoalitionStatus"]):
                     return None
 
-                # Get coalition/opposition collaboration data - simplified query
+                # Get faction collaboration breakdown data
                 query = f"""
+                WITH FactionCollaborations AS (
+                    SELECT 
+                        main_f.FactionID as MainFactionID,
+                        main_f.Name as MainFactionName,
+                        COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
+                        COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
+                        COUNT(DISTINCT main.BillID) as CollaborationCount
+                    FROM KNS_BillInitiator main
+                    JOIN KNS_Bill b ON main.BillID = b.BillID
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
+                    LEFT JOIN KNS_PersonToPosition main_ptp ON main.PersonID = main_ptp.PersonID AND b.KnessetNum = main_ptp.KnessetNum
+                    LEFT JOIN KNS_PersonToPosition supp_ptp ON supp.PersonID = supp_ptp.PersonID AND b.KnessetNum = supp_ptp.KnessetNum
+                    LEFT JOIN KNS_Faction main_f ON main_ptp.FactionID = main_f.FactionID
+                    LEFT JOIN KNS_Faction supp_f ON supp_ptp.FactionID = supp_f.FactionID
+                    LEFT JOIN UserFactionCoalitionStatus main_ufs ON main_f.FactionID = main_ufs.FactionID AND b.KnessetNum = main_ufs.KnessetNum
+                    LEFT JOIN UserFactionCoalitionStatus supp_ufs ON supp_f.FactionID = supp_ufs.FactionID AND b.KnessetNum = supp_ufs.KnessetNum
+                    WHERE main.Ordinal = 1 
+                        AND supp.Ordinal > 1
+                        AND main_f.FactionID IS NOT NULL
+                        AND supp_f.FactionID IS NOT NULL
+                        AND main_f.FactionID <> supp_f.FactionID
+                        AND supp_ufs.CoalitionStatus IS NOT NULL
+                        AND supp_ufs.CoalitionStatus IN ('Coalition', 'Opposition')
+                        AND b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                    GROUP BY main_f.FactionID, main_f.Name, main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus
+                )
                 SELECT 
-                    COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
-                    COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
-                    main_f.Name as MainFactionName,
-                    supp_f.Name as SupporterFactionName,
-                    COUNT(DISTINCT main.BillID) as CollaborationCount
-                FROM KNS_BillInitiator main
-                JOIN KNS_Bill b ON main.BillID = b.BillID
-                JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                LEFT JOIN KNS_PersonToPosition main_ptp ON main.PersonID = main_ptp.PersonID AND b.KnessetNum = main_ptp.KnessetNum
-                LEFT JOIN KNS_PersonToPosition supp_ptp ON supp.PersonID = supp_ptp.PersonID AND b.KnessetNum = supp_ptp.KnessetNum
-                LEFT JOIN KNS_Faction main_f ON main_ptp.FactionID = main_f.FactionID
-                LEFT JOIN KNS_Faction supp_f ON supp_ptp.FactionID = supp_f.FactionID
-                LEFT JOIN UserFactionCoalitionStatus main_ufs ON main_f.FactionID = main_ufs.FactionID AND b.KnessetNum = main_ufs.KnessetNum
-                LEFT JOIN UserFactionCoalitionStatus supp_ufs ON supp_f.FactionID = supp_ufs.FactionID AND b.KnessetNum = supp_ufs.KnessetNum
-                WHERE main.Ordinal = 1 
-                    AND supp.Ordinal > 1
-                    AND main_ufs.CoalitionStatus IS NOT NULL
-                    AND supp_ufs.CoalitionStatus IS NOT NULL
-                    AND main_ufs.CoalitionStatus <> supp_ufs.CoalitionStatus
-                    AND b.KnessetNum IS NOT NULL
-                    AND {filters["knesset_condition"]}
-                GROUP BY main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus, main_f.Name, supp_f.Name
-                HAVING COUNT(DISTINCT main.BillID) >= {min_collaborations}
-                ORDER BY CollaborationCount DESC
+                    MainFactionID,
+                    MainFactionName,
+                    MainCoalitionStatus,
+                    SUM(CollaborationCount) as TotalCollaborations,
+                    SUM(CASE WHEN SupporterCoalitionStatus = 'Coalition' THEN CollaborationCount ELSE 0 END) as CoalitionCollaborations,
+                    SUM(CASE WHEN SupporterCoalitionStatus = 'Opposition' THEN CollaborationCount ELSE 0 END) as OppositionCollaborations,
+                    ROUND(
+                        100.0 * SUM(CASE WHEN SupporterCoalitionStatus = 'Coalition' THEN CollaborationCount ELSE 0 END) / 
+                        SUM(CollaborationCount), 1
+                    ) as CoalitionPercentage,
+                    ROUND(
+                        100.0 * SUM(CASE WHEN SupporterCoalitionStatus = 'Opposition' THEN CollaborationCount ELSE 0 END) / 
+                        SUM(CollaborationCount), 1
+                    ) as OppositionPercentage
+                FROM FactionCollaborations
+                GROUP BY MainFactionID, MainFactionName, MainCoalitionStatus
+                HAVING SUM(CollaborationCount) >= {min_collaborations}
+                ORDER BY TotalCollaborations DESC
                 """
 
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(f"No cross-party collaboration data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
+                    st.info(f"No faction collaboration breakdown data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
                     return None
 
-                # Create network visualization for coalition/opposition
-                return self._create_coalition_network_chart(df, filters['knesset_title'])
+                # Create stacked bar chart visualization
+                return self._create_faction_breakdown_chart(df, filters['knesset_title'])
 
         except Exception as e:
-            self.logger.error(f"Error generating coalition/opposition collaboration network: {e}", exc_info=True)
-            st.error(f"Could not generate coalition/opposition collaboration network: {e}")
+            self.logger.error(f"Error generating faction collaboration breakdown: {e}", exc_info=True)
+            st.error(f"Could not generate faction collaboration breakdown: {e}")
             return None
 
     def _create_network_chart(
@@ -490,8 +575,271 @@ class NetworkCharts(BaseChart):
         
         return fig
 
+    def _generate_force_directed_layout(self, nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Generate force-directed layout positions for network nodes."""
+        import random
+        
+        # Initialize random positions
+        positions = {}
+        for _, node in nodes_df.iterrows():
+            person_id = node['PersonID']
+            positions[person_id] = [
+                random.uniform(-50, 50),
+                random.uniform(-50, 50)
+            ]
+        
+        # Create adjacency list for connections
+        connections = {}
+        for _, node in nodes_df.iterrows():
+            connections[node['PersonID']] = []
+        
+        for _, edge in edges_df.iterrows():
+            main_id = edge['MainInitiatorID']
+            supp_id = edge['SupporterID']
+            if main_id in connections and supp_id in connections:
+                connections[main_id].append(supp_id)
+                connections[supp_id].append(main_id)
+        
+        # Force-directed algorithm parameters
+        iterations = 100
+        k = 30  # Optimal distance between nodes
+        area = 10000  # Total area
+        dt = 0.1  # Time step
+        
+        for iteration in range(iterations):
+            # Calculate forces
+            forces = {}
+            for person_id in positions:
+                forces[person_id] = [0.0, 0.0]
+            
+            # Repulsive forces (all nodes repel each other)
+            node_ids = list(positions.keys())
+            for i, id1 in enumerate(node_ids):
+                for id2 in node_ids[i+1:]:
+                    dx = positions[id1][0] - positions[id2][0]
+                    dy = positions[id1][1] - positions[id2][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+                    
+                    # Repulsive force magnitude
+                    force_mag = k * k / distance
+                    
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+                    
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+                    forces[id2][0] -= fx
+                    forces[id2][1] -= fy
+            
+            # Attractive forces (connected nodes attract each other)
+            for id1 in connections:
+                for id2 in connections[id1]:
+                    dx = positions[id2][0] - positions[id1][0]
+                    dy = positions[id2][1] - positions[id1][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+                    
+                    # Attractive force magnitude
+                    force_mag = distance * distance / k
+                    
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+                    
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+            
+            # Update positions
+            for person_id in positions:
+                # Limit force magnitude to prevent instability
+                force_magnitude = np.sqrt(forces[person_id][0]**2 + forces[person_id][1]**2)
+                if force_magnitude > 0:
+                    max_displacement = min(force_magnitude * dt, 10)
+                    positions[person_id][0] += (forces[person_id][0] / force_magnitude) * max_displacement
+                    positions[person_id][1] += (forces[person_id][1] / force_magnitude) * max_displacement
+        
+        return positions
+
+    def _create_better_network_layout(self, nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Create an improved network layout that clusters connected nodes."""
+        import random
+        import math
+        
+        # Get collaboration strength for each person
+        collaboration_strength = {}
+        for _, node in nodes_df.iterrows():
+            person_id = node['PersonID']
+            connections = edges_df[(edges_df['MainInitiatorID'] == person_id) | (edges_df['SupporterID'] == person_id)]
+            collaboration_strength[person_id] = len(connections)
+        
+        # Group by faction for initial positioning
+        faction_groups = {}
+        for _, node in nodes_df.iterrows():
+            faction = node['Faction']
+            if faction not in faction_groups:
+                faction_groups[faction] = []
+            faction_groups[faction].append(node['PersonID'])
+        
+        positions = {}
+        faction_centers = {}
+        
+        # Position faction centers in a circle
+        num_factions = len(faction_groups)
+        for i, faction in enumerate(faction_groups.keys()):
+            angle = 2 * math.pi * i / num_factions
+            center_x = 80 * math.cos(angle)  # Larger radius for better spacing
+            center_y = 80 * math.sin(angle)
+            faction_centers[faction] = (center_x, center_y)
+        
+        # Position nodes within their faction clusters
+        for faction, member_ids in faction_groups.items():
+            center_x, center_y = faction_centers[faction]
+            
+            if len(member_ids) == 1:
+                positions[member_ids[0]] = (center_x, center_y)
+            else:
+                # Arrange faction members in a small circle around faction center
+                for j, person_id in enumerate(member_ids):
+                    member_angle = 2 * math.pi * j / len(member_ids)
+                    # Distance from center based on collaboration activity
+                    distance = 15 + (collaboration_strength.get(person_id, 0) * 2)
+                    x = center_x + distance * math.cos(member_angle)
+                    y = center_y + distance * math.sin(member_angle)
+                    positions[person_id] = (x, y)
+        
+        return positions
+
+    def _generate_force_directed_layout_factions(self, factions_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Generate force-directed layout positions for faction network nodes."""
+        import random
+        
+        # Initialize random positions
+        positions = {}
+        for _, faction in factions_df.iterrows():
+            faction_id = faction['FactionID']
+            positions[faction_id] = [
+                random.uniform(-40, 40),
+                random.uniform(-40, 40)
+            ]
+        
+        # Create adjacency list for connections
+        connections = {}
+        for _, faction in factions_df.iterrows():
+            connections[faction['FactionID']] = []
+        
+        for _, edge in edges_df.iterrows():
+            main_id = edge['MainFactionID']
+            supp_id = edge['SupporterFactionID']
+            if main_id in connections and supp_id in connections:
+                connections[main_id].append(supp_id)
+                connections[supp_id].append(main_id)
+        
+        # Force-directed algorithm parameters (adjusted for fewer nodes)
+        iterations = 80
+        k = 25  # Optimal distance between nodes
+        dt = 0.15  # Time step
+        
+        for iteration in range(iterations):
+            # Calculate forces
+            forces = {}
+            for faction_id in positions:
+                forces[faction_id] = [0.0, 0.0]
+            
+            # Repulsive forces (all nodes repel each other)
+            faction_ids = list(positions.keys())
+            for i, id1 in enumerate(faction_ids):
+                for id2 in faction_ids[i+1:]:
+                    dx = positions[id1][0] - positions[id2][0]
+                    dy = positions[id1][1] - positions[id2][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+                    
+                    # Repulsive force magnitude
+                    force_mag = k * k / distance
+                    
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+                    
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+                    forces[id2][0] -= fx
+                    forces[id2][1] -= fy
+            
+            # Attractive forces (connected nodes attract each other)
+            for id1 in connections:
+                for id2 in connections[id1]:
+                    dx = positions[id2][0] - positions[id1][0]
+                    dy = positions[id2][1] - positions[id1][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+                    
+                    # Attractive force magnitude
+                    force_mag = distance * distance / k
+                    
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+                    
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+            
+            # Update positions
+            for faction_id in positions:
+                # Limit force magnitude to prevent instability
+                force_magnitude = np.sqrt(forces[faction_id][0]**2 + forces[faction_id][1]**2)
+                if force_magnitude > 0:
+                    max_displacement = min(force_magnitude * dt, 8)
+                    positions[faction_id][0] += (forces[faction_id][0] / force_magnitude) * max_displacement
+                    positions[faction_id][1] += (forces[faction_id][1] / force_magnitude) * max_displacement
+        
+        return positions
+
+    def _create_faction_layout(self, factions_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Create clear faction layout with coalition/opposition separation."""
+        import math
+        
+        # Separate by coalition status
+        coalition_factions = []
+        opposition_factions = []
+        unknown_factions = []
+        
+        for _, faction in factions_df.iterrows():
+            status = faction['Status']
+            if status == 'Coalition':
+                coalition_factions.append(faction)
+            elif status == 'Opposition':
+                opposition_factions.append(faction)
+            else:
+                unknown_factions.append(faction)
+        
+        positions = {}
+        
+        # Position coalition factions on the left side
+        if coalition_factions:
+            for i, faction in enumerate(coalition_factions):
+                angle = math.pi * i / max(1, len(coalition_factions) - 1) - math.pi/2  # Left semicircle
+                x = -60 + 40 * math.cos(angle)
+                y = 60 * math.sin(angle)
+                positions[faction['FactionID']] = (x, y)
+        
+        # Position opposition factions on the right side  
+        if opposition_factions:
+            for i, faction in enumerate(opposition_factions):
+                angle = math.pi * i / max(1, len(opposition_factions) - 1) + math.pi/2  # Right semicircle
+                x = 60 + 40 * math.cos(angle)
+                y = 60 * math.sin(angle)
+                positions[faction['FactionID']] = (x, y)
+        
+        # Position unknown factions at the bottom
+        if unknown_factions:
+            for i, faction in enumerate(unknown_factions):
+                x = -30 + (60 * i / max(1, len(unknown_factions) - 1)) if len(unknown_factions) > 1 else 0
+                y = -80
+                positions[faction['FactionID']] = (x, y)
+        
+        return positions
+
     def _create_mk_network_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
-        """Create MK collaboration network chart."""
+        """Create MK collaboration network chart with force-directed layout and interactive highlighting."""
         
         try:
             # Extract unique nodes with safe string conversion
@@ -516,88 +864,126 @@ class NetworkCharts(BaseChart):
                              showarrow=False, font=dict(size=16))
             return fig
         
-        # Generate circular layout
-        n_nodes = len(all_nodes)
-        angles = np.linspace(0, 2*np.pi, n_nodes, endpoint=False)
-        radius = max(10, n_nodes / 3)
+        # Generate improved network layout with better spacing
+        node_positions = self._create_better_network_layout(all_nodes, df)
         
-        node_positions = {}
-        for i, (_, node) in enumerate(all_nodes.iterrows()):
-            node_id = node['PersonID']
-            x = radius * np.cos(angles[i])
-            y = radius * np.sin(angles[i])
-            node_positions[node_id] = (x, y)
-        
-        fig = go.Figure()
-        
-        # Add edges
-        edge_x, edge_y = [], []
-        for _, edge in df.iterrows():
-            source_pos = node_positions[edge['MainInitiatorID']]
-            target_pos = node_positions[edge['SupporterID']]
-            edge_x.extend([source_pos[0], target_pos[0], None])
-            edge_y.extend([source_pos[1], target_pos[1], None])
-        
-        fig.add_trace(go.Scatter(
-            x=edge_x, y=edge_y,
-            mode='lines',
-            line=dict(width=1, color='#888'),
-            hoverinfo='none',
-            showlegend=False
-        ))
-        
-        # Add nodes by faction
+        # Prepare faction colors
         unique_factions = all_nodes['Faction'].unique()
         colors = px.colors.qualitative.Set3[:len(unique_factions)]
         color_map = dict(zip(unique_factions, colors))
+        
+        # Create the interactive network visualization
+        fig = go.Figure()
+        
+        # Add ALL edges as a single trace (cleaner approach)
+        edge_x = []
+        edge_y = []
+        edge_info = []
+        
+        for _, edge in df.iterrows():
+            source_pos = node_positions[edge['MainInitiatorID']]
+            target_pos = node_positions[edge['SupporterID']]
+            
+            edge_x.extend([source_pos[0], target_pos[0], None])
+            edge_y.extend([source_pos[1], target_pos[1], None])
+            edge_info.append(f"{edge['CollaborationCount']} collaborations")
+        
+        # Single edge trace
+        fig.add_trace(go.Scatter(
+            x=edge_x, y=edge_y,
+            mode='lines',
+            line=dict(width=0.8, color='rgba(100,100,100,0.4)'),
+            hoverinfo='none',
+            showlegend=False,
+            name='connections'
+        ))
+        
+        # Add nodes grouped by faction for better legend
+        max_bills = all_nodes['TotalBills'].max() if not all_nodes['TotalBills'].empty else 1
         
         for faction in unique_factions:
             try:
                 faction_nodes = all_nodes[all_nodes['Faction'] == faction]
                 
-                node_x = [node_positions[node_id][0] for node_id in faction_nodes['PersonID']]
-                node_y = [node_positions[node_id][1] for node_id in faction_nodes['PersonID']]
+                node_x = []
+                node_y = []
+                node_sizes = []
+                hover_texts = []
+                node_names = []
                 
-                max_bills = all_nodes['TotalBills'].max() if not all_nodes['TotalBills'].empty else 1
-                node_sizes = [max(8, min(30, 8 + (bills / max_bills * 20))) for bills in faction_nodes['TotalBills']]
+                for _, node in faction_nodes.iterrows():
+                    person_id = node['PersonID']
+                    pos = node_positions[person_id]
+                    
+                    # MUCH larger node sizes for visibility
+                    node_size = max(20, min(80, 20 + (node['TotalBills'] / max_bills * 60)))
+                    
+                    # Get connections for this node
+                    connections = df[(df['MainInitiatorID'] == person_id) | (df['SupporterID'] == person_id)]
+                    collaboration_count = len(connections)
+                    
+                    node_x.append(pos[0])
+                    node_y.append(pos[1])
+                    node_sizes.append(node_size)
+                    node_names.append(node['Name'])
+                    
+                    hover_text = (f"<b>{node['Name']}</b><br>"
+                                f"Faction: {faction}<br>"
+                                f"Total Bills: {node['TotalBills']}<br>"
+                                f"Collaborations: {collaboration_count}")
+                    hover_texts.append(hover_text)
                 
-                hover_text = [f"{name}<br>{faction}<br>Total Bills: {bills}" 
-                             for name, bills in zip(faction_nodes['Name'], faction_nodes['TotalBills'])]
-                
-                # Ensure faction name is properly encoded for display
-                faction_display = str(faction) if faction else 'Unknown'
-                
+                # Create faction trace with enhanced visibility
                 fig.add_trace(go.Scatter(
-                    x=node_x, y=node_y,
+                    x=node_x, 
+                    y=node_y,
                     mode='markers+text',
-                    marker=dict(size=node_sizes, color=color_map[faction], line=dict(width=2, color='white')),
-                    text=faction_nodes['Name'].tolist(),
+                    marker=dict(
+                        size=node_sizes,
+                        color=color_map.get(faction, '#808080'),
+                        line=dict(width=3, color='white'),
+                        opacity=0.9
+                    ),
+                    text=node_names,
                     textposition="middle center",
-                    textfont=dict(size=8),
-                    hovertext=hover_text,
+                    textfont=dict(size=10, color='black', family="Arial Black"),
+                    hovertext=hover_texts,
                     hoverinfo='text',
-                    name=faction_display,
-                    showlegend=True
+                    name=str(faction),
+                    showlegend=True,
+                    legendgroup=faction
                 ))
+                
             except Exception as e:
                 self.logger.error(f"Error processing faction '{faction}': {e}")
                 continue
         
         fig.update_layout(
-            title=f"<b>MK Collaboration Network<br>{title_suffix}</b>",
+            title=f"<b>🔗 MK Collaboration Network - Enhanced Layout<br>{title_suffix}</b>",
             title_x=0.5,
             showlegend=True,
             hovermode='closest',
-            margin=dict(b=20,l=5,r=5,t=40),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=700
+            margin=dict(b=40, l=40, r=40, t=80),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
+            height=900,
+            width=900,
+            plot_bgcolor='rgba(240,240,240,0.1)',
+            annotations=[],
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.05,
+                font=dict(size=10)
+            )
         )
         
         return fig
 
     def _create_faction_network_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
-        """Create faction collaboration network chart."""
+        """Create faction collaboration network chart with force-directed layout and interactive features."""
         
         try:
             # Extract unique factions with safe string conversion
@@ -613,6 +999,29 @@ class NetworkCharts(BaseChart):
             
             all_factions = pd.concat([main_factions, supp_factions]).drop_duplicates(subset=['FactionID'])
             
+            # Add total bills for proper node sizing (not just collaboration count)
+            faction_total_bills = {}
+            for _, row in df.iterrows():
+                # Get total bills for main faction
+                main_faction_id = row['MainFactionID']
+                if main_faction_id not in faction_total_bills:
+                    faction_total_bills[main_faction_id] = row['MainFactionTotalBills']
+                
+                # Get total bills for supporter faction  
+                supp_faction_id = row['SupporterFactionID']
+                if supp_faction_id not in faction_total_bills:
+                    faction_total_bills[supp_faction_id] = row['SupporterFactionTotalBills']
+            
+            # Also calculate collaboration count for hover info
+            faction_collaboration_counts = {}
+            for _, faction in all_factions.iterrows():
+                faction_id = faction['FactionID']
+                collaborations = df[(df['MainFactionID'] == faction_id) | (df['SupporterFactionID'] == faction_id)]
+                faction_collaboration_counts[faction_id] = len(collaborations)
+            
+            all_factions['TotalBills'] = all_factions['FactionID'].map(faction_total_bills).fillna(0)
+            all_factions['CollaborationCount'] = all_factions['FactionID'].map(faction_collaboration_counts)
+            
         except Exception as e:
             self.logger.error(f"Error processing faction data: {e}")
             # Return empty chart on error
@@ -622,76 +1031,209 @@ class NetworkCharts(BaseChart):
                              showarrow=False, font=dict(size=16))
             return fig
         
-        # Generate circular layout
-        n_nodes = len(all_factions)
-        angles = np.linspace(0, 2*np.pi, n_nodes, endpoint=False)
-        radius = max(10, n_nodes / 3)
+        # Generate simplified faction layout
+        node_positions = self._create_faction_layout(all_factions, df)
         
-        node_positions = {}
-        for i, (_, faction) in enumerate(all_factions.iterrows()):
-            faction_id = faction['FactionID']
-            x = radius * np.cos(angles[i])
-            y = radius * np.sin(angles[i])
-            node_positions[faction_id] = (x, y)
+        # Prepare status colors
+        status_colors = {
+            'Coalition': '#1f77b4',
+            'Opposition': '#ff7f0e', 
+            'Unknown': '#808080'
+        }
         
         fig = go.Figure()
         
-        # Add edges
-        edge_x, edge_y = [], []
+        # Add edges with much more visible styling
+        edge_x = []
+        edge_y = []
+        
         for _, edge in df.iterrows():
             source_pos = node_positions[edge['MainFactionID']]
             target_pos = node_positions[edge['SupporterFactionID']]
+            
             edge_x.extend([source_pos[0], target_pos[0], None])
             edge_y.extend([source_pos[1], target_pos[1], None])
         
+        # Single edge trace with better visibility
         fig.add_trace(go.Scatter(
             x=edge_x, y=edge_y,
             mode='lines',
-            line=dict(width=1, color='#888'),
+            line=dict(width=2, color='rgba(50,50,50,0.6)'),
             hoverinfo='none',
-            showlegend=False
+            showlegend=False,
+            name='collaborations'
         ))
         
-        # Add faction nodes
-        try:
-            node_x = [node_positions[faction_id][0] for faction_id in all_factions['FactionID']]
-            node_y = [node_positions[faction_id][1] for faction_id in all_factions['FactionID']]
+        # Add faction nodes grouped by status for better visualization
+        max_bills = all_factions['TotalBills'].max() if not all_factions['TotalBills'].empty else 1
+        
+        # Group factions by status and create separate traces
+        for status in ['Coalition', 'Opposition', 'Unknown']:
+            status_factions = all_factions[all_factions['Status'] == status]
+            if status_factions.empty:
+                continue
+                
+            node_x = []
+            node_y = []
+            node_sizes = []
+            hover_texts = []
+            node_names = []
             
-            hover_text = [f"{str(name)}<br>Status: {str(status)}" for name, status in zip(all_factions['Name'], all_factions['Status'])]
+            for _, faction in status_factions.iterrows():
+                try:
+                    faction_id = faction['FactionID']
+                    pos = node_positions[faction_id]
+                    
+                    # Node sizes based on total bills initiated by faction (avoiding double-counting)
+                    node_size = max(30, min(100, 30 + (faction['TotalBills'] / max_bills * 70)))
+                    
+                    # Get detailed collaboration info
+                    collaborations = df[(df['MainFactionID'] == faction_id) | (df['SupporterFactionID'] == faction_id)]
+                    partner_factions = set()
+                    for _, collab in collaborations.iterrows():
+                        if collab['MainFactionID'] == faction_id:
+                            partner_factions.add(collab['SupporterFactionName'])
+                        else:
+                            partner_factions.add(collab['MainFactionName'])
+                    
+                    node_x.append(pos[0])
+                    node_y.append(pos[1])
+                    node_sizes.append(node_size)
+                    node_names.append(faction['Name'])
+                    
+                    hover_text = (f"<b>{faction['Name']}</b><br>"
+                                f"Status: {status}<br>"
+                                f"Total Bills: {int(faction['TotalBills'])}<br>"
+                                f"Collaborations: {faction['CollaborationCount']}<br>"
+                                f"Partner Factions: {len(partner_factions)}")
+                    hover_texts.append(hover_text)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing faction '{faction_id}': {e}")
+                    continue
             
-            fig.add_trace(go.Scatter(
-                x=node_x, y=node_y,
-                mode='markers+text',
-                marker=dict(size=20, color='lightblue', line=dict(width=2, color='white')),
-                text=all_factions['Name'].astype(str).tolist(),
-                textposition="middle center",
-                textfont=dict(size=8),
-                hovertext=hover_text,
-                hoverinfo='text',
-                name='Factions',
-                showlegend=False
-            ))
-        except Exception as e:
-            self.logger.error(f"Error creating faction nodes: {e}")
-            # Create a simple fallback visualization
-            fig.add_trace(go.Scatter(
-                x=[0], y=[0],
-                mode='markers+text',
-                marker=dict(size=20, color='lightblue'),
-                text=['Network Error'],
-                name='Error',
-                showlegend=False
-            ))
+            if node_x:  # Only add trace if we have data
+                fig.add_trace(go.Scatter(
+                    x=node_x, 
+                    y=node_y,
+                    mode='markers+text',
+                    marker=dict(
+                        size=node_sizes,
+                        color=status_colors.get(status, '#808080'),
+                        line=dict(width=4, color='white'),
+                        opacity=0.9
+                    ),
+                    text=node_names,
+                    textposition="middle center",
+                    textfont=dict(size=12, color='black', family="Arial Black"),
+                    hovertext=hover_texts,
+                    hoverinfo='text',
+                    name=status,
+                    showlegend=True,
+                    legendgroup=status
+                ))
         
         fig.update_layout(
-            title=f"<b>Faction Collaboration Network<br>{title_suffix}</b>",
+            title=f"<b>🏛️ Faction Network - Coalition vs Opposition Layout<br>{title_suffix}</b>",
             title_x=0.5,
-            showlegend=False,
+            showlegend=True,
             hovermode='closest',
-            margin=dict(b=20,l=5,r=5,t=40),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=700
+            margin=dict(b=40, l=40, r=40, t=80),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-140, 140]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-120, 120]),
+            height=900,
+            width=900,
+            plot_bgcolor='rgba(240,240,240,0.1)',
+            annotations=[],
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.05,
+                font=dict(size=12)
+            )
+        )
+        
+        return fig
+
+    def _create_faction_breakdown_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
+        """Create stacked bar chart showing faction collaboration breakdown by Coalition vs Opposition."""
+        
+        # Sort by total collaborations descending
+        df_sorted = df.sort_values('TotalCollaborations', ascending=True)  # Ascending for horizontal bar
+        
+        # Prepare data
+        faction_names = df_sorted['MainFactionName'].tolist()
+        coalition_pct = df_sorted['CoalitionPercentage'].tolist()
+        opposition_pct = df_sorted['OppositionPercentage'].tolist()
+        total_collaborations = df_sorted['TotalCollaborations'].tolist()
+        faction_status = df_sorted['MainCoalitionStatus'].tolist()
+        
+        # Create horizontal stacked bar chart
+        fig = go.Figure()
+        
+        # Add Coalition bars
+        fig.add_trace(go.Bar(
+            name='Coalition Collaborations',
+            y=faction_names,
+            x=coalition_pct,
+            orientation='h',
+            marker=dict(color='#1f77b4', opacity=0.8),
+            hovertemplate='<b>%{y}</b><br>Coalition: %{x}%<br>Count: %{customdata}<extra></extra>',
+            customdata=df_sorted['CoalitionCollaborations'].tolist()
+        ))
+        
+        # Add Opposition bars
+        fig.add_trace(go.Bar(
+            name='Opposition Collaborations',
+            y=faction_names,
+            x=opposition_pct,
+            orientation='h',
+            marker=dict(color='#ff7f0e', opacity=0.8),
+            hovertemplate='<b>%{y}</b><br>Opposition: %{x}%<br>Count: %{customdata}<extra></extra>',
+            customdata=df_sorted['OppositionCollaborations'].tolist()
+        ))
+        
+        # Add total collaboration annotations
+        for i, (faction, total, coal_pct, opp_pct, status) in enumerate(zip(faction_names, total_collaborations, coalition_pct, opposition_pct, faction_status)):
+            fig.add_annotation(
+                x=102,  # Just outside the 100% mark
+                y=i,
+                text=f"Total: {int(total)}",
+                showarrow=False,
+                font=dict(size=10, color='black'),
+                xanchor='left'
+            )
+        
+        fig.update_layout(
+            title=f"<b>📊 Faction Collaboration Breakdown - Coalition vs Opposition<br>{title_suffix}</b>",
+            title_x=0.5,
+            title_y=0.98,  # Move title higher
+            xaxis=dict(
+                title="Percentage of Collaborations (%)",
+                range=[0, 120],  # Extra space for annotations
+                showgrid=True,
+                gridcolor='lightgray'
+            ),
+            yaxis=dict(
+                title="Political Factions",
+                showgrid=False
+            ),
+            barmode='stack',
+            height=max(400, len(faction_names) * 40),  # Dynamic height based on faction count
+            margin=dict(l=150, r=100, t=120, b=50),  # Much more top margin for title and legend
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.05,  # Move legend higher to avoid title overlap
+                xanchor="center",
+                x=0.5,
+                bgcolor="rgba(255,255,255,0.8)",  # Add background to legend for better visibility
+                bordercolor="gray",
+                borderwidth=1
+            ),
+            plot_bgcolor='rgba(240,240,240,0.1)'
         )
         
         return fig
@@ -701,7 +1243,7 @@ class NetworkCharts(BaseChart):
         chart_methods = {
             "mk_collaboration_network": self.plot_mk_collaboration_network,
             "faction_collaboration_network": self.plot_faction_collaboration_network,
-            "coalition_opposition_network": self.plot_coalition_opposition_network,
+            "faction_coalition_breakdown": self.plot_faction_coalition_breakdown,
         }
 
         method = chart_methods.get(chart_type)

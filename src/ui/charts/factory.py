@@ -82,8 +82,8 @@ class ChartFactory:
             ],
             "network": [
                 "mk_collaboration_network",
-                "faction_collaboration_network",
-                "coalition_opposition_network",
+                "faction_collaboration_network", 
+                "faction_coalition_breakdown",
             ],
         }
 
