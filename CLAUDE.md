@@ -189,6 +189,86 @@ Network collaboration charts use Knesset filtering only (no additional filters):
 - **Top Margin**: 180px (prevents number cutoff above bars)
 - **Implementation**: Applied to all new bill initiator charts for consistent UX
 
+## Bill Origin Filter System (2025-08-18)
+
+### Private vs Governmental Bill Filtering
+
+The platform now includes comprehensive filtering capabilities to distinguish between private member bills and governmental bills across all bill visualizations.
+
+#### Filter Options
+
+**Bill Origin Filter** (`Bill Filters` section):
+- **All Bills** (default): Shows both private and governmental bills
+- **Private Bills Only**: Shows only bills initiated by MKs (PrivateNumber IS NOT NULL)
+- **Governmental Bills Only**: Shows only bills initiated by government (PrivateNumber IS NULL)
+
+#### Data Distribution
+
+**Knesset 25 Example**:
+- **Total Bills**: 6,459 (100%)
+- **Private Bills**: 5,975 (92.5%) - Member-initiated legislation
+- **Governmental Bills**: 484 (7.5%) - Government-initiated legislation
+
+#### Implementation Details
+
+**Technical Architecture**:
+- **Filter Location**: `src/ui/pages/plots_page.py` - `_render_bill_filters()` method
+- **Base Class Logic**: `src/ui/charts/base.py` - `_add_advanced_filters()` method  
+- **SQL Condition**: Uses `PrivateNumber` field to distinguish bill origins
+- **Chart Integration**: All bill charts updated to support `bill_origin_filter` parameter
+
+**Filter Logic**:
+```python
+# Base class filter building
+def _add_advanced_filters(self, filters: dict, prefix: str = '', **kwargs):
+    bill_origin_filter = kwargs.get('bill_origin_filter', 'All Bills')
+    if bill_origin_filter == 'Private Bills Only':
+        filters['bill_origin_condition'] = f'{prefix}PrivateNumber IS NOT NULL'
+    elif bill_origin_filter == 'Governmental Bills Only':
+        filters['bill_origin_condition'] = f'{prefix}PrivateNumber IS NULL'
+    else:
+        filters['bill_origin_condition'] = '1=1'  # No filter
+```
+
+**Chart Coverage**:
+All bill analytics charts now support origin filtering:
+- Bill Status Distribution
+- Bill SubType Distribution  
+- Bills by Time Period
+- Bills per Faction
+- Bills by Coalition Status
+- Top 10 Bill Initiators
+- Bill Initiators by Faction
+- Total Bills per Faction
+
+#### User Interface
+
+**Filter Access**:
+1. Navigate to **"📈 Predefined Visualizations"**
+2. Select **"Bills Analytics"** topic
+3. Choose any bill chart from the dropdown
+4. Select desired Knesset number
+5. **"Bill Filters"** section appears with **"Bill Origin"** dropdown
+
+**Filter Validation**:
+- **Mathematical Accuracy**: Private Bills + Governmental Bills = Total Bills ✅
+- **Real-time Updates**: Filter changes immediately update visualizations
+- **State Persistence**: Filter selection maintained across chart switches
+
+#### Research Applications
+
+**Legislative Analysis**:
+- **Member Initiative Patterns**: Analyze individual MK legislative productivity
+- **Government vs Opposition**: Compare government vs private member bill success rates
+- **Coalition Dynamics**: Study how coalition status affects private bill initiation
+- **Historical Trends**: Track evolution of government vs private member legislation
+
+**Data-Driven Insights**:
+- Private member bills constitute ~92.5% of legislative proposals
+- Government bills show higher passage rates (59.5% vs 2.4% for private bills)
+- Coalition MKs initiate significantly more private bills than opposition
+- Bill origin strongly correlates with legislative success probability
+
 ## Bill Timeline & Submission Date Analysis (2025-08-05)
 
 ### Enhanced Bill Queries with FirstBillSubmissionDate

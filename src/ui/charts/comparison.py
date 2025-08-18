@@ -27,7 +27,7 @@ class ComparisonCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q", **kwargs)
 
         try:
             with get_db_connection(
@@ -585,6 +585,11 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
+                
+                # Build filters using the base class method
+                filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
+                query += f" AND {filters['bill_origin_condition']}"
+                
                 if faction_filter:
                     valid_ids = [
                         str(fid) for fid in faction_filter if str(fid).isdigit()
@@ -708,6 +713,11 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
+                
+                # Build filters using the base class method
+                filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
+                query += f" AND {filters['bill_origin_condition']}"
+                
                 if faction_filter:
                     valid_ids = [
                         str(fid) for fid in faction_filter if str(fid).isdigit()
@@ -813,6 +823,10 @@ class ComparisonCharts(BaseChart):
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
                     
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
+                    
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -857,6 +871,10 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
+                    
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:
@@ -997,6 +1015,10 @@ class ComparisonCharts(BaseChart):
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
                     
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
+                    
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -1038,6 +1060,10 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
+                    
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:
@@ -1170,6 +1196,10 @@ class ComparisonCharts(BaseChart):
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
                     
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
+                    
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -1211,6 +1241,10 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
+                    
+                    # Add bill origin filter using build_filters method
+                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+                    query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:

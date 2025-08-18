@@ -170,6 +170,15 @@ class BaseChart(ABC):
             's."Desc"', bill_status_filter
         )
 
+        # Bill origin filter (Private vs Governmental)
+        bill_origin_filter = kwargs.get("bill_origin_filter", "All Bills")
+        if bill_origin_filter == "Private Bills Only":
+            filters["bill_origin_condition"] = f"{prefix}PrivateNumber IS NOT NULL"
+        elif bill_origin_filter == "Governmental Bills Only":
+            filters["bill_origin_condition"] = f"{prefix}PrivateNumber IS NULL"
+        else:
+            filters["bill_origin_condition"] = "1=1"  # No filter
+
         # Date filters
         start_date = kwargs.get("start_date")
         if start_date:

@@ -181,7 +181,7 @@ class TimeSeriesCharts(BaseChart):
         if not self.check_database_exists():
             return None
         
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a", **kwargs)
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -332,7 +332,7 @@ class TimeSeriesCharts(BaseChart):
         if not self.check_database_exists():
             return None
         
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -384,6 +384,7 @@ class TimeSeriesCharts(BaseChart):
                         AND {filters['knesset_condition']}
                         AND {filters['bill_type_condition']}
                         AND {filters['bill_status_condition']}
+                        AND {filters['bill_origin_condition']}
                         AND {filters['start_date_condition']}
                         AND {filters['end_date_condition']}
                 """

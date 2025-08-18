@@ -333,8 +333,10 @@ class PlotsPageRenderer:
         if not selected_chart:
             return
         
-        # COMPLETELY SKIP for ALL bill charts - NO ADDITIONAL FILTERS
+        # Bill-specific filters (only private/governmental filter)
         if "Bill" in selected_chart or "Bills" in selected_chart:
+            st.markdown("**Bill Filters:**")
+            self._render_bill_filters(selected_chart)
             return
             
         # Query-specific filters
@@ -414,35 +416,16 @@ class PlotsPageRenderer:
 
     def _render_bill_filters(self, selected_chart: str) -> None:
         """Render bill-specific filter options."""
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Bill Type filter
-            bill_types = st.session_state.get('available_bill_types', [
-                'הצעת חוק', 'הצעת חוק פרטית', 'הצעת חוק ממשלתית'
-            ])
-            selected_bill_types = st.multiselect(
-                "Bill Types",
-                options=bill_types,
-                default=st.session_state.get('plot_bill_type_filter', []),
-                key=f"bill_type_filter_{selected_chart.replace(' ', '_')}",
-                help="Filter by bill type"
-            )
-            st.session_state.plot_bill_type_filter = selected_bill_types
-            
-        with col2:
-            # Bill Status filter
-            bill_statuses = st.session_state.get('available_bill_statuses', [
-                'טיוטה', 'בהכנה', 'הוגשה', 'אושרה', 'נדחתה', 'בוטלה'
-            ])
-            selected_bill_statuses = st.multiselect(
-                "Bill Status",
-                options=bill_statuses,
-                default=st.session_state.get('plot_bill_status_filter', []),
-                key=f"bill_status_filter_{selected_chart.replace(' ', '_')}",
-                help="Filter by bill status"
-            )
-            st.session_state.plot_bill_status_filter = selected_bill_statuses
+        # Bill Origin filter (Private vs Governmental)
+        bill_origin_options = ["All Bills", "Private Bills Only", "Governmental Bills Only"]
+        selected_bill_origin = st.selectbox(
+            "Bill Origin",
+            options=bill_origin_options,
+            index=bill_origin_options.index(st.session_state.get('plot_bill_origin_filter', 'All Bills')),
+            key=f"bill_origin_filter_{selected_chart.replace(' ', '_')}",
+            help="Filter bills by their origin: Private (initiated by MKs) or Governmental (initiated by government)"
+        )
+        st.session_state.plot_bill_origin_filter = selected_bill_origin
 
     def _populate_filter_options(self) -> None:
         """Populate available filter options from the database."""
@@ -672,8 +655,7 @@ class PlotsPageRenderer:
             plot_args["session_type_filter"] = st.session_state.get('plot_session_type_filter', [])
             plot_args["agenda_status_filter"] = st.session_state.get('plot_agenda_status_filter', [])
             
-        elif ("Bill" in selected_chart or "Bills" in selected_chart) and not ("Top" in selected_chart and "Initiators" in selected_chart):
-            plot_args["bill_type_filter"] = st.session_state.get('plot_bill_type_filter', [])
-            plot_args["bill_status_filter"] = st.session_state.get('plot_bill_status_filter', [])
+        elif "Bill" in selected_chart or "Bills" in selected_chart:
+            plot_args["bill_origin_filter"] = st.session_state.get('plot_bill_origin_filter', 'All Bills')
 
         return plot_args

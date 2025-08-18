@@ -29,7 +29,7 @@ class NetworkCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
             with get_db_connection(
@@ -120,7 +120,7 @@ class NetworkCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
             with get_db_connection(
@@ -243,7 +243,7 @@ class NetworkCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
             with get_db_connection(

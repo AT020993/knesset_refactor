@@ -117,7 +117,7 @@ class DistributionCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a", **kwargs)
 
         try:
             with get_db_connection(
@@ -179,7 +179,7 @@ class DistributionCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a", **kwargs)
 
         try:
             with get_db_connection(
@@ -237,7 +237,7 @@ class DistributionCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
             with get_db_connection(
@@ -259,6 +259,7 @@ class DistributionCharts(BaseChart):
                     LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
                     WHERE b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
+                        AND {filters["bill_origin_condition"]}
                     GROUP BY Stage
                     ORDER BY Count DESC
                 """
@@ -522,7 +523,7 @@ class DistributionCharts(BaseChart):
         if not self.check_database_exists():
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b")
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
             with get_db_connection(
@@ -538,6 +539,7 @@ class DistributionCharts(BaseChart):
                     FROM KNS_Bill b
                     WHERE b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
+                        AND {filters["bill_origin_condition"]}
                     GROUP BY b.SubTypeDesc
                     ORDER BY Count DESC
                 """
