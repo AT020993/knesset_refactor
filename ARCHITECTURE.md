@@ -384,6 +384,7 @@ warnings.warn(
 - ✅ **End-to-End Testing**: Comprehensive E2E test suite with Playwright (7/7 tests passing)
 - ✅ **Project Cleanup**: Removed legacy files while preserving all functionality
 - ✅ **CI/CD Enhancement**: Automated E2E testing in GitHub Actions pipeline
+- ✅ **Faction Coalition Mapping**: CSV export system for manual political status assignment (529 factions, Knesset 1-25, Excel-compatible Hebrew encoding)
 
 ### Planned
 - ⏳ **Legacy Code Removal**: Remove deprecated modules once new system is fully tested

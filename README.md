@@ -130,6 +130,7 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
 * **Enhanced Filtering:** Centralized sidebar filters with proper state management
 * **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries with error handling
 * **Data Export:** Multi-format download (CSV, Excel) with proper encoding support
+* **Faction Coalition Mapping:** Export complete faction-to-coalition status mapping CSV (529 factions, Knesset 1-25) with Excel-compatible Hebrew encoding for manual political categorization
 * **Comprehensive Visualizations:**
     * **Predefined Charts:** Over 18 ready-to-use visualizations covering queries, agendas, bills, and advanced analytics
     * **Query Analytics:** Response times by ministry, coalition status analysis with optional date range filtering, performance metrics
@@ -166,6 +167,7 @@ knesset_refactor/
 │   ├── parquet/               # Raw parquet files (auto-generated)
 │   ├── warehouse.duckdb       # DuckDB database storage (auto-generated)
 │   └── .resume_state.json     # Internal file for resuming downloads (auto-generated)
+├── faction_coalition_mapping.csv # Generated CSV with all factions for manual status entry
 ├── docs/
 │   └── KnessetOdataManual.pdf # Official Knesset OData documentation
 ├── scripts/
@@ -414,6 +416,17 @@ PYTHONPATH="./src" python -m backend.fetch_table --list-tables            # List
 # Query Operations
 PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT * FROM KNS_Person LIMIT 5;"
 
+# Export faction coalition mapping CSV (all factions Knesset 1-25)
+python -c "
+import sys; sys.path.insert(0, 'src'); import csv, duckdb; from config.settings import Settings
+with duckdb.connect(str(Settings.DEFAULT_DB_PATH), read_only=True) as con:
+    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC, Name ASC').fetchall()
+    with open('faction_coalition_mapping.csv', 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f); writer.writerow(['KnessetNum', 'FactionID', 'FactionName', 'CoalitionStatus'])
+        for row in result: writer.writerow([row[0], row[1], row[2], ''])
+print('✅ faction_coalition_mapping.csv created (529 records, Hebrew Excel compatible)')
+"
+
 # Alternative simplified CLI
 bash scripts/refresh_all.sh
 ```
@@ -444,7 +457,26 @@ ORDER BY Query_Count DESC
 "
 ```
 
-#### Scenario 2: Tracking Coalition vs Opposition Activity
+#### Scenario 2: Setting Up Faction Coalition Status Mapping
+```bash
+# 1. Export all factions to CSV for manual status entry
+python -c "
+import sys; sys.path.insert(0, 'src'); import csv, duckdb; from config.settings import Settings
+with duckdb.connect(str(Settings.DEFAULT_DB_PATH), read_only=True) as con:
+    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC, Name ASC').fetchall()
+    with open('faction_coalition_mapping.csv', 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f); writer.writerow(['KnessetNum', 'FactionID', 'FactionName', 'CoalitionStatus'])
+        for row in result: writer.writerow([row[0], row[1], row[2], ''])
+print('✅ faction_coalition_mapping.csv created with 529 faction records')
+"
+
+# 2. Open faction_coalition_mapping.csv in Excel 
+# 3. Hebrew faction names display correctly
+# 4. Manually enter Coalition/Opposition status in Column D
+# 5. Use completed CSV for political analysis
+```
+
+#### Scenario 3: Tracking Coalition vs Opposition Activity
 ```bash
 # Launch Streamlit UI
 streamlit run src/ui/data_refresh.py

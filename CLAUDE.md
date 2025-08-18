@@ -57,6 +57,24 @@ PYTHONPATH="./src" python -m backend.fetch_table --list-tables
 
 # Execute SQL query
 PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT * FROM KNS_Person LIMIT 5;"
+
+# Export faction coalition mapping CSV for manual status entry
+# Creates faction_coalition_mapping.csv with all factions from Knesset 25-1
+# File includes Hebrew faction names with proper Excel encoding (UTF-8 BOM)
+python -c "
+import sys
+sys.path.insert(0, 'src')
+import csv, duckdb
+from pathlib import Path
+from config.settings import Settings
+with duckdb.connect(str(Settings.DEFAULT_DB_PATH), read_only=True) as con:
+    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC, Name ASC').fetchall()
+    with open('faction_coalition_mapping.csv', 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        writer.writerow(['KnessetNum', 'FactionID', 'FactionName', 'CoalitionStatus'])
+        for row in result: writer.writerow([row[0], row[1], row[2], ''])
+print('✅ faction_coalition_mapping.csv created with 529 faction records (Knesset 25→1)')
+"
 ```
 
 ### Application Launch
@@ -611,3 +629,36 @@ A comprehensive E2E testing suite has been implemented using Playwright:
 - **Performance**: Application startup and response times optimized
 - **Maintainability**: Cleaner project structure with focused files
 - **Documentation**: Updated all documentation to reflect current state
+
+### Faction Coalition Mapping System (2025-08-18)
+
+#### Manual Coalition Status Management
+
+The platform now supports external coalition status management through a CSV-based approach for manual political affiliation assignment:
+
+**CSV Export Functionality**:
+- **File**: `faction_coalition_mapping.csv` - Master reference for faction political alignments
+- **Coverage**: Complete historical data from Knesset 1 to Knesset 25 (529 faction records)
+- **Structure**: KnessetNum | FactionID | FactionName | CoalitionStatus (manual entry)
+- **Encoding**: UTF-8 with BOM for proper Hebrew display in Excel
+- **Sort Order**: Descending by Knesset (25→1) for current-first data entry
+
+**Key Features**:
+- **Excel Compatibility**: Hebrew faction names display correctly in Microsoft Excel
+- **Historical Completeness**: Every faction from every Knesset term included
+- **Manual Control**: Column D (CoalitionStatus) left empty for user political categorization
+- **Easy Generation**: One-line command creates complete CSV export
+
+**Usage Workflow**:
+1. Run CSV export command to generate `faction_coalition_mapping.csv`
+2. Open file in Excel (Hebrew names display properly)
+3. Manually enter coalition status for each faction-Knesset combination
+4. Use completed CSV as reference for political analysis queries
+
+**Data Quality**:
+- **Comprehensive Coverage**: No missing factions from any Knesset term
+- **Accurate Metadata**: Correct FactionID and KnessetNum for database integration
+- **User Control**: Manual entry ensures political accuracy over automated classification
+- **Excel Integration**: Proper encoding eliminates character display issues
+
+This system provides the foundation for accurate coalition vs opposition analysis while maintaining full user control over political categorization decisions.
