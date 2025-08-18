@@ -155,10 +155,55 @@ jobs:
             cat bandit-report.json || true
           }
 
+  e2e-tests:
+    name: End-to-End Tests
+    needs: test # Run only after unit tests succeed
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: 🎭 Install Playwright Browsers
+        run: playwright install --with-deps
+
+      - name: 🚀 Run Streamlit app in background
+        run: |
+          export PYTHONPATH="./src:$PYTHONPATH"
+          streamlit run src/ui/data_refresh.py --server.port 8501 &
+          echo "Waiting for Streamlit to start..."
+          sleep 20
+          curl -f http://localhost:8501 || (echo "Streamlit failed to start" && exit 1)
+
+      - name: 🧪 Run E2E tests
+        run: |
+          export PYTHONPATH="./src:$PYTHONPATH"
+          pytest -m e2e --base-url http://localhost:8501 --timeout=300
+
+      - name: 📸 Upload screenshots on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-screenshots
+          path: test-results/
+
   ai-branch-notification:
     name: AI Branch Testing Summary
     runs-on: ubuntu-latest
-    needs: [test, code-quality, security-scan]
+    needs: [test, code-quality, security-scan, e2e-tests]
     if: always()
 
     steps:
@@ -172,9 +217,17 @@ jobs:
 
           echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ **Tests**: All tests passed with required coverage (60%+)" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Unit Tests**: All tests passed with required coverage (60%+)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Unit Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.e2e-tests.result }}" == "success" ]]; then
+            echo "✅ **E2E Tests**: All end-to-end tests passed" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.e2e-tests.result }}" == "failure" ]]; then
+            echo "❌ **E2E Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.e2e-tests.result }}" == "skipped" ]]; then
+            echo "⏭️ **E2E Tests**: Skipped due to unit test failures" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -193,10 +246,11 @@ jobs:
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Merge Readiness" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
+          if [[ "${{ needs.test.result }}" == "success" && "${{ needs.e2e-tests.result }}" == "success" ]]; then
             echo "🎉 **Status**: This branch passes all required tests and is ready for review!" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Unit tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ End-to-end tests passed" >> $GITHUB_STEP_SUMMARY
             echo "✅ Core functionality verified" >> $GITHUB_STEP_SUMMARY
             echo "✅ Database operations working" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY

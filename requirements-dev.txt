@@ -40,6 +40,7 @@ memory-profiler>=0.61.0
 ipdb>=0.13.13  # Debugger
 pre-commit>=3.3.0  # Git hooks
 pytest-xdist>=3.3.0  # Parallel test execution
+pytest-playwright>=0.4.0  # End-to-end testing
 
 # Type stubs for better mypy checking
 types-requests>=2.31.0

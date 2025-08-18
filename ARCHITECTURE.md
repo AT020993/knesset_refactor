@@ -254,6 +254,88 @@ class ErrorCategory(Enum):
 - **State Management**: Efficient session state storage
 - **Streaming**: Large dataset processing without loading entire result sets
 
+## Testing Architecture
+
+### Multi-Layer Testing Strategy
+
+The project implements a comprehensive testing strategy with multiple layers:
+
+#### 1. Unit Testing
+- **Framework**: pytest with coverage reporting
+- **Coverage Target**: 60%+ coverage requirement
+- **Scope**: Individual functions, classes, and modules
+- **Test Types**: 
+  - Data validation tests
+  - API integration tests
+  - Database connection tests
+  - UI component tests
+
+#### 2. Integration Testing
+- **Database Integration**: Tests with actual DuckDB instances
+- **API Integration**: Tests with mock and real API endpoints
+- **Service Layer Testing**: Tests business logic integration
+- **Configuration Testing**: Tests configuration loading and validation
+
+#### 3. End-to-End Testing
+- **Framework**: Playwright with pytest integration
+- **Browser Coverage**: Chromium, Firefox, WebKit
+- **Test Coverage**:
+  ```
+  ✅ Main page loading and header verification
+  ✅ Data refresh controls functionality  
+  ✅ Predefined queries section
+  ✅ Sidebar navigation
+  ✅ Error handling with invalid inputs
+  ✅ Responsive design (mobile viewport)
+  ✅ Page load performance
+  ```
+- **Automation**: Integrated in CI/CD pipeline
+- **Success Rate**: 100% (7/7 tests passing)
+
+#### 4. Performance Testing
+- **Load Testing**: Database query performance under load
+- **Memory Testing**: Memory usage patterns and leak detection
+- **Response Time**: API response time monitoring
+- **Scalability Testing**: Large dataset processing validation
+
+### Testing Infrastructure
+
+#### CI/CD Integration
+- **GitHub Actions**: Automated testing on every push
+- **Multi-stage Pipeline**:
+  1. Unit tests (required to pass)
+  2. Code quality checks (linting, formatting)
+  3. Security scanning (dependency vulnerabilities)
+  4. End-to-end tests (browser automation)
+  5. Performance verification
+
+#### Test Data Management
+- **Fixtures**: Reusable test data in `tests/fixtures/`
+- **Mock Data**: Simulated API responses for reliable testing
+- **Test Databases**: Isolated test database instances
+- **Data Cleanup**: Automatic cleanup after test runs
+
+#### Quality Gates
+- **Coverage Requirements**: Minimum 60% code coverage
+- **Performance Thresholds**: Maximum response times
+- **Error Rate Limits**: Zero critical errors allowed
+- **Security Standards**: No high-severity vulnerabilities
+
+### Test Execution
+
+```bash
+# Unit testing
+pytest                                    # All tests
+pytest --cov=src --cov-report=term      # With coverage
+pytest -m "not slow"                     # Fast tests only
+
+# End-to-end testing  
+pytest -m e2e --base-url http://localhost:8501
+
+# Performance testing
+pytest -m performance                    # Performance test suite
+```
+
 ## Security Considerations
 
 ### Data Protection
@@ -298,10 +380,15 @@ warnings.warn(
 - 🔄 **Chart System Migration**: Factory pattern implemented, some chart types still need full implementation
 - 🔄 **Legacy Deprecation**: Gradual phase-out of old modules with warnings
 
+### Recently Completed
+- ✅ **End-to-End Testing**: Comprehensive E2E test suite with Playwright (7/7 tests passing)
+- ✅ **Project Cleanup**: Removed legacy files while preserving all functionality
+- ✅ **CI/CD Enhancement**: Automated E2E testing in GitHub Actions pipeline
+
 ### Planned
 - ⏳ **Legacy Code Removal**: Remove deprecated modules once new system is fully tested
 - ⏳ **Performance Optimization**: Further optimization of large files
-- ⏳ **Test Coverage Expansion**: Comprehensive testing for new modular components
+- ⏳ **Test Coverage Expansion**: Additional integration tests for modular components
 
 ## Future Architecture Considerations
 

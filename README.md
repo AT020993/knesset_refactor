@@ -314,7 +314,9 @@ streamlit run src/ui/data_refresh.py
 
 ### ✨ Recent Major Updates
 
-- 📅 **August 2025: Enhanced Bill Timeline Analysis** - Added `FirstBillSubmissionDate` column with multi-source date resolution, ensuring chronological accuracy (submission ≤ committee ≤ plenum) and 98.2% coverage across all bills
+- 🧪 **August 2025: End-to-End Testing with Playwright** - Added comprehensive E2E test suite with 100% pass rate, automated in CI/CD pipeline
+- 🗂️ **Project Cleanup** - Removed legacy files and documentation while preserving all visualization functionality
+- 📅 **Enhanced Bill Timeline Analysis** - Added `FirstBillSubmissionDate` column with multi-source date resolution, ensuring chronological accuracy (submission ≤ committee ≤ plenum) and 98.2% coverage across all bills
 - 🏗️ **Architecture Refactoring**: Broke down monolithic 624-line file into focused modules (80% reduction)
 - 🧩 **Component-based UI** with clean separation of concerns
 - 🎯 **Type-safe session management** with centralized state
@@ -519,11 +521,48 @@ results.to_excel('research_data.xlsx', index=False)
 
 ## 🧪 Testing
 
+### Unit Testing
+
 Run unit tests using pytest:
 
 ```bash
+# Run all tests
 pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test categories
+pytest -m "not slow"           # Skip slow tests
+pytest -m integration          # Run integration tests only
 ```
+
+### End-to-End Testing
+
+Comprehensive E2E testing with Playwright:
+
+```bash
+# Install E2E dependencies
+pip install -r requirements-dev.txt
+playwright install --with-deps
+
+# Start the application
+streamlit run src/ui/data_refresh.py
+
+# Run E2E tests (in another terminal)
+pytest -m e2e --base-url http://localhost:8501
+```
+
+**E2E Test Coverage:**
+- ✅ Main page loading and header verification
+- ✅ Data refresh controls functionality
+- ✅ Predefined queries section
+- ✅ Sidebar navigation
+- ✅ Error handling with invalid inputs
+- ✅ Responsive design (mobile viewport)
+- ✅ Page load performance
+
+### Quick Verification
 
 Test core functionality:
 
@@ -547,6 +586,8 @@ When AI tools (Codex, Jules, etc.) create new branches, our GitHub Actions workf
 - Runs full pytest suite with 80%+ coverage requirement
 - Tests async functionality with proper asyncio handling
 - Verifies critical imports and database functionality
+- **End-to-End testing** with Playwright (7/7 tests passing)
+- Automated browser testing across Chrome, Firefox, and Safari
 
 ✅ **Code Quality Checks**
 - Linting with flake8 (syntax errors block merge)

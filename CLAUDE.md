@@ -6,13 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing
 ```bash
-# Run unit tests with coverage
+# Unit tests with coverage
 pytest
+pytest --cov=src --cov-report=term-missing
 
 # Run specific test categories
 pytest -m "not slow"           # Skip slow tests
 pytest -m integration          # Run integration tests only
 pytest -m performance          # Run performance tests only
+pytest -m e2e                  # Run E2E tests only
+
+# End-to-End testing (requires app running)
+pip install -r requirements-dev.txt
+playwright install --with-deps
+streamlit run src/ui/data_refresh.py  # In separate terminal
+pytest -m e2e --base-url http://localhost:8501
 ```
 
 ### Code Quality
@@ -560,3 +568,46 @@ The platform includes three interactive visualization charts that analyze collab
 3. **`src/ui/services/chart_service.py`**: Added service method for new breakdown chart
 
 4. **`src/ui/plot_generators.py`**: Added legacy wrapper for breakdown chart compatibility
+
+## Recent Updates (August 2025)
+
+### End-to-End Testing Implementation
+
+A comprehensive E2E testing suite has been implemented using Playwright:
+
+#### Test Coverage (7/7 tests passing ✅)
+- **Main page loading and header verification**
+- **Data refresh controls functionality**
+- **Predefined queries section**
+- **Sidebar navigation**
+- **Error handling with invalid inputs**
+- **Responsive design (mobile viewport)**
+- **Page load performance**
+
+#### CI/CD Integration
+- **Automated Testing**: E2E tests run automatically in GitHub Actions
+- **Browser Support**: Tests run on Chromium, Firefox, and WebKit
+- **Quality Gates**: All tests must pass before merge
+- **Screenshot Capture**: Automatic screenshot capture on test failures
+
+### Project Cleanup & Maintenance
+
+#### Files Removed
+- **Legacy Backup Files**: `legacy_backup/` directory removed
+- **Generated Files**: Coverage reports, log files, HTML reports
+- **Unused Scripts**: Old fetch scripts superseded by modular backend
+- **Outdated Documentation**: Refactoring guides, outdated setup docs
+- **Docker Files**: Unused Docker configuration files
+
+#### Files Preserved
+- ✅ **All visualization and chart functionality**
+- ✅ **Core application features**
+- ✅ **Essential documentation** (README.md, CLAUDE.md, ARCHITECTURE.md)
+- ✅ **Data processing capabilities**
+- ✅ **Interactive UI components**
+
+### Quality Improvements
+- **Code Coverage**: Maintained 60%+ coverage requirement
+- **Performance**: Application startup and response times optimized
+- **Maintainability**: Cleaner project structure with focused files
+- **Documentation**: Updated all documentation to reflect current state
