@@ -37,7 +37,7 @@ class DataRefreshPageRenderer:
 
     def render_page_header(self) -> None:
         """Render the page title and help information."""
-        st.title("🇮🇱 Knesset Data Warehouse Console")
+        st.title("🇮🇱 Knesset Data Console")
         
         with st.expander("ℹ️ How This Works", expanded=False):
             st.markdown(dedent("""

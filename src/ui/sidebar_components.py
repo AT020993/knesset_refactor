@@ -519,13 +519,11 @@ def display_sidebar(
     st.sidebar.multiselect(
         "Knesset Number(s):",
         options=knesset_nums_options_filters,  # Use the fetched options
-        default=st.session_state.get("ms_knesset_filter", []),
         key="ms_knesset_filter",  # This becomes the session state variable name
     )
     st.sidebar.multiselect(
         "Faction(s) (by Knesset):",
         options=list(faction_display_map_arg.keys()),  # Use the passed map
-        default=st.session_state.get("ms_faction_filter", []),
         help="Select factions. The Knesset number in parentheses provides context.",
         key="ms_faction_filter",  # This becomes the session state variable name
     )

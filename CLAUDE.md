@@ -662,3 +662,42 @@ The platform now supports external coalition status management through a CSV-bas
 - **Excel Integration**: Proper encoding eliminates character display issues
 
 This system provides the foundation for accurate coalition vs opposition analysis while maintaining full user control over political categorization decisions.
+
+## Recent Updates (2025-08-19)
+
+### UI Improvements and Bug Fixes
+
+#### Header Update
+- **Main Console Title**: Updated from "🇮🇱 Knesset Data Warehouse Console" to "🇮🇱 Knesset Data Console"
+- **Location**: `src/ui/pages/data_refresh_page.py:40`
+- **Tests Updated**: All E2E tests in `tests/test_e2e.py` updated to match new header
+
+#### Interactive Chart Builder Removal
+- **Removed Components**: Completely removed Interactive Chart Builder functionality
+- **Files Deleted**: 
+  - `src/ui/chart_builder.py`
+  - `src/ui/chart_builder_ui.py`
+  - `src/ui/chart_renderer.py`
+  - `tests/test_chart_builder_ui.py`
+- **Main UI Updated**: Removed chart builder import and section from `src/ui/data_refresh.py`
+- **Documentation Cleaned**: Removed all references from README.md
+
+#### Widget Key Conflict Fix
+- **Issue Resolved**: Fixed Streamlit widget key conflict for `ms_knesset_filter` and `ms_faction_filter`
+- **Root Cause**: Widgets had both `default` parameter and `key` parameter referencing same session state
+- **Solution**: Removed `default` parameters from multiselect widgets in `src/ui/sidebar_components.py:522-531`
+- **Result**: Eliminated "widget was created with default value but also had its value set via Session State API" warning
+
+#### Code Quality Standards
+- **Testing Protocol**: After every code change, run all tests to ensure stability
+- **Documentation Policy**: Update project documentation after successful code changes and test passes
+- **Syntax Validation**: All modified files pass Python syntax compilation checks
+- **Import Verification**: Core application modules import successfully without errors
+
+### Technical Implementation Notes
+
+**Session State Management**: The fix leverages Streamlit's automatic session state management through widget `key` parameters, eliminating the need for manual `default` value setting when the SessionManager already initializes these values.
+
+**E2E Test Maintenance**: All end-to-end tests maintain synchronization with UI changes to ensure continuous integration reliability.
+
+**Clean Architecture Preservation**: Removal of chart builder maintains the clean architecture principles while reducing complexity and focusing on core functionality.

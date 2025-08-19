@@ -27,7 +27,7 @@ def test_main_page_title_and_header(page: Page):
     expect(page).to_have_title(re.compile("Knesset OData"))
 
     # 2. Check for the main header (actual header from screenshot)
-    header = page.get_by_role("heading", name="Knesset Data Warehouse Console")
+    header = page.get_by_role("heading", name="Knesset Data Console")
     expect(header).to_be_visible()
 
 
@@ -96,7 +96,7 @@ def test_error_handling_with_invalid_selections(page: Page):
     expect(app_container).to_be_visible()
     
     # 2. Verify core elements are still accessible
-    main_header = page.get_by_role("heading", name="Knesset Data Warehouse Console")
+    main_header = page.get_by_role("heading", name="Knesset Data Console")
     expect(main_header).to_be_visible()
 
 
@@ -116,7 +116,7 @@ def test_responsive_design_mobile(page: Page):
     expect(app_container).to_be_visible()
     
     # 2. Check that the app doesn't break on smaller screens
-    header = page.get_by_role("heading", name="Knesset Data Warehouse Console")
+    header = page.get_by_role("heading", name="Knesset Data Console")
     expect(header).to_be_visible()
 
 
@@ -131,5 +131,5 @@ def test_page_load_performance(page: Page):
     page.wait_for_selector("h1", timeout=30000)
     
     # Verify core elements loaded successfully
-    header = page.get_by_role("heading", name="Knesset Data Warehouse Console")
+    header = page.get_by_role("heading", name="Knesset Data Console")
     expect(header).to_be_visible()

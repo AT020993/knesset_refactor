@@ -51,7 +51,6 @@ Transform complex parliamentary data into actionable insights with:
 - 📊 **18+ interactive visualizations** for parliamentary analysis  
 - 🖥️ **User-friendly Streamlit interface** for non-technical users
 - ⚙️ **Robust CLI tools** for automated workflows
-- 📈 **Custom chart builder** for exploratory data analysis
 
 ### 🎯 Project Goals
 
@@ -140,9 +139,6 @@ For AI tools (Jules, Codex, etc.) and developers, this project includes a comple
     * **Timeline Analysis:** Coalition periods, MK tenure, and ministry leadership timelines
     * **Temporal Filtering:** Date range controls for analyzing specific time periods in faction query patterns
     * Interactive engagement with all charts powered by Plotly
-* **Interactive Chart Builder:**
-    * Dynamically construct custom visualizations (bar charts, scatter plots, etc.) directly from the data tables
-    * Users can select tables, columns for axes, color encodings, and faceting to explore data patterns
 
 ### Command-Line Interface (CLI)
 * **Backend CLI (`src/backend/fetch_table.py`):**
@@ -225,7 +221,6 @@ knesset_refactor/
 │   │   ├── sidebar_components.py # Sidebar UI components
 │   │   ├── ui_utils.py      # UI utility functions
 │   │   ├── plot_generators.py # Legacy compatibility layer
-│   │   ├── chart_builder_ui.py # Interactive chart builder
 │   │   └── __init__.py
 │   ├── utils/
 │   │   ├── logger_setup.py  # Logging configuration
@@ -392,7 +387,6 @@ Access the UI at `http://localhost:8501`
 | 🔍 **Table Explorer** | Browse tables with dynamic filters |
 | 📊 **Predefined Queries** | Run analytical queries with coalition status, bill merge tracking, and local filtering |
 | 📈 **18+ Visualizations** | Query analytics, activity patterns, bill analysis, collaboration networks |
-| 🎨 **Custom Charts** | Interactive chart builder for exploration |
 | 💻 **SQL Sandbox** | Execute custom SQL queries |
 | 📥 **Data Export** | Download results in CSV or Excel format |
 
@@ -505,15 +499,6 @@ streamlit run src/ui/data_refresh.py
 # 5. Export data showing first/last committee session dates for timeline analysis
 ```
 
-#### Scenario 4: Building Custom Visualizations
-```bash
-# In Streamlit UI:
-# 1. Navigate to "Chart Builder" tab
-# 2. Select table: "KNS_Query" 
-# 3. X-axis: "StartDate", Y-axis: "Count", Color: "Coalition Status"
-# 4. Create time series showing query submission patterns
-# 5. Download chart as PNG for presentations
-```
 
 ### Power User Workflows
 
