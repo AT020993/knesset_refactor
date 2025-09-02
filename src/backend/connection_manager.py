@@ -171,7 +171,7 @@ def get_db_connection(
                 _connection_monitor.unregister_connection(conn)
                 conn.close()
 
-            conn = duckdb.connect(database=":memory:", read_only=True)
+            conn = duckdb.connect(database=":memory:", read_only=False)
             _connection_monitor.register_connection(conn, ":memory:")
             logger_obj.info("Using in-memory fallback connection due to error")
             yield conn
@@ -512,7 +512,7 @@ def connect_db(
         st.warning(
             f"Database {db_path} does not exist. Please run a data refresh first."
         )
-        conn = duckdb.connect(database=":memory:", read_only=True)
+        conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
         return conn
 
@@ -529,6 +529,6 @@ def connect_db(
             f"Error connecting to database at {db_path}: {e}", exc_info=True
         )
         st.error(f"Database connection error: {e}")
-        conn = duckdb.connect(database=":memory:", read_only=True)
+        conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
         return conn
