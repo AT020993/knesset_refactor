@@ -20,23 +20,28 @@ fetching using KnessetNum filtering.
 """
 
 from typing import Any, Dict
+from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
+from utils.committee_resolver import CommitteeResolver, get_committee_name_with_enhanced_fallback
 
 # Query definitions with their SQL and metadata
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
     "Queries + Full Details": {
         "sql": """
-WITH FactionLookup AS (
-    SELECT 
-        ptp.PersonID,
-        ptp.KnessetNum,
-        ptp.FactionID,
-        ROW_NUMBER() OVER (PARTITION BY ptp.PersonID, ptp.KnessetNum ORDER BY 
-            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-            ptp.StartDate DESC NULLS LAST
-        ) as rn
-    FROM KNS_PersonToPosition ptp
-    WHERE ptp.FactionID IS NOT NULL
-),
+WITH StandardFactionLookup AS (
+            SELECT 
+                ptp.PersonID as PersonID,
+                ptp.KnessetNum as KnessetNum,
+                ptp.FactionID,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
+                    ORDER BY 
+                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+                        ptp.KnessetNum DESC,
+                        ptp.StartDate DESC NULLS LAST
+                ) as rn
+            FROM KNS_PersonToPosition ptp
+            WHERE ptp.FactionID IS NOT NULL
+        ),
 MinisterLookup AS (
     SELECT 
         p2p.GovMinistryID,
@@ -82,10 +87,10 @@ FROM KNS_Query Q
 LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
 LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
 LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-LEFT JOIN FactionLookup fl ON Q.PersonID = fl.PersonID 
-    AND Q.KnessetNum = fl.KnessetNum 
-    AND fl.rn = 1
-LEFT JOIN KNS_Faction f ON fl.FactionID = f.FactionID
+LEFT JOIN StandardFactionLookup sfl ON Q.PersonID = sfl.PersonID 
+    AND Q.KnessetNum = sfl.KnessetNum 
+    AND sfl.rn = 1
+LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
 LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
     AND Q.KnessetNum = ufs.KnessetNum
 LEFT JOIN MinisterLookup ml ON Q.GovMinistryID = ml.GovMinistryID AND ml.rn = 1
@@ -102,18 +107,21 @@ ORDER BY Q.KnessetNum DESC, Q.QueryID DESC;
     },
     "Agenda Items + Full Details": {
         "sql": """
-WITH AgendaFactionLookup AS (
-    SELECT 
-        ptp.PersonID,
-        ptp.KnessetNum,
-        ptp.FactionID,
-        ROW_NUMBER() OVER (PARTITION BY ptp.PersonID, ptp.KnessetNum ORDER BY 
-            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-            ptp.StartDate DESC NULLS LAST
-        ) as rn
-    FROM KNS_PersonToPosition ptp
-    WHERE ptp.FactionID IS NOT NULL
-)
+WITH StandardFactionLookup AS (
+            SELECT 
+                ptp.PersonID as PersonID,
+                ptp.KnessetNum as KnessetNum,
+                ptp.FactionID,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
+                    ORDER BY 
+                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+                        ptp.KnessetNum DESC,
+                        ptp.StartDate DESC NULLS LAST
+                ) as rn
+            FROM KNS_PersonToPosition ptp
+            WHERE ptp.FactionID IS NOT NULL
+        )
 SELECT
     A.AgendaID,
     A.Number,
@@ -140,10 +148,10 @@ SELECT
 FROM KNS_Agenda A
 LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
 LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-LEFT JOIN AgendaFactionLookup afl ON A.InitiatorPersonID = afl.PersonID 
-    AND A.KnessetNum = afl.KnessetNum 
-    AND afl.rn = 1
-LEFT JOIN KNS_Faction f ON afl.FactionID = f.FactionID
+LEFT JOIN StandardFactionLookup sfl ON A.InitiatorPersonID = sfl.PersonID 
+    AND A.KnessetNum = sfl.KnessetNum 
+    AND sfl.rn = 1
+LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
 LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
     AND A.KnessetNum = ufs.KnessetNum
 
@@ -158,18 +166,33 @@ ORDER BY A.KnessetNum DESC, A.AgendaID DESC;
     },
     "Bills + Full Details": {
         "sql": """
-WITH BillMainInitiatorFaction AS (
+WITH StandardFactionLookup AS (
+            SELECT 
+                ptp.PersonID as PersonID,
+                ptp.KnessetNum as KnessetNum,
+                ptp.FactionID,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
+                    ORDER BY 
+                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
+                        ptp.KnessetNum DESC,
+                        ptp.StartDate DESC NULLS LAST
+                ) as rn
+            FROM KNS_PersonToPosition ptp
+            WHERE ptp.FactionID IS NOT NULL
+        ),
+BillMainInitiatorFaction AS (
     SELECT 
         BI.BillID,
         B.KnessetNum,
         BI.PersonID as MainInitiatorPersonID,
-        ptp.FactionID,
+        sfl.FactionID,
         ROW_NUMBER() OVER (PARTITION BY BI.BillID ORDER BY BI.Ordinal) as rn
     FROM KNS_BillInitiator BI
     JOIN KNS_Bill B ON BI.BillID = B.BillID
-    LEFT JOIN KNS_PersonToPosition ptp ON BI.PersonID = ptp.PersonID 
-        AND B.KnessetNum = ptp.KnessetNum
-        AND ptp.FactionID IS NOT NULL
+    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID 
+        AND B.KnessetNum = sfl.KnessetNum
+        AND sfl.rn = 1
     WHERE BI.Ordinal = 1
 ),
 BillSupportingMemberFactions AS (
@@ -177,16 +200,13 @@ BillSupportingMemberFactions AS (
         BI.BillID,
         BI.PersonID,
         B.KnessetNum,
-        ptp.FactionID,
-        ROW_NUMBER() OVER (PARTITION BY BI.BillID, BI.PersonID ORDER BY 
-            CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-            ptp.StartDate DESC NULLS LAST
-        ) as rn
+        sfl.FactionID,
+        ROW_NUMBER() OVER (PARTITION BY BI.BillID, BI.PersonID ORDER BY BI.Ordinal) as rn
     FROM KNS_BillInitiator BI
     JOIN KNS_Bill B ON BI.BillID = B.BillID
-    LEFT JOIN KNS_PersonToPosition ptp ON BI.PersonID = ptp.PersonID 
-        AND B.KnessetNum = ptp.KnessetNum
-        AND ptp.FactionID IS NOT NULL
+    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID 
+        AND B.KnessetNum = sfl.KnessetNum
+        AND sfl.rn = 1
     WHERE (BI.Ordinal > 1 OR BI.IsInitiator IS NULL)
 ),
 BillMergeInfo AS (

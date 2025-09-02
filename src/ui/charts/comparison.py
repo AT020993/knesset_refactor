@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
+from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
 
 from .base import BaseChart
 
@@ -39,16 +40,19 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 query = f"""
+                    WITH {FactionResolver.get_standard_faction_lookup_cte()}
                     SELECT
-                        p2p.FactionName AS FactionName,
+                        {get_faction_name_field('f', "'Unknown'")} AS FactionName,
                         COUNT(q.QueryID) AS QueryCount
                     FROM KNS_Query q
-                    LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID 
-                        AND q.KnessetNum = p2p.KnessetNum
+                    LEFT JOIN StandardFactionLookup sfl ON q.PersonID = sfl.PersonID 
+                        AND q.KnessetNum = sfl.KnessetNum 
+                        AND sfl.rn = 1
+                    LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
                     WHERE q.KnessetNum IS NOT NULL
-                        AND p2p.FactionName IS NOT NULL
+                        AND f.Name IS NOT NULL
                         AND {filters["knesset_condition"]}
-                    GROUP BY p2p.FactionName
+                    GROUP BY f.Name
                     ORDER BY QueryCount DESC
                     LIMIT 20
                 """
