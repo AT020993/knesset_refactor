@@ -12,6 +12,7 @@ import streamlit as st
 import numpy as np
 
 from backend.connection_manager import get_db_connection, safe_execute_query
+from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
 from .base import BaseChart
 
 
@@ -38,9 +39,10 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_Person", "KNS_PersonToPosition", "KNS_Faction"]):
                     return None
 
-                # Get MK collaboration network data
+                # Get MK collaboration network data using standardized faction resolution
                 query = f"""
-                WITH BillCollaborations AS (
+                WITH {FactionResolver.get_standard_faction_lookup_cte()},
+                BillCollaborations AS (
                     SELECT 
                         main.PersonID as MainInitiatorID,
                         supp.PersonID as SupporterID,
@@ -59,25 +61,18 @@ class NetworkCharts(BaseChart):
                     SELECT 
                         p.PersonID,
                         p.FirstName || ' ' || p.LastName as FullName,
-                        COALESCE(
-                            -- Try to get the most recent faction for this MK
-                            (SELECT f.Name 
-                             FROM KNS_PersonToPosition ptp2 
-                             JOIN KNS_Faction f ON ptp2.FactionID = f.FactionID
-                             WHERE ptp2.PersonID = p.PersonID 
-                             ORDER BY ptp2.KnessetNum DESC, ptp2.StartDate DESC 
-                             LIMIT 1),
-                            'Independent'
-                        ) as FactionName,
+                        {get_faction_name_field('f', "'Independent'")} as FactionName,
                         COUNT(DISTINCT bi.BillID) as TotalBills
                     FROM KNS_Person p
                     LEFT JOIN KNS_BillInitiator bi ON p.PersonID = bi.PersonID AND bi.Ordinal = 1
+                    LEFT JOIN StandardFactionLookup sfl ON p.PersonID = sfl.PersonID AND sfl.rn = 1
+                    LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
                     WHERE p.PersonID IN (
                         SELECT MainInitiatorID FROM BillCollaborations
                         UNION
                         SELECT SupporterID FROM BillCollaborations
                     )
-                    GROUP BY p.PersonID, p.FirstName, p.LastName
+                    GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name
                 )
                 SELECT 
                     bc.MainInitiatorID,

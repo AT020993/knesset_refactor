@@ -171,7 +171,7 @@ def get_db_connection(
                 _connection_monitor.unregister_connection(conn)
                 conn.close()
 
-            conn = duckdb.connect(database=":memory:", read_only=True)
+            conn = duckdb.connect(database=":memory:", read_only=False)
             _connection_monitor.register_connection(conn, ":memory:")
             logger_obj.info("Using in-memory fallback connection due to error")
             yield conn
