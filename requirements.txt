@@ -26,6 +26,11 @@ backoff==2.2.1                    # Intelligent retry strategies for API calls
 tqdm==4.66.1                      # Progress bars and status visualization
 openpyxl==3.1.5                   # Excel file export functionality
 
+# Desktop Application Support (for researcher launcher)
+# Note: tkinter is usually included with Python, but adding fallbacks
+pywin32>=227; sys_platform == "win32"    # Windows desktop integration
+winshell>=0.6; sys_platform == "win32"   # Windows shortcut creation
+
 # -----------------------------------------------------------------------------
 # COMMAND LINE INTERFACE
 # -----------------------------------------------------------------------------
