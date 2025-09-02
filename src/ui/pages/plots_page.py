@@ -348,6 +348,11 @@ class PlotsPageRenderer:
         elif "Agenda" in selected_chart or "Agendas" in selected_chart:
             st.markdown("**Additional Filters:**")
             self._render_agenda_filters(selected_chart)
+            
+        # Network/Collaboration-specific filters
+        elif "Collaboration" in selected_chart or "Network" in selected_chart:
+            st.markdown("**Collaboration Filters:**")
+            self._render_collaboration_filters(selected_chart)
 
     def _render_query_filters(self, selected_chart: str) -> None:
         """Render query-specific filter options."""
@@ -413,6 +418,66 @@ class PlotsPageRenderer:
                 help="Filter by agenda status"
             )
             st.session_state.plot_agenda_status_filter = selected_agenda_statuses
+
+    def _render_collaboration_filters(self, selected_chart: str) -> None:
+        """Render collaboration/network-specific filter options."""
+        
+        # Specific filters for Faction Collaboration Matrix
+        if "Faction Collaboration Matrix" in selected_chart:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Minimum collaborations threshold
+                min_collaborations = st.number_input(
+                    "Min. Collaborations",
+                    min_value=1,
+                    max_value=20,
+                    value=st.session_state.get('plot_min_collaborations', 3),
+                    key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
+                    help="Minimum number of collaborative bills to show faction-to-faction relationship"
+                )
+                st.session_state.plot_min_collaborations = min_collaborations
+                
+            with col2:
+                # Show solo bills toggle
+                show_solo_bills = st.checkbox(
+                    "Show Solo Bills",
+                    value=st.session_state.get('plot_show_solo_bills', True),
+                    key=f"show_solo_bills_{selected_chart.replace(' ', '_')}",
+                    help="Display solo bills (bills with only 1 initiator) on the diagonal"
+                )
+                st.session_state.plot_show_solo_bills = show_solo_bills
+                
+            with col3:
+                # Minimum total bills for faction inclusion
+                min_total_bills = st.number_input(
+                    "Min. Total Bills",
+                    min_value=1,
+                    max_value=50,
+                    value=st.session_state.get('plot_min_total_bills', 1),
+                    key=f"min_total_bills_{selected_chart.replace(' ', '_')}",
+                    help="Minimum total bills for a faction to be included in matrix"
+                )
+                st.session_state.plot_min_total_bills = min_total_bills
+        
+        # General collaboration filters for other network charts
+        else:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Minimum collaborations threshold
+                min_collaborations = st.number_input(
+                    "Min. Collaborations",
+                    min_value=1,
+                    max_value=20,
+                    value=st.session_state.get('plot_min_collaborations', 3 if "Matrix" in selected_chart else 5),
+                    key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
+                    help="Minimum number of collaborative bills to display relationship"
+                )
+                st.session_state.plot_min_collaborations = min_collaborations
+                
+            with col2:
+                st.write("")  # Spacer for future additional filters
 
     def _render_bill_filters(self, selected_chart: str) -> None:
         """Render bill-specific filter options."""
@@ -657,5 +722,12 @@ class PlotsPageRenderer:
             
         elif "Bill" in selected_chart or "Bills" in selected_chart:
             plot_args["bill_origin_filter"] = st.session_state.get('plot_bill_origin_filter', 'All Bills')
+            
+        elif "Collaboration" in selected_chart or "Network" in selected_chart:
+            # Add collaboration-specific parameters
+            plot_args["min_collaborations"] = st.session_state.get('plot_min_collaborations', 3)
+            if "Faction Collaboration Matrix" in selected_chart:
+                plot_args["show_solo_bills"] = st.session_state.get('plot_show_solo_bills', True)
+                plot_args["min_total_bills"] = st.session_state.get('plot_min_total_bills', 1)
 
         return plot_args

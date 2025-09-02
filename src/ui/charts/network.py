@@ -1243,9 +1243,11 @@ class NetworkCharts(BaseChart):
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[str]] = None,
         min_collaborations: int = 3,
+        show_solo_bills: bool = True,
+        min_total_bills: int = 1,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate faction collaboration matrix showing collaboration counts between all faction pairs."""
+        """Generate enhanced faction collaboration matrix showing both collaborations and solo bill activity."""
         if not self.check_database_exists():
             return None
 
@@ -1258,9 +1260,78 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
                     return None
 
-                # Get faction-to-faction collaboration matrix data
+                # Enhanced query to include all active factions and solo bills
                 query = f"""
-                WITH FactionCollaborations AS (
+                WITH AllActiveFactions AS (
+                    -- Get all factions that initiated bills (main or supporting) in selected Knesset(s)
+                    SELECT DISTINCT 
+                        f.FactionID, 
+                        f.Name as FactionName,
+                        COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
+                    FROM KNS_Faction f
+                    LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
+                    WHERE f.FactionID IN (
+                        SELECT DISTINCT 
+                            COALESCE(
+                                (SELECT f2.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f2 ON ptp.FactionID = f2.FactionID
+                                 WHERE ptp.PersonID = bi.PersonID 
+                                   AND ptp.KnessetNum = b.KnessetNum
+                                 ORDER BY ptp.StartDate DESC LIMIT 1),
+                                (SELECT f2.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f2 ON ptp.FactionID = f2.FactionID
+                                 WHERE ptp.PersonID = bi.PersonID
+                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                            ) as FactionID
+                        FROM KNS_BillInitiator bi
+                        JOIN KNS_Bill b ON bi.BillID = b.BillID
+                        WHERE b.KnessetNum IS NOT NULL 
+                          AND {filters["knesset_condition"]}
+                          AND bi.PersonID IS NOT NULL
+                    )
+                    AND f.FactionID IS NOT NULL
+                ),
+                SoloBills AS (
+                    -- Count bills where each faction worked alone (only 1 initiator total)
+                    SELECT 
+                        af.FactionID,
+                        af.FactionName,
+                        af.CoalitionStatus,
+                        COUNT(DISTINCT solo_bills.BillID) as SoloBillCount
+                    FROM AllActiveFactions af
+                    LEFT JOIN (
+                        SELECT DISTINCT 
+                            bi.BillID,
+                            COALESCE(
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = bi.PersonID 
+                                   AND ptp.KnessetNum = b.KnessetNum
+                                 ORDER BY ptp.StartDate DESC LIMIT 1),
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = bi.PersonID
+                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                            ) as FactionID
+                        FROM KNS_BillInitiator bi
+                        JOIN KNS_Bill b ON bi.BillID = b.BillID
+                        WHERE bi.BillID IN (
+                            SELECT BillID 
+                            FROM KNS_BillInitiator 
+                            GROUP BY BillID 
+                            HAVING COUNT(*) = 1
+                        )
+                        AND b.KnessetNum IS NOT NULL 
+                        AND {filters["knesset_condition"]}
+                    ) solo_bills ON af.FactionID = solo_bills.FactionID
+                    GROUP BY af.FactionID, af.FactionName, af.CoalitionStatus
+                ),
+                FactionCollaborations AS (
+                    -- Existing collaboration logic
                     SELECT 
                         main.PersonID as MainPersonID,
                         supp.PersonID as SuppPersonID,
@@ -1274,86 +1345,106 @@ class NetworkCharts(BaseChart):
                         AND b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
                 ),
-                PersonFactions AS (
-                    SELECT DISTINCT
-                        fc.MainPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
-                    FROM FactionCollaborations fc
-                    UNION
-                    SELECT DISTINCT
-                        fc.SuppPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
-                    FROM FactionCollaborations fc
-                ),
-                FactionPairs AS (
+                CollaborationPairs AS (
                     SELECT 
-                        main_pf.FactionID as MainFactionID,
-                        supp_pf.FactionID as SupporterFactionID,
-                        COUNT(DISTINCT fc.BillID) as CollaborationCount
+                        main_faction.FactionID as MainFactionID,
+                        supp_faction.FactionID as SupporterFactionID,
+                        COUNT(DISTINCT fc.BillID) as CollaborationCount,
+                        main_faction.FactionName as MainFactionName,
+                        supp_faction.FactionName as SupporterFactionName,
+                        main_faction.CoalitionStatus as MainCoalitionStatus,
+                        supp_faction.CoalitionStatus as SupporterCoalitionStatus
                     FROM FactionCollaborations fc
-                    JOIN PersonFactions main_pf ON fc.MainPersonID = main_pf.PersonID
-                    JOIN PersonFactions supp_pf ON fc.SuppPersonID = supp_pf.PersonID
-                    WHERE main_pf.FactionID IS NOT NULL
-                        AND supp_pf.FactionID IS NOT NULL
-                        AND main_pf.FactionID <> supp_pf.FactionID
-                    GROUP BY main_pf.FactionID, supp_pf.FactionID
+                    JOIN (
+                        SELECT DISTINCT 
+                            fc2.MainPersonID as PersonID,
+                            af.FactionID,
+                            af.FactionName,
+                            af.CoalitionStatus
+                        FROM FactionCollaborations fc2
+                        JOIN AllActiveFactions af ON af.FactionID = (
+                            COALESCE(
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = fc2.MainPersonID AND ptp.KnessetNum = fc2.KnessetNum
+                                 ORDER BY ptp.StartDate DESC LIMIT 1),
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = fc2.MainPersonID
+                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                            )
+                        )
+                    ) main_faction ON fc.MainPersonID = main_faction.PersonID
+                    JOIN (
+                        SELECT DISTINCT 
+                            fc2.SuppPersonID as PersonID,
+                            af.FactionID,
+                            af.FactionName,
+                            af.CoalitionStatus
+                        FROM FactionCollaborations fc2
+                        JOIN AllActiveFactions af ON af.FactionID = (
+                            COALESCE(
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = fc2.SuppPersonID AND ptp.KnessetNum = fc2.KnessetNum
+                                 ORDER BY ptp.StartDate DESC LIMIT 1),
+                                (SELECT f.FactionID 
+                                 FROM KNS_PersonToPosition ptp 
+                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                                 WHERE ptp.PersonID = fc2.SuppPersonID
+                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                            )
+                        )
+                    ) supp_faction ON fc.SuppPersonID = supp_faction.PersonID
+                    WHERE main_faction.FactionID IS NOT NULL
+                        AND supp_faction.FactionID IS NOT NULL
+                        AND main_faction.FactionID <> supp_faction.FactionID
+                    GROUP BY main_faction.FactionID, supp_faction.FactionID, 
+                             main_faction.FactionName, supp_faction.FactionName,
+                             main_faction.CoalitionStatus, supp_faction.CoalitionStatus
                     HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
-                ),
-                AllFactions AS (
-                    SELECT DISTINCT f.FactionID, f.Name as FactionName,
-                           COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
-                    FROM KNS_Faction f
-                    LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
-                    WHERE f.FactionID IN (
-                        SELECT MainFactionID FROM FactionPairs
-                        UNION 
-                        SELECT SupporterFactionID FROM FactionPairs
-                    )
                 )
+                -- Return results in format compatible with existing matrix creation
                 SELECT 
-                    fp.MainFactionID,
-                    fp.SupporterFactionID,
-                    fp.CollaborationCount,
-                    main_f.FactionName as MainFactionName,
-                    supp_f.FactionName as SupporterFactionName,
-                    main_f.CoalitionStatus as MainCoalitionStatus,
-                    supp_f.CoalitionStatus as SupporterCoalitionStatus
-                FROM FactionPairs fp
-                JOIN AllFactions main_f ON fp.MainFactionID = main_f.FactionID
-                JOIN AllFactions supp_f ON fp.SupporterFactionID = supp_f.FactionID
-                ORDER BY fp.CollaborationCount DESC
+                    'collaboration' as DataType,
+                    cp.MainFactionID as FactionID1,
+                    cp.SupporterFactionID as FactionID2,
+                    cp.MainFactionName as FactionName1,
+                    cp.SupporterFactionName as FactionName2,
+                    cp.MainCoalitionStatus as CoalitionStatus1,
+                    cp.SupporterCoalitionStatus as CoalitionStatus2,
+                    cp.CollaborationCount as Count
+                FROM CollaborationPairs cp
+                UNION ALL
+                SELECT 
+                    'solo' as DataType,
+                    sb.FactionID as FactionID1,
+                    sb.FactionID as FactionID2,
+                    sb.FactionName as FactionName1,
+                    sb.FactionName as FactionName2,
+                    sb.CoalitionStatus as CoalitionStatus1,
+                    sb.CoalitionStatus as CoalitionStatus2,
+                    sb.SoloBillCount as Count
+                FROM SoloBills sb
+                WHERE ({show_solo_bills} = 1 AND sb.SoloBillCount >= {min_total_bills})
+                   OR (sb.FactionID IN (SELECT DISTINCT MainFactionID FROM CollaborationPairs))
+                   OR (sb.FactionID IN (SELECT DISTINCT SupporterFactionID FROM CollaborationPairs))
+                ORDER BY Count DESC
                 """
 
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(f"No faction collaboration matrix data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
+                    st.info(f"No faction activity data found for '{filters['knesset_title']}'.")
                     return None
 
-                # Create matrix visualization
-                return self._create_faction_matrix_chart(df, filters['knesset_title'], min_collaborations)
+                # Create enhanced matrix visualization
+                return self._create_enhanced_faction_matrix_chart(
+                    df, filters['knesset_title'], min_collaborations, show_solo_bills
+                )
 
         except Exception as e:
             self.logger.error(f"Error generating faction collaboration matrix: {e}", exc_info=True)
@@ -1576,6 +1667,218 @@ class NetworkCharts(BaseChart):
         # Add coalition status color coding to axis labels
         fig.update_xaxes(tickfont=dict(color='black', size=10))
         fig.update_yaxes(tickfont=dict(color='black', size=10))
+        
+        return fig
+
+    def _create_enhanced_faction_matrix_chart(self, df: pd.DataFrame, title_suffix: str, 
+                                            min_collaborations: int, show_solo_bills: bool) -> go.Figure:
+        """Create enhanced faction collaboration matrix with both collaborations and solo bills."""
+        
+        # Separate solo and collaboration data
+        solo_data = df[df['DataType'] == 'solo'].copy()
+        collab_data = df[df['DataType'] == 'collaboration'].copy()
+        
+        # Get all unique factions
+        all_factions = set()
+        
+        for _, row in df.iterrows():
+            all_factions.add(row['FactionName1'])
+            if row['FactionName1'] != row['FactionName2']:  # Don't add same faction twice for solo bills
+                all_factions.add(row['FactionName2'])
+        
+        all_factions = sorted(list(all_factions))
+        
+        # Get faction coalition status mapping
+        faction_status = {}
+        for _, row in df.iterrows():
+            faction_status[row['FactionName1']] = row['CoalitionStatus1']
+            if row['FactionName1'] != row['FactionName2']:
+                faction_status[row['FactionName2']] = row['CoalitionStatus2']
+        
+        # Sort factions by coalition status and activity level
+        def sort_key(faction):
+            status = faction_status.get(faction, 'Unknown')
+            # Calculate total activity for this faction
+            total_activity = 0
+            
+            # Add solo bills
+            solo_count = solo_data[solo_data['FactionName1'] == faction]['Count'].sum()
+            total_activity += solo_count
+            
+            # Add collaboration activity
+            collab_as_main = collab_data[collab_data['FactionName1'] == faction]['Count'].sum()
+            collab_as_supporter = collab_data[collab_data['FactionName2'] == faction]['Count'].sum()
+            total_activity += collab_as_main + collab_as_supporter
+            
+            # Coalition first, then Opposition, then Unknown; within each group, sort by total descending
+            status_order = {'Coalition': 0, 'Opposition': 1, 'Unknown': 2}
+            return (status_order.get(status, 3), -total_activity)
+        
+        sorted_factions = sorted(all_factions, key=sort_key)
+        n_factions = len(sorted_factions)
+        
+        # Create full matrix
+        matrix_data = np.zeros((n_factions, n_factions))
+        matrix_type = np.full((n_factions, n_factions), 'none', dtype=object)  # Track data type
+        
+        # Fill diagonal with solo bills
+        if show_solo_bills:
+            for _, row in solo_data.iterrows():
+                if row['FactionName1'] in sorted_factions:
+                    idx = sorted_factions.index(row['FactionName1'])
+                    matrix_data[idx, idx] = row['Count']
+                    matrix_type[idx, idx] = 'solo'
+        
+        # Fill off-diagonal with collaborations
+        for _, row in collab_data.iterrows():
+            if row['FactionName1'] in sorted_factions and row['FactionName2'] in sorted_factions:
+                idx1 = sorted_factions.index(row['FactionName1'])
+                idx2 = sorted_factions.index(row['FactionName2'])
+                matrix_data[idx1, idx2] = row['Count']
+                matrix_type[idx1, idx2] = 'collaboration'
+        
+        # Create custom hover text
+        hover_text = []
+        for i in range(n_factions):
+            hover_row = []
+            for j in range(n_factions):
+                faction1 = sorted_factions[i]
+                faction2 = sorted_factions[j]
+                value = matrix_data[i, j]
+                data_type = matrix_type[i, j]
+                
+                if i == j:  # Diagonal - solo bills
+                    if show_solo_bills and value > 0:
+                        hover_row.append(
+                            f"<b>{faction1}</b><br>"
+                            f"Solo Bills: {int(value)}<br>"
+                            f"Status: {faction_status.get(faction1, 'Unknown')}<br>"
+                            f"<i>Bills with only 1 initiator</i>"
+                        )
+                    else:
+                        hover_row.append(
+                            f"<b>{faction1}</b><br>"
+                            f"Solo Bills: 0<br>"
+                            f"Status: {faction_status.get(faction1, 'Unknown')}"
+                        )
+                else:  # Off-diagonal - collaborations
+                    if value > 0:
+                        hover_row.append(
+                            f"<b>{faction1}</b> → <b>{faction2}</b><br>"
+                            f"Collaborations: {int(value)}<br>"
+                            f"Primary: {faction_status.get(faction1, 'Unknown')}<br>"
+                            f"Supporter: {faction_status.get(faction2, 'Unknown')}<br>"
+                            f"<i>Bills with cross-party support</i>"
+                        )
+                    else:
+                        hover_row.append(
+                            f"<b>{faction1}</b> → <b>{faction2}</b><br>"
+                            f"No collaboration (< {min_collaborations})<br>"
+                            f"Primary: {faction_status.get(faction1, 'Unknown')}<br>"
+                            f"Supporter: {faction_status.get(faction2, 'Unknown')}"
+                        )
+            hover_text.append(hover_row)
+        
+        # Create dual-color visualization using custom colorscale
+        # We'll create two separate traces: one for solo bills (diagonal) and one for collaborations
+        
+        # First, create collaboration matrix (set diagonal to 0)
+        collab_matrix = matrix_data.copy()
+        np.fill_diagonal(collab_matrix, 0)
+        
+        # Solo matrix (only diagonal)
+        solo_matrix = np.zeros_like(matrix_data)
+        np.fill_diagonal(solo_matrix, np.diag(matrix_data))
+        
+        fig = go.Figure()
+        
+        # Add collaboration heatmap (off-diagonal)
+        if collab_matrix.max() > 0:
+            fig.add_trace(go.Heatmap(
+                z=collab_matrix,
+                x=sorted_factions,
+                y=sorted_factions,
+                colorscale=[
+                    [0, 'rgba(255,255,255,0)'],  # Transparent for zero values
+                    [0.001, 'white'],
+                    [0.1, '#e6f3ff'],
+                    [0.3, '#b3d9ff'], 
+                    [0.6, '#66c2ff'],
+                    [0.8, '#1a8cff'],
+                    [1.0, '#0066cc']
+                ],
+                name="Collaborations",
+                hovertemplate='%{customdata}<extra></extra>',
+                customdata=hover_text,
+                colorbar=dict(
+                    title="Collaboration Count",
+                    titleside="right",
+                    thickness=15,
+                    len=0.8,
+                    x=1.02,
+                    xanchor="left"
+                ),
+                zmin=0,
+                zmax=collab_matrix.max() if collab_matrix.max() > 0 else 1,
+                showscale=True
+            ))
+        
+        # Add solo bills heatmap (diagonal only)
+        if show_solo_bills and solo_matrix.max() > 0:
+            fig.add_trace(go.Heatmap(
+                z=solo_matrix,
+                x=sorted_factions,
+                y=sorted_factions,
+                colorscale=[
+                    [0, 'rgba(255,255,255,0)'],  # Transparent for zero values
+                    [0.001, 'white'],
+                    [0.1, '#e6ffe6'],
+                    [0.3, '#b3ffb3'],
+                    [0.6, '#66ff66'], 
+                    [0.8, '#1aff1a'],
+                    [1.0, '#00cc00']
+                ],
+                name="Solo Bills",
+                hovertemplate='%{customdata}<extra></extra>',
+                customdata=hover_text,
+                colorbar=dict(
+                    title="Solo Bills Count",
+                    titleside="right", 
+                    thickness=15,
+                    len=0.8,
+                    x=1.12,
+                    xanchor="left"
+                ),
+                zmin=0,
+                zmax=solo_matrix.max() if solo_matrix.max() > 0 else 1,
+                showscale=True
+            ))
+        
+        # Update layout
+        title_text = f"<b>📊 Enhanced Faction Collaboration Matrix<br>{title_suffix}</b>"
+        if show_solo_bills:
+            title_text += "<br><sub>Blue: Inter-faction collaborations | Green: Solo bills (diagonal)</sub>"
+        
+        fig.update_layout(
+            title=title_text,
+            title_x=0.5,
+            xaxis=dict(
+                title="Supporting/Target Factions",
+                side='bottom',
+                tickangle=45,
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(
+                title="Primary Initiating Factions",
+                tickmode='linear',
+                tickfont=dict(size=10),
+                autorange='reversed'  # Show first faction at top
+            ),
+            height=max(700, n_factions * 35),
+            width=max(900, n_factions * 35), 
+            margin=dict(l=250, r=280, t=120, b=180),
+            plot_bgcolor='white'
+        )
         
         return fig
 
