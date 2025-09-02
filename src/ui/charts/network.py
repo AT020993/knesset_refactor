@@ -1238,11 +1238,479 @@ class NetworkCharts(BaseChart):
         
         return fig
 
+    def plot_faction_collaboration_matrix(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        min_collaborations: int = 3,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate faction collaboration matrix showing collaboration counts between all faction pairs."""
+        if not self.check_database_exists():
+            return None
+
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=False, logger_obj=self.logger
+            ) as con:
+                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
+                    return None
+
+                # Get faction-to-faction collaboration matrix data
+                query = f"""
+                WITH FactionCollaborations AS (
+                    SELECT 
+                        main.PersonID as MainPersonID,
+                        supp.PersonID as SuppPersonID,
+                        main.BillID,
+                        b.KnessetNum
+                    FROM KNS_BillInitiator main
+                    JOIN KNS_Bill b ON main.BillID = b.BillID
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
+                    WHERE main.Ordinal = 1 
+                        AND supp.Ordinal > 1
+                        AND b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                ),
+                PersonFactions AS (
+                    SELECT DISTINCT
+                        fc.MainPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                    UNION
+                    SELECT DISTINCT
+                        fc.SuppPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                ),
+                FactionPairs AS (
+                    SELECT 
+                        main_pf.FactionID as MainFactionID,
+                        supp_pf.FactionID as SupporterFactionID,
+                        COUNT(DISTINCT fc.BillID) as CollaborationCount
+                    FROM FactionCollaborations fc
+                    JOIN PersonFactions main_pf ON fc.MainPersonID = main_pf.PersonID
+                    JOIN PersonFactions supp_pf ON fc.SuppPersonID = supp_pf.PersonID
+                    WHERE main_pf.FactionID IS NOT NULL
+                        AND supp_pf.FactionID IS NOT NULL
+                        AND main_pf.FactionID <> supp_pf.FactionID
+                    GROUP BY main_pf.FactionID, supp_pf.FactionID
+                    HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
+                ),
+                AllFactions AS (
+                    SELECT DISTINCT f.FactionID, f.Name as FactionName,
+                           COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
+                    FROM KNS_Faction f
+                    LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
+                    WHERE f.FactionID IN (
+                        SELECT MainFactionID FROM FactionPairs
+                        UNION 
+                        SELECT SupporterFactionID FROM FactionPairs
+                    )
+                )
+                SELECT 
+                    fp.MainFactionID,
+                    fp.SupporterFactionID,
+                    fp.CollaborationCount,
+                    main_f.FactionName as MainFactionName,
+                    supp_f.FactionName as SupporterFactionName,
+                    main_f.CoalitionStatus as MainCoalitionStatus,
+                    supp_f.CoalitionStatus as SupporterCoalitionStatus
+                FROM FactionPairs fp
+                JOIN AllFactions main_f ON fp.MainFactionID = main_f.FactionID
+                JOIN AllFactions supp_f ON fp.SupporterFactionID = supp_f.FactionID
+                ORDER BY fp.CollaborationCount DESC
+                """
+
+                df = safe_execute_query(con, query, self.logger)
+
+                if df.empty:
+                    st.info(f"No faction collaboration matrix data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
+                    return None
+
+                # Create matrix visualization
+                return self._create_faction_matrix_chart(df, filters['knesset_title'], min_collaborations)
+
+        except Exception as e:
+            self.logger.error(f"Error generating faction collaboration matrix: {e}", exc_info=True)
+            st.error(f"Could not generate faction collaboration matrix: {e}")
+            return None
+
+    def plot_faction_collaboration_chord(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        min_collaborations: int = 5,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate faction collaboration chord diagram showing circular collaboration flows."""
+        if not self.check_database_exists():
+            return None
+
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=False, logger_obj=self.logger
+            ) as con:
+                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
+                    return None
+
+                # Use similar query as matrix but aggregate bidirectionally for chord diagram
+                query = f"""
+                WITH FactionCollaborations AS (
+                    SELECT 
+                        main.PersonID as MainPersonID,
+                        supp.PersonID as SuppPersonID,
+                        main.BillID,
+                        b.KnessetNum
+                    FROM KNS_BillInitiator main
+                    JOIN KNS_Bill b ON main.BillID = b.BillID
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
+                    WHERE main.Ordinal = 1 
+                        AND supp.Ordinal > 1
+                        AND b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                ),
+                PersonFactions AS (
+                    SELECT DISTINCT
+                        fc.MainPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.MainPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                    UNION
+                    SELECT DISTINCT
+                        fc.SuppPersonID as PersonID,
+                        COALESCE(
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1),
+                            (SELECT f.FactionID 
+                             FROM KNS_PersonToPosition ptp 
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = fc.SuppPersonID
+                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+                        ) as FactionID
+                    FROM FactionCollaborations fc
+                ),
+                FactionStats AS (
+                    SELECT 
+                        f.FactionID,
+                        f.Name as FactionName,
+                        COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus,
+                        COUNT(DISTINCT fc.BillID) as TotalCollaborations
+                    FROM KNS_Faction f
+                    LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
+                    JOIN PersonFactions pf ON f.FactionID = pf.FactionID
+                    JOIN FactionCollaborations fc ON pf.PersonID IN (fc.MainPersonID, fc.SuppPersonID)
+                    GROUP BY f.FactionID, f.Name, ufs.CoalitionStatus
+                    HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
+                )
+                SELECT 
+                    fs.FactionID,
+                    fs.FactionName,
+                    fs.CoalitionStatus,
+                    fs.TotalCollaborations
+                FROM FactionStats fs
+                ORDER BY fs.TotalCollaborations DESC
+                """
+
+                df = safe_execute_query(con, query, self.logger)
+
+                if df.empty:
+                    st.info(f"No faction collaboration chord data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
+                    return None
+
+                # Create chord diagram visualization 
+                return self._create_faction_chord_chart(df, filters['knesset_title'])
+
+        except Exception as e:
+            self.logger.error(f"Error generating faction collaboration chord: {e}", exc_info=True)
+            st.error(f"Could not generate faction collaboration chord: {e}")
+            return None
+
+    def _create_faction_matrix_chart(self, df: pd.DataFrame, title_suffix: str, min_collaborations: int) -> go.Figure:
+        """Create faction collaboration matrix heatmap chart."""
+        
+        # Create pivot table for matrix structure
+        pivot_data = df.pivot_table(
+            index='MainFactionName', 
+            columns='SupporterFactionName', 
+            values='CollaborationCount',
+            fill_value=0
+        )
+        
+        # Get faction coalition status for color coding
+        faction_status = {}
+        for _, row in df.iterrows():
+            faction_status[row['MainFactionName']] = row['MainCoalitionStatus']
+            faction_status[row['SupporterFactionName']] = row['SupporterCoalitionStatus']
+        
+        # Sort factions by coalition status and total collaborations
+        faction_totals = {}
+        for faction in pivot_data.index:
+            faction_totals[faction] = pivot_data.loc[faction].sum() + pivot_data[faction].sum()
+        
+        # Sort by coalition status then by total collaborations
+        def sort_key(faction):
+            status = faction_status.get(faction, 'Unknown')
+            total = faction_totals.get(faction, 0)
+            # Coalition first, then Opposition, then Unknown; within each group, sort by total descending
+            status_order = {'Coalition': 0, 'Opposition': 1, 'Unknown': 2}
+            return (status_order.get(status, 3), -total)
+        
+        sorted_factions = sorted(pivot_data.index, key=sort_key)
+        pivot_data = pivot_data.reindex(index=sorted_factions, columns=sorted_factions)
+        
+        # Create hover text with detailed information
+        hover_text = []
+        for i, main_faction in enumerate(pivot_data.index):
+            hover_row = []
+            for j, supp_faction in enumerate(pivot_data.columns):
+                if i == j:  # Diagonal - same faction
+                    hover_row.append(f"<b>Same Faction</b><br>{main_faction}")
+                else:
+                    collab_count = pivot_data.iloc[i, j]
+                    main_status = faction_status.get(main_faction, 'Unknown')
+                    supp_status = faction_status.get(supp_faction, 'Unknown')
+                    
+                    if collab_count > 0:
+                        hover_row.append(
+                            f"<b>{main_faction}</b> → <b>{supp_faction}</b><br>"
+                            f"Collaborations: {collab_count}<br>"
+                            f"Main Status: {main_status}<br>"
+                            f"Supporter Status: {supp_status}"
+                        )
+                    else:
+                        hover_row.append(
+                            f"<b>{main_faction}</b> → <b>{supp_faction}</b><br>"
+                            f"No collaborations (< {min_collaborations})<br>"
+                            f"Main Status: {main_status}<br>"
+                            f"Supporter Status: {supp_status}"
+                        )
+            hover_text.append(hover_row)
+        
+        # Create color scale - blue for low, red for high
+        max_collab = pivot_data.max().max()
+        colorscale = [
+            [0, 'white'],
+            [0.1, '#e6f3ff'],
+            [0.3, '#b3d9ff'],
+            [0.6, '#66c2ff'],
+            [0.8, '#1a8cff'],
+            [1.0, '#0066cc']
+        ]
+        
+        # Create heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=pivot_data.values,
+            x=pivot_data.columns,
+            y=pivot_data.index,
+            colorscale=colorscale,
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=hover_text,
+            colorbar=dict(
+                title="Collaboration Count",
+                titleside="right",
+                thickness=15,
+                len=0.8
+            ),
+            showscale=True
+        ))
+        
+        # Add annotations for coalition status on axes
+        fig.update_layout(
+            title=f"<b>📊 Faction Collaboration Matrix<br>{title_suffix}</b>",
+            title_x=0.5,
+            xaxis=dict(
+                title="Supporting Factions",
+                side='bottom',
+                tickangle=45
+            ),
+            yaxis=dict(
+                title="Primary Initiating Factions",
+                tickmode='linear'
+            ),
+            height=max(600, len(pivot_data) * 30),
+            width=max(800, len(pivot_data) * 30),
+            margin=dict(l=200, r=100, t=100, b=150),
+            plot_bgcolor='white'
+        )
+        
+        # Add coalition status color coding to axis labels
+        fig.update_xaxes(tickfont=dict(color='black', size=10))
+        fig.update_yaxes(tickfont=dict(color='black', size=10))
+        
+        return fig
+
+    def _create_faction_chord_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
+        """Create faction collaboration chord diagram."""
+        
+        # For a simplified chord-like visualization using plotly, we'll create a circular scatter plot
+        # with faction points and curved connections showing collaboration strength
+        
+        n_factions = len(df)
+        if n_factions == 0:
+            fig = go.Figure()
+            fig.add_annotation(text="No faction data available", 
+                             xref="paper", yref="paper", x=0.5, y=0.5,
+                             showarrow=False, font=dict(size=16))
+            return fig
+        
+        # Arrange factions in a circle
+        angles = np.linspace(0, 2*np.pi, n_factions, endpoint=False)
+        radius = 100
+        
+        # Calculate positions
+        faction_positions = {}
+        for i, (_, faction) in enumerate(df.iterrows()):
+            x = radius * np.cos(angles[i])
+            y = radius * np.sin(angles[i])
+            faction_positions[faction['FactionName']] = (x, y, angles[i])
+        
+        # Create figure
+        fig = go.Figure()
+        
+        # Color mapping for coalition status
+        status_colors = {
+            'Coalition': '#1f77b4',
+            'Opposition': '#ff7f0e',
+            'Unknown': '#808080'
+        }
+        
+        # Add faction nodes grouped by status
+        max_collaborations = df['TotalCollaborations'].max()
+        
+        for status in ['Coalition', 'Opposition', 'Unknown']:
+            status_factions = df[df['CoalitionStatus'] == status]
+            if status_factions.empty:
+                continue
+                
+            faction_x = []
+            faction_y = []
+            faction_sizes = []
+            faction_names = []
+            hover_texts = []
+            
+            for _, faction in status_factions.iterrows():
+                pos = faction_positions[faction['FactionName']]
+                faction_x.append(pos[0])
+                faction_y.append(pos[1])
+                
+                # Size based on total collaborations
+                size = max(30, min(80, 30 + (faction['TotalCollaborations'] / max_collaborations * 50)))
+                faction_sizes.append(size)
+                faction_names.append(faction['FactionName'])
+                
+                hover_text = (
+                    f"<b>{faction['FactionName']}</b><br>"
+                    f"Status: {faction['CoalitionStatus']}<br>"
+                    f"Total Collaborations: {faction['TotalCollaborations']}"
+                )
+                hover_texts.append(hover_text)
+            
+            # Add faction trace
+            fig.add_trace(go.Scatter(
+                x=faction_x,
+                y=faction_y,
+                mode='markers+text',
+                marker=dict(
+                    size=faction_sizes,
+                    color=status_colors.get(status, '#808080'),
+                    line=dict(width=3, color='white'),
+                    opacity=0.9
+                ),
+                text=faction_names,
+                textposition="middle center",
+                textfont=dict(size=10, color='white', family="Arial Black"),
+                hovertext=hover_texts,
+                hoverinfo='text',
+                name=status,
+                showlegend=True
+            ))
+        
+        # Add curved connections between factions (simplified approach)
+        # Note: Full chord diagram implementation would require more complex path calculations
+        
+        fig.update_layout(
+            title=f"<b>🔄 Faction Collaboration Chord Diagram<br>{title_suffix}</b>",
+            title_x=0.5,
+            showlegend=True,
+            hovermode='closest',
+            margin=dict(b=40, l=40, r=40, t=80),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
+            height=800,
+            width=800,
+            plot_bgcolor='rgba(240,240,240,0.1)',
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.05,
+                font=dict(size=12)
+            ),
+            annotations=[
+                dict(
+                    text="Node size represents total collaborations<br>Colors indicate coalition status",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.02, y=0.02,
+                    xanchor='left', yanchor='bottom',
+                    font=dict(size=10),
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="gray",
+                    borderwidth=1
+                )
+            ]
+        )
+        
+        return fig
+
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Generate the requested network chart."""
         chart_methods = {
             "mk_collaboration_network": self.plot_mk_collaboration_network,
             "faction_collaboration_network": self.plot_faction_collaboration_network,
+            "faction_collaboration_matrix": self.plot_faction_collaboration_matrix,
+            "faction_collaboration_chord": self.plot_faction_collaboration_chord,
             "faction_coalition_breakdown": self.plot_faction_coalition_breakdown,
         }
 

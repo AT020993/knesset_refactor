@@ -209,6 +209,18 @@ def plot_faction_collaboration_network(db_path, connect_func, logger_obj, **kwar
     return chart_service.plot_faction_collaboration_network(**kwargs)
 
 
+def plot_faction_collaboration_matrix(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for faction collaboration matrix chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_faction_collaboration_matrix(**kwargs)
+
+
+def plot_faction_collaboration_chord(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for faction collaboration chord diagram chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_faction_collaboration_chord(**kwargs)
+
+
 def plot_faction_coalition_breakdown(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for faction collaboration breakdown chart."""
     chart_service = ChartService(db_path, logger_obj)
@@ -244,6 +256,8 @@ def get_available_plots():
         "Collaboration Networks": {
             "MK Collaboration Network": plot_mk_collaboration_network,
             "Faction Collaboration Network": plot_faction_collaboration_network,
+            "Faction Collaboration Matrix": plot_faction_collaboration_matrix,
+            "Faction Collaboration Chord": plot_faction_collaboration_chord,
             "Faction Coalition Breakdown": plot_faction_coalition_breakdown,
         },
     }

@@ -4,3 +4,14 @@ address = "localhost"
 port = 8501
 enableCORS = false
 enableXsrfProtection = false
+
+[client]
+showErrorDetails = false
+toolbarMode = "viewer"
+
+[runner]
+magicEnabled = false
+
+[global]
+developmentMode = false
+showWarningOnDirectExecution = false

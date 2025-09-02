@@ -112,6 +112,14 @@ class ChartService:
         """Generate faction collaboration network chart."""
         return self.create_chart("network", "faction_collaboration_network", **kwargs)
 
+    def plot_faction_collaboration_matrix(self, **kwargs) -> Optional[go.Figure]:
+        """Generate faction collaboration matrix heatmap chart."""
+        return self.create_chart("network", "faction_collaboration_matrix", **kwargs)
+
+    def plot_faction_collaboration_chord(self, **kwargs) -> Optional[go.Figure]:
+        """Generate faction collaboration chord diagram chart."""
+        return self.create_chart("network", "faction_collaboration_chord", **kwargs)
+
     def plot_faction_coalition_breakdown(self, **kwargs) -> Optional[go.Figure]:
         """Generate faction collaboration breakdown chart showing Coalition vs Opposition percentages."""
         return self.create_chart("network", "faction_coalition_breakdown", **kwargs)

@@ -48,7 +48,16 @@ PARQUET_DIR = Path("data/parquet")
 MAX_ROWS_FOR_CHART_BUILDER = 50000
 MAX_UNIQUE_VALUES_FOR_FACET = 50
 
-st.set_page_config(page_title="Knesset OData – Refresh & Export", layout="wide")
+st.set_page_config(
+    page_title="Knesset OData – Refresh & Export", 
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get help': None,
+        'Report a Bug': None,
+        'About': None
+    }
+)
 
 ui_logger.info("--- Initializing session state ---")
 SessionStateManager.initialize_all_session_state()
