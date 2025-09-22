@@ -2,7 +2,8 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
 
 
@@ -99,9 +100,7 @@ class DataService:
             self.logger.error(f"Error getting tables: {e}")
             return []
 
-    def refresh_data(
-        self, tables: Optional[List[str]] = None, progress_callback=None
-    ) -> bool:
+    def refresh_data(self, tables: Optional[List[str]] = None, progress_callback=None) -> bool:
         """Refresh data tables."""
         try:
             return self.refresh_service.refresh_tables_sync(tables, progress_callback)

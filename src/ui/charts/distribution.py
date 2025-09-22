@@ -1,7 +1,5 @@
 """Distribution and categorical chart generators."""
 
-import logging
-from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
@@ -38,21 +36,20 @@ class DistributionCharts(BaseChart):
             )
             return None
 
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q", 
-                                     start_date=start_date, end_date=end_date, **kwargs)
+        filters = self.build_filters(
+            knesset_filter, faction_filter, table_prefix="q", start_date=start_date, end_date=end_date, **kwargs
+        )
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Query"]):
                     return None
 
                 # Add JOIN with KNS_Status table if status filters are used
                 status_join = ""
-                if filters['query_status_condition'] != "1=1":
+                if filters["query_status_condition"] != "1=1":
                     status_join = "LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID"
-                
+
                 query = f"""
                     SELECT
                         COALESCE(q.TypeDesc, 'Unknown') AS QueryType,
@@ -72,9 +69,7 @@ class DistributionCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No query type data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No query type data found for '{filters['knesset_title']}'.")
                     return None
 
                 date_range_text = ""
@@ -90,9 +85,7 @@ class DistributionCharts(BaseChart):
                     df,
                     values="Count",
                     names="QueryType",
-                    title=(
-                        f"<b>Query Types Distribution for {filters['knesset_title']}{date_range_text}</b>"
-                    ),
+                    title=(f"<b>Query Types Distribution for {filters['knesset_title']}{date_range_text}</b>"),
                 )
 
                 fig.update_traces(textposition="inside", textinfo="percent+label")
@@ -101,9 +94,7 @@ class DistributionCharts(BaseChart):
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating query types distribution chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating query types distribution chart: {e}", exc_info=True)
             st.error(f"Could not generate query types chart: {e}")
             return None
 
@@ -120,9 +111,7 @@ class DistributionCharts(BaseChart):
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a", **kwargs)
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Agenda"]):
                     return None
 
@@ -140,9 +129,7 @@ class DistributionCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No agenda classification data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No agenda classification data found for '{filters['knesset_title']}'.")
                     return None
 
                 fig = px.pie(
@@ -158,9 +145,7 @@ class DistributionCharts(BaseChart):
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating agenda classifications pie chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating agenda classifications pie chart: {e}", exc_info=True)
             st.error(f"Could not generate agenda classifications chart: {e}")
             return None
 
@@ -182,9 +167,7 @@ class DistributionCharts(BaseChart):
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="a", **kwargs)
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Agenda", "KNS_Status"]):
                     return None
 
@@ -203,9 +186,7 @@ class DistributionCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No agenda status data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No agenda status data found for '{filters['knesset_title']}'.")
                     return None
 
                 fig = px.pie(
@@ -221,9 +202,7 @@ class DistributionCharts(BaseChart):
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating agenda status distribution chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating agenda status distribution chart: {e}", exc_info=True)
             st.error(f"Could not generate agenda status chart: {e}")
             return None
 
@@ -240,16 +219,14 @@ class DistributionCharts(BaseChart):
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_Status"]):
                     return None
 
                 # Categorize statuses into legislative stages
                 query = f"""
                     SELECT
-                        CASE 
+                        CASE
                             WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
                             WHEN b.StatusID IN (108, 111, 141, 109, 101, 106, 142, 150) THEN 'קריאה ראשונה'
                             ELSE 'הופסק/לא פעיל'
@@ -267,37 +244,39 @@ class DistributionCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No bill status data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No bill status data found for '{filters['knesset_title']}'.")
                     return None
 
                 # Calculate percentages and prepare labels with counts
-                total_bills = df['Count'].sum()
-                df['Percentage'] = (df['Count'] / total_bills * 100).round(1)
-                
+                total_bills = df["Count"].sum()
+                df["Percentage"] = (df["Count"] / total_bills * 100).round(1)
+
                 # Define colors for each stage
                 colors = {
-                    'התקבלה בקריאה שלישית': '#2E8B57',      # Sea Green - success
-                    'קריאה ראשונה': '#4682B4',                # Steel Blue - in progress
-                    'הופסק/לא פעיל': '#CD5C5C'               # Indian Red - stopped
+                    "התקבלה בקריאה שלישית": "#2E8B57",  # Sea Green - success
+                    "קריאה ראשונה": "#4682B4",  # Steel Blue - in progress
+                    "הופסק/לא פעיל": "#CD5C5C",  # Indian Red - stopped
                 }
 
                 # Create pie chart with custom hover and text
-                fig = go.Figure(data=[go.Pie(
-                    labels=df['Stage'],
-                    values=df['Count'],
-                    textinfo='percent',
-                    texttemplate='%{percent}<br><b>%{value}</b>',
-                    hovertemplate='<b>%{label}</b><br>' +
-                                  'Bills: %{value}<br>' +
-                                  'Percentage: %{percent}<br>' +
-                                  '<extra></extra>',
-                    marker_colors=[colors.get(stage, '#808080') for stage in df['Stage']],
-                    textposition='auto',
-                    textfont_size=14,
-                    textfont_color='white'
-                )])
+                fig = go.Figure(
+                    data=[
+                        go.Pie(
+                            labels=df["Stage"],
+                            values=df["Count"],
+                            textinfo="percent",
+                            texttemplate="%{percent}<br><b>%{value}</b>",
+                            hovertemplate="<b>%{label}</b><br>"
+                            + "Bills: %{value}<br>"
+                            + "Percentage: %{percent}<br>"
+                            + "<extra></extra>",
+                            marker_colors=[colors.get(stage, "#808080") for stage in df["Stage"]],
+                            textposition="auto",
+                            textfont_size=14,
+                            textfont_color="white",
+                        )
+                    ]
+                )
 
                 fig.update_layout(
                     title=f"<b>Bill Status Distribution by Legislative Stage<br>{filters['knesset_title']}</b>",
@@ -305,21 +284,13 @@ class DistributionCharts(BaseChart):
                     font_size=12,
                     height=600,
                     showlegend=True,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="middle",
-                        y=0.5,
-                        xanchor="left",
-                        x=1.05
-                    )
+                    legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05),
                 )
 
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating bill status distribution chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating bill status distribution chart: {e}", exc_info=True)
             st.error(f"Could not generate bill status chart: {e}")
             return None
 
@@ -337,12 +308,8 @@ class DistributionCharts(BaseChart):
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
-            st.info(
-                "Please select a single Knesset to view the 'Query Status by Faction' plot."
-            )
-            self.logger.info(
-                "plot_query_status_by_faction requires a single Knesset filter."
-            )
+            st.info("Please select a single Knesset to view the 'Query Status by Faction' plot.")
+            self.logger.info("plot_query_status_by_faction requires a single Knesset filter.")
             return None
 
         if start_date and end_date and start_date > end_date:
@@ -357,9 +324,7 @@ class DistributionCharts(BaseChart):
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Query",
                     "KNS_Person",
@@ -372,13 +337,9 @@ class DistributionCharts(BaseChart):
 
                 date_conditions = []
                 if start_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) >= '{start_date}'"
-                    )
+                    date_conditions.append(f"CAST(q.SubmitDate AS DATE) >= '{start_date}'")
                 if end_date:
-                    date_conditions.append(
-                        f"CAST(q.SubmitDate AS DATE) <= '{end_date}'"
-                    )
+                    date_conditions.append(f"CAST(q.SubmitDate AS DATE) <= '{end_date}'")
 
                 date_filter_sql = " AND ".join(date_conditions)
                 if date_filter_sql:
@@ -437,12 +398,8 @@ class DistributionCharts(BaseChart):
                     )
                     return None
 
-                df["QueryCount"] = pd.to_numeric(
-                    df["QueryCount"], errors="coerce"
-                ).fillna(0)
-                df["StatusDescription"] = df["StatusDescription"].fillna(
-                    "Unknown Status"
-                )
+                df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors="coerce").fillna(0)
+                df["StatusDescription"] = df["StatusDescription"].fillna("Unknown Status")
                 df["FactionName"] = df["FactionName"].fillna("Unknown Faction")
 
                 ids = []
@@ -450,9 +407,7 @@ class DistributionCharts(BaseChart):
                 parents = []
                 values = []
 
-                status_totals = (
-                    df.groupby("StatusDescription")["QueryCount"].sum().reset_index()
-                )
+                status_totals = df.groupby("StatusDescription")["QueryCount"].sum().reset_index()
                 for _, row in status_totals.iterrows():
                     status = row["StatusDescription"]
                     ids.append(status)
@@ -480,7 +435,9 @@ class DistributionCharts(BaseChart):
                         date_range_text = f" (from {start_date})"
                     elif end_date:
                         date_range_text = f" (until {end_date})"
-                    title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
+                    title = (
+                        f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
+                    )
 
                 fig = go.Figure(
                     go.Sunburst(
@@ -526,9 +483,7 @@ class DistributionCharts(BaseChart):
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Bill"]):
                     return None
 
@@ -547,9 +502,7 @@ class DistributionCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No bill subtype data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No bill subtype data found for '{filters['knesset_title']}'.")
                     return None
 
                 fig = px.pie(
@@ -565,9 +518,7 @@ class DistributionCharts(BaseChart):
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating bill subtype distribution chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating bill subtype distribution chart: {e}", exc_info=True)
             st.error(f"Could not generate bill subtype chart: {e}")
             return None
 

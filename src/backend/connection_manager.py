@@ -44,9 +44,7 @@ class ConnectionMonitor:
         self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
 
-    def register_connection(
-        self, conn: duckdb.DuckDBPyConnection, db_path: str
-    ) -> None:
+    def register_connection(self, conn: duckdb.DuckDBPyConnection, db_path: str) -> None:
         """Register a new connection for monitoring."""
         with self._lock:
             conn_id = id(conn)
@@ -125,12 +123,8 @@ def get_db_connection(
 
     # Handle missing database file
     if not db_path.exists() and read_only:
-        logger_obj.warning(
-            f"Database {db_path} does not exist. Using in-memory fallback."
-        )
-        st.warning(
-            f"Database {db_path} does not exist. Please run a data refresh first."
-        )
+        logger_obj.warning(f"Database {db_path} does not exist. Using in-memory fallback.")
+        st.warning(f"Database {db_path} does not exist. Please run a data refresh first.")
 
         conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
@@ -153,16 +147,12 @@ def get_db_connection(
 
         # Test connection
         conn.execute("SELECT 1")
-        logger_obj.debug(
-            f"Successfully connected to DuckDB at {db_path} (read_only={read_only})"
-        )
+        logger_obj.debug(f"Successfully connected to DuckDB at {db_path} (read_only={read_only})")
 
         yield conn
 
     except Exception as e:
-        logger_obj.error(
-            f"Error connecting to database at {db_path}: {e}", exc_info=True
-        )
+        logger_obj.error(f"Error connecting to database at {db_path}: {e}", exc_info=True)
         st.error(f"Database connection error: {e}")
 
         # Provide fallback in-memory connection for read operations
@@ -235,7 +225,7 @@ def log_connection_leaks() -> None:
     _connection_monitor.log_connection_stats()
 
 
-def monitor_connection_health() -> dict[str, any]:
+def monitor_connection_health() -> dict[str, Any]:
     """
     Monitor overall connection health and return diagnostic information.
 
@@ -342,9 +332,7 @@ def create_connection_dashboard() -> None:
                 # Connections by thread
                 if health_info["connections_by_thread"]:
                     st.write("**Connections by Thread:**")
-                    for thread_id, count in health_info[
-                        "connections_by_thread"
-                    ].items():
+                    for thread_id, count in health_info["connections_by_thread"].items():
                         st.write(f"- Thread `{thread_id}`: {count} connection(s)")
 
                 # Long-running connections
@@ -352,9 +340,7 @@ def create_connection_dashboard() -> None:
                     st.warning("**Long-Running Connections (>5 min):**")
                     for conn in health_info["long_running_connections"]:
                         age_min = conn["age_seconds"] / 60
-                        st.write(
-                            f"- Connection `{conn['conn_id']}` to `{conn['db_path']}`: {age_min:.1f} minutes"
-                        )
+                        st.write(f"- Connection `{conn['conn_id']}` to `{conn['db_path']}`: {age_min:.1f} minutes")
 
         # Actions
         col1, col2 = st.columns(2)
@@ -369,9 +355,7 @@ def create_connection_dashboard() -> None:
                 st.success("Connection details logged to application logs")
 
     except ImportError:
-        logging.getLogger(__name__).warning(
-            "Streamlit not available for connection dashboard"
-        )
+        logging.getLogger(__name__).warning("Streamlit not available for connection dashboard")
 
 
 # Background monitoring thread (optional)
@@ -400,26 +384,18 @@ def start_background_monitoring(interval_seconds: int = 60) -> None:
 
                 # Log warnings for concerning states
                 if health_info["health_status"] in ["warning", "critical"]:
-                    logger.warning(
-                        f"Database connection health: {health_info['health_status']}"
-                    )
+                    logger.warning(f"Database connection health: {health_info['health_status']}")
                     logger.warning(f"Active connections: {health_info['total_active']}")
 
                     if health_info["long_running_connections"]:
-                        logger.warning(
-                            f"Long-running connections: {len(health_info['long_running_connections'])}"
-                        )
+                        logger.warning(f"Long-running connections: {len(health_info['long_running_connections'])}")
                         for conn in health_info["long_running_connections"]:
                             age_min = conn["age_seconds"] / 60
-                            logger.warning(
-                                f"  - Connection to {conn['db_path']}: {age_min:.1f} minutes old"
-                            )
+                            logger.warning(f"  - Connection to {conn['db_path']}: {age_min:.1f} minutes old")
 
                 # Log periodic stats at debug level
                 elif health_info["total_active"] > 0:
-                    logger.debug(
-                        f"Database connections active: {health_info['total_active']}"
-                    )
+                    logger.debug(f"Database connections active: {health_info['total_active']}")
 
                 time.sleep(interval_seconds)
 
@@ -431,9 +407,7 @@ def start_background_monitoring(interval_seconds: int = 60) -> None:
     _monitoring_thread = threading.Thread(target=monitor_loop, daemon=True)
     _monitoring_thread.start()
 
-    logger.info(
-        f"Started background connection monitoring (interval: {interval_seconds}s)"
-    )
+    logger.info(f"Started background connection monitoring (interval: {interval_seconds}s)")
 
 
 def stop_background_monitoring() -> None:
@@ -464,9 +438,7 @@ def _cache_data_decorator(ttl=3600):
 
 
 @_cache_data_decorator(ttl=3600)
-def cached_query_with_connection(
-    db_path_str: str, query: str, read_only: bool = True
-) -> Any:
+def cached_query_with_connection(db_path_str: str, query: str, read_only: bool = True) -> Any:
     """
     Execute a cached query with proper connection management.
 
@@ -478,9 +450,7 @@ def cached_query_with_connection(
     logger_obj = logging.getLogger(__name__)
 
     try:
-        with get_db_connection(
-            db_path, read_only=read_only, logger_obj=logger_obj
-        ) as conn:
+        with get_db_connection(db_path, read_only=read_only, logger_obj=logger_obj) as conn:
             return safe_execute_query(conn, query, logger_obj)
     except Exception as e:
         logger_obj.error(f"Error in cached_query_with_connection: {e}", exc_info=True)
@@ -506,12 +476,8 @@ def connect_db(
 
     # For legacy compatibility, we still return a connection but warn about proper usage
     if not db_path.exists() and read_only:
-        _logger_obj.warning(
-            f"Database {db_path} does not exist. Query execution will fail."
-        )
-        st.warning(
-            f"Database {db_path} does not exist. Please run a data refresh first."
-        )
+        _logger_obj.warning(f"Database {db_path} does not exist. Query execution will fail.")
+        st.warning(f"Database {db_path} does not exist. Please run a data refresh first.")
         conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
         return conn
@@ -520,14 +486,10 @@ def connect_db(
         conn = duckdb.connect(database=db_path.as_posix(), read_only=read_only)
         _connection_monitor.register_connection(conn, str(db_path))
         conn.execute("SELECT 1")  # Test connection
-        _logger_obj.debug(
-            f"Successfully connected to DuckDB at {db_path} (read_only={read_only})"
-        )
+        _logger_obj.debug(f"Successfully connected to DuckDB at {db_path} (read_only={read_only})")
         return conn
     except Exception as e:
-        _logger_obj.error(
-            f"Error connecting to database at {db_path}: {e}", exc_info=True
-        )
+        _logger_obj.error(f"Error connecting to database at {db_path}: {e}", exc_info=True)
         st.error(f"Database connection error: {e}")
         conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")

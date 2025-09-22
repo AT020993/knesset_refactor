@@ -14,10 +14,10 @@ This limitation affects committee name resolution in bill queries, which show
 "Committee [number]" instead of actual names for historical committees.
 """
 
-import warnings
 import asyncio
+import warnings
 from pathlib import Path
-from typing import List, Optional, Callable
+from typing import Any, Callable, List, Optional
 
 # Import from local modules instead of non-existent data modules
 from config.settings import Settings
@@ -80,9 +80,7 @@ async def refresh_tables(
         progress_cb("Refresh complete", 100)
 
 
-def ensure_latest(
-    tables: Optional[List[str]] = None, db_path: Path = DEFAULT_DB
-) -> None:
+def ensure_latest(tables: Optional[List[str]] = None, db_path: Path = DEFAULT_DB) -> None:
     """Legacy wrapper for ensure_latest."""
     # Synchronous wrapper
     asyncio.run(refresh_tables(tables=tables, db_path=db_path))
@@ -97,7 +95,7 @@ def load_and_store_faction_statuses(db_path: Path = DEFAULT_DB) -> None:
     # Placeholder implementation
 
 
-def map_mk_site_code(con) -> any:
+def map_mk_site_code(con) -> Any:
     """Legacy wrapper for MK site code mapping."""
     warnings.warn(
         "map_mk_site_code is deprecated and not implemented in the new system.",

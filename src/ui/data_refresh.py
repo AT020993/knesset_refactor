@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 # Standard Library Imports
-import io
 import logging
-import re
 import sys
 from pathlib import Path
-from textwrap import dedent
 
 # Third-Party Imports
-import pandas as pd
 import streamlit as st
-import duckdb
 
 # Add the 'src' directory to sys.path
 _CURRENT_FILE_DIR = Path(__file__).resolve().parent
@@ -23,16 +18,16 @@ if str(_SRC_DIR) not in sys.path:
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# Local Application Imports
-from utils.logger_setup import setup_logging
-from backend.fetch_table import TABLES
-from ui.state.session_manager import SessionStateManager
-from ui.pages.data_refresh_page import DataRefreshPageRenderer
-from ui.pages.plots_page import PlotsPageRenderer
-from ui.queries.predefined_queries import PREDEFINED_QUERIES
 import ui.plot_generators as pg
 import ui.sidebar_components as sc
 import ui.ui_utils as ui_utils
+from ui.pages.data_refresh_page import DataRefreshPageRenderer
+from ui.pages.plots_page import PlotsPageRenderer
+from ui.queries.predefined_queries import PREDEFINED_QUERIES
+from ui.state.session_manager import SessionStateManager
+
+# Local Application Imports
+from utils.logger_setup import setup_logging
 
 # Initialize logger for the UI module
 ui_logger = logging.getLogger("knesset.ui.data_refresh")  # Use logging.getLogger
@@ -49,37 +44,26 @@ MAX_ROWS_FOR_CHART_BUILDER = 50000
 MAX_UNIQUE_VALUES_FOR_FACET = 50
 
 st.set_page_config(
-    page_title="Knesset OData – Refresh & Export", 
+    page_title="Knesset OData – Refresh & Export",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        'Get help': None,
-        'Report a Bug': None,
-        'About': None
-    }
+    menu_items={"Get help": None, "Report a Bug": None, "About": None},
 )
 
 ui_logger.info("--- Initializing session state ---")
 SessionStateManager.initialize_all_session_state()
 ui_logger.info("--- Finished initializing session state ---")
 
-knesset_nums_options_global, factions_options_df_global = (
-    ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
-)
+knesset_nums_options_global, factions_options_df_global = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
 faction_display_map_global = {
-    f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
-    for _, row in factions_options_df_global.iterrows()
+    f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"] for _, row in factions_options_df_global.iterrows()
 }
 
 sc.display_sidebar(
     db_path_arg=DB_PATH,
     exports_arg=PREDEFINED_QUERIES,
-    connect_func_arg=lambda read_only=True: ui_utils.connect_db(
-        DB_PATH, read_only, _logger_obj=ui_logger
-    ),
-    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(
-        DB_PATH, _logger_obj=ui_logger
-    ),
+    connect_func_arg=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger),
+    get_db_table_list_func_arg=lambda: ui_utils.get_db_table_list(DB_PATH, _logger_obj=ui_logger),
     get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(
         DB_PATH, table_name, _logger_obj=ui_logger
     ),
@@ -109,7 +93,7 @@ try:
         available_plots=pg.get_available_plots(),
         knesset_options=knesset_nums_options_global,
         faction_display_map=faction_display_map_global,
-        connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
+        connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger),
     )
 except Exception as e:
     st.error(f"Error loading visualizations section: {e}")

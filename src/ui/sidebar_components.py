@@ -4,17 +4,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from pathlib import Path
-
-# Third-Party Imports
-import streamlit as st
-import pandas as pd  # Required for type hinting if df is passed around
 
 # Add the 'src' directory to sys.path to allow absolute imports
 # This might be needed if this file is run in certain contexts,
 # but typically Streamlit handles the root path well.
 # However, for backend imports, ensuring sys.path is correct is crucial.
 import sys
+from pathlib import Path
+from typing import Callable
+
+import pandas as pd  # Required for type hinting if df is passed around
+
+# Third-Party Imports
+import streamlit as st
 
 _CURRENT_FILE_DIR = Path(__file__).resolve().parent
 _SRC_DIR = _CURRENT_FILE_DIR.parent
@@ -25,11 +27,13 @@ if str(_SRC_DIR) not in sys.path:
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import backend.fetch_table as ft  # type: ignore
+from backend.connection_manager import get_db_connection, safe_execute_query
+
 # Local Application Imports
 # Assuming these are accessible from the new location
 from backend.fetch_table import TABLES  # type: ignore
-import backend.fetch_table as ft  # type: ignore
-from backend.connection_manager import get_db_connection, safe_execute_query
+
 # Assuming _connect, get_db_table_list, get_filter_options_from_db, faction_display_map,
 # EXPORTS, DB_PATH, _format_exc, ui_logger are defined in data_refresh or a shared ui_utils
 # For now, we'll pass them as arguments or assume they are accessible via st.session_state or globally if not refactored out.
@@ -38,9 +42,7 @@ from backend.connection_manager import get_db_connection, safe_execute_query
 _SELECT_ALL_TABLES_OPTION = "🔄 Select/Deselect All Tables"
 
 
-def _handle_data_refresh_button_click(
-    db_path: Path, ui_logger: logging.Logger, format_exc_func: callable
-):
+def _handle_data_refresh_button_click(db_path: Path, ui_logger: logging.Logger, format_exc_func: Callable):
     """Handles the logic for the 'Refresh Selected Data' button click."""
     if st.session_state.get("data_refresh_process_running", False):
         st.sidebar.warning("Refresh process is already running.")
@@ -78,9 +80,7 @@ def _handle_data_refresh_button_click(
 
     async def _refresh_async_wrapper(tables_list_async):
         st.session_state.completed_tables_count = 0
-        await ft.refresh_tables(
-            tables=tables_list_async, progress_cb=_sidebar_progress_cb, db_path=db_path
-        )
+        await ft.refresh_tables(tables=tables_list_async, progress_cb=_sidebar_progress_cb, db_path=db_path)
 
     try:
         asyncio.run(_refresh_async_wrapper(tables_to_run))
@@ -105,9 +105,9 @@ def _handle_data_refresh_button_click(
 def _handle_run_query_button_click(
     exports_dict: dict,
     db_path: Path,
-    connect_func: callable,
+    connect_func: Callable,
     ui_logger: logging.Logger,
-    format_exc_func: callable,
+    format_exc_func: Callable,
     faction_display_map: dict,
 ):
     """Handles the logic for the 'Run Selected Query' button click."""
@@ -120,39 +120,33 @@ def _handle_run_query_button_click(
             modified_sql = base_sql.strip().rstrip(";")
             applied_filters_info = []
             where_conditions = []
-            
+
             # Apply filters if specified
-            ui_logger.debug(f"Applying filters - Knesset: {st.session_state.get('ms_knesset_filter', [])}, Faction: {st.session_state.get('ms_faction_filter', [])}")
+            ui_logger.debug(
+                f"Applying filters - Knesset: {st.session_state.get('ms_knesset_filter', [])}, Faction: {st.session_state.get('ms_faction_filter', [])}"
+            )
 
             if knesset_filter_col and st.session_state.ms_knesset_filter:
                 selected_knesset_nums = st.session_state.ms_knesset_filter
-                where_conditions.append(
-                    f"{knesset_filter_col} IN ({', '.join(map(str, selected_knesset_nums))})"
-                )
-                applied_filters_info.append(
-                    f"KnessetNum IN ({', '.join(map(str, selected_knesset_nums))})"
-                )
+                where_conditions.append(f"{knesset_filter_col} IN ({', '.join(map(str, selected_knesset_nums))})")
+                applied_filters_info.append(f"KnessetNum IN ({', '.join(map(str, selected_knesset_nums))})")
             if faction_filter_col and faction_filter_col != "NULL" and st.session_state.ms_faction_filter:
                 selected_faction_names = st.session_state.ms_faction_filter
                 selected_faction_ids = []
                 missing_factions = []
-                
+
                 for name in selected_faction_names:
                     if name in faction_display_map:
                         selected_faction_ids.append(faction_display_map[name])
                     else:
                         missing_factions.append(name)
-                
+
                 if missing_factions:
                     ui_logger.warning(f"Missing factions in display map: {missing_factions}")
-                
+
                 if selected_faction_ids:
-                    where_conditions.append(
-                        f"{faction_filter_col} IN ({', '.join(map(str, selected_faction_ids))})"
-                    )
-                    applied_filters_info.append(
-                        f"FactionID IN ({', '.join(map(str, selected_faction_ids))})"
-                    )
+                    where_conditions.append(f"{faction_filter_col} IN ({', '.join(map(str, selected_faction_ids))})")
+                    applied_filters_info.append(f"FactionID IN ({', '.join(map(str, selected_faction_ids))})")
 
             if where_conditions:
                 combined_where_clause = " AND ".join(where_conditions)
@@ -160,12 +154,12 @@ def _handle_run_query_button_click(
                 has_where_clause = re.search(r"\bWHERE\b", modified_sql, re.IGNORECASE)
                 keyword_to_use = "AND" if has_where_clause else "WHERE"
                 filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
-                
+
                 # Find insertion point before GROUP BY, ORDER BY, etc.
                 # For CTE-based queries, we need to find the main query's clauses, not CTE clauses
                 insertion_point = len(modified_sql)
                 found_clause = None
-                
+
                 # First, try to find the main SELECT statement (after CTEs)
                 main_select_match = None
                 if "WITH " in modified_sql.upper():
@@ -180,21 +174,21 @@ def _handle_run_query_button_click(
                             # Take the last match (main SELECT)
                             main_select_match = matches[-1]
                             break
-                
+
                 # Define clauses to look for after the main SELECT
                 clauses_keywords_to_find = [
                     r"\bGROUP\s+BY\b",
-                    r"\bHAVING\b", 
+                    r"\bHAVING\b",
                     r"\bWINDOW\b",
                     r"\bORDER\s+BY\b",
                     r"\bLIMIT\b",
                     r"\bOFFSET\b",
                     r"\bFETCH\b",
                 ]
-                
+
                 # Search for clauses starting from main SELECT position
                 search_start = main_select_match.end() if main_select_match else 0
-                
+
                 for pattern_str in clauses_keywords_to_find:
                     # Search from the main SELECT position onward
                     matches = list(re.finditer(pattern_str, modified_sql[search_start:], re.IGNORECASE))
@@ -204,11 +198,11 @@ def _handle_run_query_button_click(
                         if match_pos < insertion_point:
                             insertion_point = match_pos
                             found_clause = pattern_str
-                
+
                 # Insert filter before the first found clause
                 prefix = modified_sql[:insertion_point].strip()
                 suffix = modified_sql[insertion_point:].strip()
-                
+
                 if suffix:
                     modified_sql = f"{prefix}{filter_string_to_add} {suffix}".strip()
                 else:
@@ -218,25 +212,15 @@ def _handle_run_query_button_click(
                 ui_logger.info(f"Applied filters: {', '.join(applied_filters_info)}")
             else:
                 ui_logger.info("No filters applied")
-                
-            ui_logger.info(
-                f"Executing predefined query: {st.session_state.selected_query_name}"
-            )
+
+            ui_logger.info(f"Executing predefined query: {st.session_state.selected_query_name}")
             ui_logger.info(f"Final SQL:\n{modified_sql}")
 
-            with get_db_connection(
-                db_path, read_only=True, logger_obj=ui_logger
-            ) as con:
-                st.session_state.query_results_df = safe_execute_query(
-                    con, modified_sql, ui_logger
-                )
-                st.session_state.executed_query_name = (
-                    st.session_state.selected_query_name
-                )
+            with get_db_connection(db_path, read_only=True, logger_obj=ui_logger) as con:
+                st.session_state.query_results_df = safe_execute_query(con, modified_sql, ui_logger)
+                st.session_state.executed_query_name = st.session_state.selected_query_name
                 st.session_state.show_query_results = True
-                st.session_state.show_table_explorer_results = (
-                    False  # Ensure explorer is hidden
-                )
+                st.session_state.show_table_explorer_results = False  # Ensure explorer is hidden
                 st.session_state.applied_filters_info_query = applied_filters_info
                 st.session_state.last_executed_sql = modified_sql
                 st.toast(
@@ -251,26 +235,22 @@ def _handle_run_query_button_click(
             ui_logger.error(
                 f"Failed SQL for '{st.session_state.selected_query_name}':\n{modified_sql if 'modified_sql' in locals() else base_sql}"
             )
-            st.error(
-                f"Error executing query '{st.session_state.selected_query_name}': {e}"
-            )
+            st.error(f"Error executing query '{st.session_state.selected_query_name}': {e}")
             st.code(str(e) + "\n\n" + format_exc_func())
             st.session_state.show_query_results = False
             st.session_state.query_results_df = pd.DataFrame()
     elif not db_path.exists():
-        st.error(
-            "Database not found. Please ensure 'data/warehouse.duckdb' exists or run data refresh."
-        )
+        st.error("Database not found. Please ensure 'data/warehouse.duckdb' exists or run data refresh.")
         st.session_state.show_query_results = False
 
 
 def _handle_explore_table_button_click(
     db_path: Path,
-    connect_func: callable,
-    get_db_table_list_func: callable,
-    get_table_columns_func: callable,
+    connect_func: Callable,
+    get_db_table_list_func: Callable,
+    get_table_columns_func: Callable,
     ui_logger: logging.Logger,
-    format_exc_func: callable,
+    format_exc_func: Callable,
     faction_display_map: dict,
 ):
     """Handles the logic for the 'Explore Selected Table' button click."""
@@ -283,23 +263,22 @@ def _handle_explore_table_button_click(
             join_clause = ""
             # Default select prefix, assuming the table name itself is the alias or no alias needed
             select_prefix = f'"{table_to_explore}".*'
-            base_query_table_ref = (
-                f'"{table_to_explore}"'  # Default reference to the table
-            )
+            base_query_table_ref = f'"{table_to_explore}"'  # Default reference to the table
 
             # Handle special cases for KNS_Faction and KNS_PersonToPosition to join with UserFactionCoalitionStatus
-            if (
-                table_to_explore.lower() == "kns_faction"
-                and "userfactioncoalitionstatus" in db_tables_list_lower
-            ):
-                select_prefix = "f.*, ufs.CoalitionStatus AS UserCoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition"
+            if table_to_explore.lower() == "kns_faction" and "userfactioncoalitionstatus" in db_tables_list_lower:
+                select_prefix = (
+                    "f.*, ufs.CoalitionStatus AS UserCoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition"
+                )
                 base_query_table_ref = "KNS_Faction f"  # Use alias 'f'
                 join_clause = "LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID AND f.KnessetNum = ufs.KnessetNum"
             elif (
                 table_to_explore.lower() == "kns_persontoposition"
                 and "userfactioncoalitionstatus" in db_tables_list_lower
             ):
-                select_prefix = "p2p.*, ufs.CoalitionStatus AS UserCoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition"
+                select_prefix = (
+                    "p2p.*, ufs.CoalitionStatus AS UserCoalitionStatus, ufs.DateJoinedCoalition, ufs.DateLeftCoalition"
+                )
                 base_query_table_ref = "KNS_PersonToPosition p2p"  # Use alias 'p2p'
                 join_clause = "LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID AND p2p.KnessetNum = ufs.KnessetNum"
 
@@ -315,24 +294,16 @@ def _handle_explore_table_button_click(
             else:
                 table_alias_for_filter = f'"{table_to_explore}".'
 
-            actual_knesset_col_in_table = next(
-                (col for col in all_table_cols if col.lower() == "knessetnum"), None
-            )
+            actual_knesset_col_in_table = next((col for col in all_table_cols if col.lower() == "knessetnum"), None)
             if actual_knesset_col_in_table and st.session_state.ms_knesset_filter:
-                knesset_col_name_explorer = (
-                    f'{table_alias_for_filter}"{actual_knesset_col_in_table}"'
-                )
+                knesset_col_name_explorer = f'{table_alias_for_filter}"{actual_knesset_col_in_table}"'
                 where_clauses.append(
                     f"{knesset_col_name_explorer} IN ({', '.join(map(str, st.session_state.ms_knesset_filter))})"
                 )
 
-            actual_faction_col_in_table = next(
-                (col for col in all_table_cols if col.lower() == "factionid"), None
-            )
+            actual_faction_col_in_table = next((col for col in all_table_cols if col.lower() == "factionid"), None)
             if actual_faction_col_in_table and st.session_state.ms_faction_filter:
-                faction_col_name_explorer = (
-                    f'{table_alias_for_filter}"{actual_faction_col_in_table}"'
-                )
+                faction_col_name_explorer = f'{table_alias_for_filter}"{actual_faction_col_in_table}"'
                 selected_faction_ids_explorer = [
                     faction_display_map[name]
                     for name in st.session_state.ms_faction_filter
@@ -358,9 +329,7 @@ def _handle_explore_table_button_click(
                 None,
             ):
                 order_by_col_explorer = f'{order_by_prefix}"LastUpdatedDate"'
-            elif next(
-                (col for col in all_table_cols if col.lower() == "startdate"), None
-            ):
+            elif next((col for col in all_table_cols if col.lower() == "startdate"), None):
                 order_by_col_explorer = f'{order_by_prefix}"StartDate"'
             elif all_table_cols:  # Fallback to the first column of the base table
                 order_by_col_explorer = f'{order_by_prefix}"{all_table_cols[0]}"'
@@ -369,26 +338,16 @@ def _handle_explore_table_button_click(
                 final_query += f" ORDER BY {order_by_col_explorer} DESC"
             final_query += " LIMIT 1000"
 
-            ui_logger.info(
-                f"Exploring table '{table_to_explore}' with SQL: {final_query}"
-            )
+            ui_logger.info(f"Exploring table '{table_to_explore}' with SQL: {final_query}")
 
-            with get_db_connection(
-                db_path, read_only=True, logger_obj=ui_logger
-            ) as con:
-                st.session_state.table_explorer_df = safe_execute_query(
-                    con, final_query, ui_logger
-                )
+            with get_db_connection(db_path, read_only=True, logger_obj=ui_logger) as con:
+                st.session_state.table_explorer_df = safe_execute_query(con, final_query, ui_logger)
                 st.session_state.executed_table_explorer_name = table_to_explore
                 st.session_state.show_table_explorer_results = True
-                st.session_state.show_query_results = (
-                    False  # Ensure query results are hidden
-                )
+                st.session_state.show_query_results = False  # Ensure query results are hidden
                 st.toast(f"🔍 Explored table: {table_to_explore}", icon="📖")
         except Exception as e:
-            ui_logger.error(
-                f"Error exploring table '{table_to_explore}': {e}", exc_info=True
-            )
+            ui_logger.error(f"Error exploring table '{table_to_explore}': {e}", exc_info=True)
             st.error(f"Error exploring table '{table_to_explore}': {e}")
             st.code(
                 f"Query attempt: {final_query if 'final_query' in locals() else 'N/A'}\n\nError: {str(e)}\n\nTraceback:\n{format_exc_func()}"
@@ -404,22 +363,14 @@ def _handle_explore_table_button_click(
 def _handle_multiselect_change():
     """Handles the 'Select/Deselect All' logic for the tables multiselect without reruns."""
     current_selection = st.session_state.get("ms_tables_to_refresh_widget", [])
-    is_select_all_currently_checked = st.session_state.get(
-        "all_tables_selected_for_refresh_flag", False
-    )
+    is_select_all_currently_checked = st.session_state.get("all_tables_selected_for_refresh_flag", False)
 
     # Case 1: "Select All" was just checked
-    if (
-        _SELECT_ALL_TABLES_OPTION in current_selection
-        and not is_select_all_currently_checked
-    ):
+    if _SELECT_ALL_TABLES_OPTION in current_selection and not is_select_all_currently_checked:
         st.session_state.ms_tables_to_refresh = [_SELECT_ALL_TABLES_OPTION] + TABLES
         st.session_state.all_tables_selected_for_refresh_flag = True
     # Case 2: "Select All" was just unchecked
-    elif (
-        _SELECT_ALL_TABLES_OPTION not in current_selection
-        and is_select_all_currently_checked
-    ):
+    elif _SELECT_ALL_TABLES_OPTION not in current_selection and is_select_all_currently_checked:
         st.session_state.ms_tables_to_refresh = []
         st.session_state.all_tables_selected_for_refresh_flag = False
     # Case 3: Normal selection change
@@ -430,13 +381,13 @@ def _handle_multiselect_change():
 def display_sidebar(
     db_path_arg: Path,
     exports_arg: dict,
-    connect_func_arg: callable,
-    get_db_table_list_func_arg: callable,
-    get_table_columns_func_arg: callable,
-    get_filter_options_func_arg: callable,
+    connect_func_arg: Callable,
+    get_db_table_list_func_arg: Callable,
+    get_table_columns_func_arg: Callable,
+    get_filter_options_func_arg: Callable,
     faction_display_map_arg: dict,
     ui_logger_arg: logging.Logger,
-    format_exc_func_arg: callable,
+    format_exc_func_arg: Callable,
 ):
     """Renders all sidebar components."""
     st.sidebar.header("🔄 Data Refresh Controls")
@@ -452,9 +403,7 @@ def display_sidebar(
     _handle_multiselect_change()  # Call it once to initialize state correctly
 
     if st.sidebar.button("🔄 Refresh Selected Data", key="btn_refresh_data"):
-        _handle_data_refresh_button_click(
-            db_path_arg, ui_logger_arg, format_exc_func_arg
-        )
+        _handle_data_refresh_button_click(db_path_arg, ui_logger_arg, format_exc_func_arg)
 
     st.sidebar.divider()
     st.sidebar.header("🔎 Predefined Queries")
@@ -462,9 +411,11 @@ def display_sidebar(
     st.session_state.selected_query_name = st.sidebar.selectbox(
         "Select a predefined query:",
         options=query_names_options,
-        index=query_names_options.index(st.session_state.selected_query_name)
-        if st.session_state.selected_query_name in query_names_options
-        else 0,
+        index=(
+            query_names_options.index(st.session_state.selected_query_name)
+            if st.session_state.selected_query_name in query_names_options
+            else 0
+        ),
         key="sb_selected_query_name",
     )
     if st.sidebar.button(
@@ -487,11 +438,11 @@ def display_sidebar(
     st.session_state.selected_table_for_explorer = st.sidebar.selectbox(
         "Select a table to explore:",
         options=db_tables_list_for_explorer,
-        index=db_tables_list_for_explorer.index(
-            st.session_state.selected_table_for_explorer
-        )
-        if st.session_state.selected_table_for_explorer in db_tables_list_for_explorer
-        else 0,
+        index=(
+            db_tables_list_for_explorer.index(st.session_state.selected_table_for_explorer)
+            if st.session_state.selected_table_for_explorer in db_tables_list_for_explorer
+            else 0
+        ),
         key="sb_selected_table_explorer",
     )
     if st.sidebar.button(
@@ -511,9 +462,7 @@ def display_sidebar(
 
     st.sidebar.divider()
     st.sidebar.header("📊 Filters (Apply to Queries, Explorer & Plots)")
-    knesset_nums_options_filters, _ = (
-        get_filter_options_func_arg()
-    )  # We only need knesset_nums_options here
+    knesset_nums_options_filters, _ = get_filter_options_func_arg()  # We only need knesset_nums_options here
 
     # Create filter widgets - Streamlit automatically stores values in session state using the key
     st.sidebar.multiselect(

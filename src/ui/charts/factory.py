@@ -2,14 +2,14 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import plotly.graph_objects as go
 
 from .comparison import ComparisonCharts
 from .distribution import DistributionCharts
-from .time_series import TimeSeriesCharts
 from .network import NetworkCharts
+from .time_series import TimeSeriesCharts
 
 
 class ChartFactory:
@@ -27,9 +27,7 @@ class ChartFactory:
             "network": NetworkCharts(db_path, logger_obj),
         }
 
-    def create_chart(
-        self, chart_category: str, chart_type: str, **kwargs
-    ) -> Optional[go.Figure]:
+    def create_chart(self, chart_category: str, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """
         Create a chart of the specified type.
 
@@ -83,7 +81,7 @@ class ChartFactory:
             "network": [
                 "mk_collaboration_network",
                 "faction_collaboration_network",
-                "faction_collaboration_matrix", 
+                "faction_collaboration_matrix",
                 "faction_collaboration_chord",
                 "faction_coalition_breakdown",
             ],

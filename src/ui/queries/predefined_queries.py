@@ -20,21 +20,19 @@ fetching using KnessetNum filtering.
 """
 
 from typing import Any, Dict
-from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
-from utils.committee_resolver import CommitteeResolver, get_committee_name_with_enhanced_fallback
 
 # Query definitions with their SQL and metadata
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
     "Queries + Full Details": {
         "sql": """
 WITH StandardFactionLookup AS (
-            SELECT 
+            SELECT
                 ptp.PersonID as PersonID,
                 ptp.KnessetNum as KnessetNum,
                 ptp.FactionID,
                 ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum
+                    ORDER BY
                         CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
                         ptp.KnessetNum DESC,
                         ptp.StartDate DESC NULLS LAST
@@ -43,7 +41,7 @@ WITH StandardFactionLookup AS (
             WHERE ptp.FactionID IS NOT NULL
         ),
 MinisterLookup AS (
-    SELECT 
+    SELECT
         p2p.GovMinistryID,
         p2p.PersonID,
         p2p.DutyDesc,
@@ -87,11 +85,11 @@ FROM KNS_Query Q
 LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
 LEFT JOIN KNS_GovMinistry M ON Q.GovMinistryID = M.GovMinistryID
 LEFT JOIN KNS_Status S ON Q.StatusID = S.StatusID
-LEFT JOIN StandardFactionLookup sfl ON Q.PersonID = sfl.PersonID 
-    AND Q.KnessetNum = sfl.KnessetNum 
+LEFT JOIN StandardFactionLookup sfl ON Q.PersonID = sfl.PersonID
+    AND Q.KnessetNum = sfl.KnessetNum
     AND sfl.rn = 1
 LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
-LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND Q.KnessetNum = ufs.KnessetNum
 LEFT JOIN MinisterLookup ml ON Q.GovMinistryID = ml.GovMinistryID AND ml.rn = 1
 LEFT JOIN KNS_Person min_p ON ml.PersonID = min_p.PersonID
@@ -101,20 +99,19 @@ ORDER BY Q.KnessetNum DESC, Q.QueryID DESC;
         "knesset_filter_column": "Q.KnessetNum",
         "faction_filter_column": "f.FactionID",
         "description": (
-            "Comprehensive query data with faction details, "
-            "ministry information, and responsible ministers"
+            "Comprehensive query data with faction details, " "ministry information, and responsible ministers"
         ),
     },
     "Agenda Items + Full Details": {
         "sql": """
 WITH StandardFactionLookup AS (
-            SELECT 
+            SELECT
                 ptp.PersonID as PersonID,
                 ptp.KnessetNum as KnessetNum,
                 ptp.FactionID,
                 ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum
+                    ORDER BY
                         CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
                         ptp.KnessetNum DESC,
                         ptp.StartDate DESC NULLS LAST
@@ -148,32 +145,29 @@ SELECT
 FROM KNS_Agenda A
 LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
 LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-LEFT JOIN StandardFactionLookup sfl ON A.InitiatorPersonID = sfl.PersonID 
-    AND A.KnessetNum = sfl.KnessetNum 
+LEFT JOIN StandardFactionLookup sfl ON A.InitiatorPersonID = sfl.PersonID
+    AND A.KnessetNum = sfl.KnessetNum
     AND sfl.rn = 1
 LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
-LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND A.KnessetNum = ufs.KnessetNum
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC;
         """,
         "knesset_filter_column": "A.KnessetNum",
         "faction_filter_column": "f.FactionID",
-        "description": (
-            "Comprehensive agenda items data with faction details "
-            "and status information"
-        ),
+        "description": ("Comprehensive agenda items data with faction details " "and status information"),
     },
     "Bills + Full Details": {
         "sql": """
 WITH StandardFactionLookup AS (
-            SELECT 
+            SELECT
                 ptp.PersonID as PersonID,
                 ptp.KnessetNum as KnessetNum,
                 ptp.FactionID,
                 ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum
+                    ORDER BY
                         CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
                         ptp.KnessetNum DESC,
                         ptp.StartDate DESC NULLS LAST
@@ -182,7 +176,7 @@ WITH StandardFactionLookup AS (
             WHERE ptp.FactionID IS NOT NULL
         ),
 BillMainInitiatorFaction AS (
-    SELECT 
+    SELECT
         BI.BillID,
         B.KnessetNum,
         BI.PersonID as MainInitiatorPersonID,
@@ -190,13 +184,13 @@ BillMainInitiatorFaction AS (
         ROW_NUMBER() OVER (PARTITION BY BI.BillID ORDER BY BI.Ordinal) as rn
     FROM KNS_BillInitiator BI
     JOIN KNS_Bill B ON BI.BillID = B.BillID
-    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID 
+    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID
         AND B.KnessetNum = sfl.KnessetNum
         AND sfl.rn = 1
     WHERE BI.Ordinal = 1
 ),
 BillSupportingMemberFactions AS (
-    SELECT 
+    SELECT
         BI.BillID,
         BI.PersonID,
         B.KnessetNum,
@@ -204,13 +198,13 @@ BillSupportingMemberFactions AS (
         ROW_NUMBER() OVER (PARTITION BY BI.BillID, BI.PersonID ORDER BY BI.Ordinal) as rn
     FROM KNS_BillInitiator BI
     JOIN KNS_Bill B ON BI.BillID = B.BillID
-    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID 
+    LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID
         AND B.KnessetNum = sfl.KnessetNum
         AND sfl.rn = 1
     WHERE (BI.Ordinal > 1 OR BI.IsInitiator IS NULL)
 ),
 BillMergeInfo AS (
-    SELECT 
+    SELECT
         bu.UnionBillID as MergedBillID,
         bu.MainBillID as LeadingBillID,
         lb.Name as LeadingBillName,
@@ -220,7 +214,7 @@ BillMergeInfo AS (
 ),
 BillCommitteeSessions AS (
     -- Direct bill-to-session connections using complete KNS_CmtSessionItem dataset
-    SELECT 
+    SELECT
         csi.ItemID as BillID,
         COUNT(DISTINCT csi.CommitteeSessionID) as BillSpecificSessions,
         MIN(CAST(cs.StartDate AS TIMESTAMP)) as FirstRelevantSession,
@@ -232,13 +226,13 @@ BillCommitteeSessions AS (
     GROUP BY csi.ItemID
 ),
 BillPlenumSessions AS (
-    SELECT 
+    SELECT
         psi.ItemID as BillID,
         COUNT(DISTINCT psi.PlenumSessionID) as PlenumSessionCount,
         MIN(CAST(ps.StartDate AS TIMESTAMP)) as FirstPlenumSession,
         MAX(CAST(ps.StartDate AS TIMESTAMP)) as LastPlenumSession,
-        AVG(CASE 
-            WHEN ps.StartDate IS NOT NULL AND ps.FinishDate IS NOT NULL 
+        AVG(CASE
+            WHEN ps.StartDate IS NOT NULL AND ps.FinishDate IS NOT NULL
             THEN DATE_DIFF('minute', CAST(ps.StartDate AS TIMESTAMP), CAST(ps.FinishDate AS TIMESTAMP))
         END) as AvgPlenumSessionDurationMinutes,
         GROUP_CONCAT(DISTINCT CAST(ps.Number AS VARCHAR) || ': ' || ps.Name, ' | ') as PlenumSessionNames
@@ -248,7 +242,7 @@ BillPlenumSessions AS (
     GROUP BY psi.ItemID
 ),
 BillDocuments AS (
-    SELECT 
+    SELECT
         db.BillID,
         COUNT(*) as DocumentCount,
         GROUP_CONCAT(DISTINCT db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath, ' | ') as DocumentLinks
@@ -259,45 +253,45 @@ BillDocuments AS (
 BillFirstSubmission AS (
     -- Get the earliest activity date for each bill (true submission date)
     -- This considers initiator assignment, committee sessions, plenum sessions, and publication
-    SELECT 
+    SELECT
         B.BillID,
         MIN(earliest_date) as FirstSubmissionDate
     FROM KNS_Bill B
     LEFT JOIN (
         -- Initiator assignment dates (often the earliest/true submission)
-        SELECT 
+        SELECT
             BI.BillID,
             MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
         FROM KNS_BillInitiator BI
         WHERE BI.LastUpdatedDate IS NOT NULL
         GROUP BY BI.BillID
-        
+
         UNION ALL
-        
+
         -- Committee session dates
-        SELECT 
+        SELECT
             csi.ItemID as BillID,
             MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
         FROM KNS_CmtSessionItem csi
         JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
         WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL
         GROUP BY csi.ItemID
-        
+
         UNION ALL
-        
+
         -- Plenum session dates
-        SELECT 
+        SELECT
             psi.ItemID as BillID,
             MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
         FROM KNS_PlmSessionItem psi
         JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
         WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL
         GROUP BY psi.ItemID
-        
+
         UNION ALL
-        
+
         -- Publication dates
-        SELECT 
+        SELECT
             B.BillID,
             CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
         FROM KNS_Bill B
@@ -314,13 +308,13 @@ SELECT
     B.SubTypeDesc AS BillSubTypeDesc,
     B.PrivateNumber,
     COALESCE(C.Name, CASE WHEN B.CommitteeID IS NOT NULL THEN 'Committee ' || CAST(B.CommitteeID AS VARCHAR) ELSE NULL END) AS BillCommitteeName,
-    
+
     -- Committee additional information from KNS_Committee
     C.CommitteeTypeDesc AS BillCommitteeTypeDesc,
     C.AdditionalTypeID AS BillCommitteeAdditionalTypeID,
     C.AdditionalTypeDesc AS BillCommitteeAdditionalTypeDesc,
     C.CommitteeParentName AS BillCommitteeParentName,
-    
+
     B.StatusID AS BillStatusID,
     S."Desc" AS BillStatusDesc,
     B.Number AS BillNumber,
@@ -328,7 +322,7 @@ SELECT
     B.PostponementReasonDesc,
     B.SummaryLaw AS BillSummaryLaw,
     strftime(CAST(B.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
-    
+
     -- Additional KNS_Bill fields
     strftime(CAST(B.PublicationDate AS TIMESTAMP), '%Y-%m-%d') AS BillPublicationDate,
     B.MagazineNumber AS BillMagazineNumber,
@@ -339,53 +333,53 @@ SELECT
     B.PublicationSeriesFirstCall AS BillPublicationSeriesFirstCall,
 
     -- Bill initiator information with proper distinction using Ordinal field
-    CASE 
-        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
-            CASE 
+    CASE
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
+            CASE
                 WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN BI.PersonID END) > 0 THEN
                     GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
                 ELSE GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
             END
         ELSE 'Government Initiative'
     END AS BillMainInitiatorNames,
-    
+
     -- Main initiator faction name
-    CASE 
-        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
+    CASE
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             COALESCE(
                 MAX(CASE WHEN BI.Ordinal = 1 THEN f.Name END),
                 'Unknown'
             )
         ELSE 'Government'
     END AS BillMainInitiatorFactionName,
-    
+
     -- Main initiator coalition status
-    CASE 
-        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN 
+    CASE
+        WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             COALESCE(
                 MAX(CASE WHEN BI.Ordinal = 1 THEN ufs.CoalitionStatus END),
                 'Unknown'
             )
         ELSE 'Government'
     END AS BillMainInitiatorCoalitionStatus,
-    
+
     -- Leading bill information for merged bills (Status ID 122)
-    CASE 
-        WHEN B.StatusID = 122 THEN 
-            CASE 
-                WHEN MAX(bmi.LeadingBillName) IS NOT NULL THEN 
+    CASE
+        WHEN B.StatusID = 122 THEN
+            CASE
+                WHEN MAX(bmi.LeadingBillName) IS NOT NULL THEN
                     CONCAT('Bill #', COALESCE(CAST(MAX(bmi.LeadingBillNumber) AS VARCHAR), 'Unknown'), ': ', MAX(bmi.LeadingBillName))
                 ELSE 'Merged (relationship data not available in source)'
             END
         ELSE NULL
     END AS MergedWithLeadingBill,
-    
-    CASE 
+
+    CASE
         WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
             GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
         ELSE 'None'
     END AS BillSupportingMemberNames,
-    CASE 
+    CASE
         WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
             GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sf.Name, 'Unknown Faction') || ')') END, ', ')
         ELSE 'None'
@@ -393,55 +387,55 @@ SELECT
     COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN BI.PersonID END) AS BillMainInitiatorCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount,
-    
+
     -- Coalition/Opposition member counts
-    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID 
+    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID
                         WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) AS BillCoalitionMemberCount,
-    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID 
+    COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID
                         WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) AS BillOppositionMemberCount,
-    
+
     -- Coalition/Opposition member percentages
-    CASE 
+    CASE
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
-            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID 
-                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) * 100.0) 
+            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID
+                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) * 100.0)
                   / COUNT(DISTINCT BI.PersonID), 1)
         ELSE 0.0
     END AS BillCoalitionMemberPercentage,
-    CASE 
+    CASE
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
-            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID 
-                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) * 100.0) 
+            ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID
+                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) * 100.0)
                   / COUNT(DISTINCT BI.PersonID), 1)
         ELSE 0.0
     END AS BillOppositionMemberPercentage,
-    
+
     -- Bill-specific committee session data (direct bill-to-session connections)
     COALESCE(bcs.BillSpecificSessions, 0) AS BillCommitteeSessions,
     strftime(bcs.FirstRelevantSession, '%Y-%m-%d') as BillFirstCommitteeSession,
     strftime(bcs.LastRelevantSession, '%Y-%m-%d') as BillLastCommitteeSession,
-    
+
     -- Plenum session data (from KNS_PlmSessionItem text analysis)
     COALESCE(bps.PlenumSessionCount, 0) AS BillPlenumSessionCount,
     strftime(bps.FirstPlenumSession, '%Y-%m-%d') as BillFirstPlenumSession,
     strftime(bps.FirstPlenumSession, '%Y-%m-%d') as FirstPlenumDiscussionDate,
     strftime(bps.LastPlenumSession, '%Y-%m-%d') as BillLastPlenumSession,
     ROUND(bps.AvgPlenumSessionDurationMinutes, 1) AS BillAvgPlenumSessionDurationMinutes,
-    CASE 
-        WHEN LENGTH(bps.PlenumSessionNames) > 200 THEN 
+    CASE
+        WHEN LENGTH(bps.PlenumSessionNames) > 200 THEN
             SUBSTRING(bps.PlenumSessionNames, 1, 197) || '...'
         ELSE bps.PlenumSessionNames
     END AS BillPlenumSessionNames,
     psi.ItemTypeDesc AS BillPlenumItemType,
-    
+
     -- Document information
     COALESCE(bd.DocumentCount, 0) AS BillDocumentCount,
-    CASE 
-        WHEN LENGTH(bd.DocumentLinks) > 500 THEN 
+    CASE
+        WHEN LENGTH(bd.DocumentLinks) > 500 THEN
             SUBSTRING(bd.DocumentLinks, 1, 497) || '...'
         ELSE bd.DocumentLinks
     END AS BillDocumentLinks,
-    
+
     -- First Bill Submission Date (earliest activity: initiator assignment, committee, plenum, or publication)
     strftime(bfs.FirstSubmissionDate, '%Y-%m-%d') AS FirstBillSubmissionDate
 
@@ -452,13 +446,13 @@ LEFT JOIN KNS_BillInitiator BI ON B.BillID = BI.BillID
 LEFT JOIN KNS_Person Pi ON BI.PersonID = Pi.PersonID
 LEFT JOIN BillMainInitiatorFaction bmif ON B.BillID = bmif.BillID AND bmif.rn = 1
 LEFT JOIN KNS_Faction f ON bmif.FactionID = f.FactionID
-LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND B.KnessetNum = ufs.KnessetNum
-LEFT JOIN BillSupportingMemberFactions bsmf ON BI.BillID = bsmf.BillID 
-    AND BI.PersonID = bsmf.PersonID 
+LEFT JOIN BillSupportingMemberFactions bsmf ON BI.BillID = bsmf.BillID
+    AND BI.PersonID = bsmf.PersonID
     AND bsmf.rn = 1
 LEFT JOIN KNS_Faction sf ON bsmf.FactionID = sf.FactionID
-LEFT JOIN UserFactionCoalitionStatus sufs ON sf.FactionID = sufs.FactionID 
+LEFT JOIN UserFactionCoalitionStatus sufs ON sf.FactionID = sufs.FactionID
     AND B.KnessetNum = sufs.KnessetNum
 LEFT JOIN BillMergeInfo bmi ON B.BillID = bmi.MergedBillID
 LEFT JOIN BillCommitteeSessions bcs ON B.BillID = bcs.BillID
@@ -467,22 +461,22 @@ LEFT JOIN KNS_PlmSessionItem psi ON B.BillID = psi.ItemID
 LEFT JOIN BillDocuments bd ON B.BillID = bd.BillID
 LEFT JOIN BillFirstSubmission bfs ON B.BillID = bfs.BillID
 
-GROUP BY 
+GROUP BY
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
-    B.CommitteeID, C.Name, C.CommitteeTypeDesc, C.AdditionalTypeID, 
-    C.AdditionalTypeDesc, C.CommitteeParentName, B.StatusID, S."Desc", B.Number, 
-    B.PostponementReasonID, B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate, 
-    B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill, 
+    B.CommitteeID, C.Name, C.CommitteeTypeDesc, C.AdditionalTypeID,
+    C.AdditionalTypeDesc, C.CommitteeParentName, B.StatusID, S."Desc", B.Number,
+    B.PostponementReasonID, B.PostponementReasonDesc, B.SummaryLaw, B.LastUpdatedDate,
+    B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill,
     B.PublicationSeriesID, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
     bcs.BillSpecificSessions, bcs.FirstRelevantSession, bcs.LastRelevantSession,
-    bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
+    bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession,
     bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc,
     bd.DocumentCount, bd.DocumentLinks, bfs.FirstSubmissionDate
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC;
         """,
         "knesset_filter_column": "B.KnessetNum",
-        "faction_filter_column": "NULL", # Bills don't have direct faction association
+        "faction_filter_column": "NULL",  # Bills don't have direct faction association
         "description": (
             "Comprehensive bill data with initiator information, committee assignments, "
             "status details, committee session activity analysis, plenum session information "
@@ -511,7 +505,4 @@ def get_all_query_names() -> list:
 def get_filter_columns(query_name: str) -> tuple:
     """Get the filter column names for a query."""
     query_info = PREDEFINED_QUERIES.get(query_name, {})
-    return (
-        query_info.get("knesset_filter_column"),
-        query_info.get("faction_filter_column")
-    )
+    return (query_info.get("knesset_filter_column"), query_info.get("faction_filter_column"))

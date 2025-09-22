@@ -13,7 +13,7 @@ For new code, use:
 import logging
 import warnings
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 
 from ui.services.chart_service import ChartService
 
@@ -34,9 +34,7 @@ GENERAL_STATUS_COLORS = ChartConfig.GENERAL_STATUS_COLORS
 QUERY_TYPE_COLORS = ChartConfig.QUERY_TYPE_COLORS
 
 
-def check_tables_exist(
-    con, required_tables: list[str], logger_obj: logging.Logger
-) -> bool:
+def check_tables_exist(con, required_tables: list[str], logger_obj: logging.Logger) -> bool:
     """Legacy compatibility function."""
     from ui.charts.base import BaseChart
 
@@ -53,15 +51,11 @@ def plot_queries_by_time_period(
 ) -> Optional[Any]:
     """Legacy wrapper for queries by time period chart."""
     try:
-        logger_obj.info(
-            f"plot_queries_by_time_period called with db_path={db_path}, kwargs={kwargs}"
-        )
+        logger_obj.info(f"plot_queries_by_time_period called with db_path={db_path}, kwargs={kwargs}")
         chart_service = ChartService(db_path, logger_obj)
         logger_obj.info("ChartService created successfully")
         result = chart_service.plot_queries_by_time_period(**kwargs)
-        logger_obj.info(
-            f"Chart result: {type(result)} {'(figure)' if result else '(None)'}"
-        )
+        logger_obj.info(f"Chart result: {type(result)} {'(figure)' if result else '(None)'}")
         return result
     except Exception as e:
         logger_obj.error(f"Error in plot_queries_by_time_period: {e}", exc_info=True)
@@ -110,15 +104,11 @@ def plot_query_status_by_faction(
 def plot_agendas_by_time_period(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for agendas by time period chart."""
     try:
-        logger_obj.info(
-            f"plot_agendas_by_time_period called with db_path={db_path}, kwargs={kwargs}"
-        )
+        logger_obj.info(f"plot_agendas_by_time_period called with db_path={db_path}, kwargs={kwargs}")
         chart_service = ChartService(db_path, logger_obj)
         logger_obj.info("ChartService created for agendas")
         result = chart_service.plot_agendas_by_time_period(**kwargs)
-        logger_obj.info(
-            f"Agenda chart result: {type(result)} {'(figure)' if result else '(None)'}"
-        )
+        logger_obj.info(f"Agenda chart result: {type(result)} {'(figure)' if result else '(None)'}")
         return result
     except Exception as e:
         logger_obj.error(f"Error in plot_agendas_by_time_period: {e}", exc_info=True)
@@ -157,20 +147,24 @@ def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_bill_status_distribution(**kwargs)
 
+
 def plot_bills_by_time_period(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bills by time period chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_bills_by_time_period(**kwargs)
+
 
 def plot_bill_subtype_distribution(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bill subtype distribution chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_bill_subtype_distribution(**kwargs)
 
+
 def plot_bills_per_faction(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bills per faction chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_bills_per_faction(**kwargs)
+
 
 def plot_bills_by_coalition_status(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bills by coalition status chart."""

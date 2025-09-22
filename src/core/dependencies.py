@@ -1,13 +1,12 @@
 """Dependency injection container for the application."""
 
+import logging
 from pathlib import Path
 from typing import Optional
-import logging
-import asyncio
 
+from backend.fetch_table import refresh_tables
 from config.settings import Settings
 from utils.logger_setup import setup_logging
-from backend.fetch_table import refresh_tables
 
 
 class DataRefreshService:
@@ -35,15 +34,13 @@ class DataRefreshService:
 class DependencyContainer:
     """Container for managing application dependencies."""
 
-    def __init__(
-        self, db_path: Optional[Path] = None, logger_name: str = "knesset_app"
-    ):
+    def __init__(self, db_path: Optional[Path] = None, logger_name: str = "knesset_app"):
         self.db_path = db_path or Settings.get_db_path()
         self.logger = setup_logging(logger_name)
         Settings.ensure_directories()
 
         # Initialize services
-        self._data_refresh_service = None
+        self._data_refresh_service: Optional[DataRefreshService] = None
 
     @property
     def data_refresh_service(self) -> DataRefreshService:

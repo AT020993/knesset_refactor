@@ -9,6 +9,7 @@ import aiohttp
 
 class ErrorCategory(Enum):
     """Categories for different types of API errors."""
+
     NETWORK = "network"
     SERVER = "server"
     CLIENT = "client"
@@ -40,6 +41,7 @@ def categorize_error(exception: Exception) -> ErrorCategory:
 
 class CircuitBreakerOpenException(Exception):
     """Exception raised when an operation is attempted while the circuit breaker is open."""
+
     def __init__(self, message="Circuit breaker is open and cannot accept new calls"):
         self.message = message
         super().__init__(self.message)

@@ -9,9 +9,7 @@ import pandas as pd
 from backend.connection_manager import get_db_connection, safe_execute_query
 
 
-def map_mk_site_code(
-    db_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> pd.DataFrame:
+def map_mk_site_code(db_path: Path, logger_obj: Optional[logging.Logger] = None) -> pd.DataFrame:
     """Return mapping of MK internal PersonID to website SiteID."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
@@ -21,13 +19,9 @@ def map_mk_site_code(
             # Check if KNS_MkSiteCode table exists
             tables_df = con.execute("SHOW TABLES").df()
             if "kns_mksitecode" in tables_df["name"].str.lower().tolist():
-                return safe_execute_query(
-                    con, "SELECT KnsID, SiteID FROM KNS_MkSiteCode", logger_obj
-                )
+                return safe_execute_query(con, "SELECT KnsID, SiteID FROM KNS_MkSiteCode", logger_obj)
             else:
-                logger_obj.info(
-                    "KNS_MkSiteCode table not found. Cannot map MK site codes."
-                )
+                logger_obj.info("KNS_MkSiteCode table not found. Cannot map MK site codes.")
                 return pd.DataFrame(columns=["KnsID", "SiteID"])
 
     except Exception as e:
@@ -35,9 +29,7 @@ def map_mk_site_code(
         return pd.DataFrame(columns=["KnsID", "SiteID"])
 
 
-def get_faction_display_mapping(
-    db_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> Dict[str, int]:
+def get_faction_display_mapping(db_path: Path, logger_obj: Optional[logging.Logger] = None) -> Dict[str, int]:
     """Get mapping of faction names to their display order/priority."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
@@ -55,10 +47,7 @@ def get_faction_display_mapping(
             result = safe_execute_query(con, query, logger_obj)
             if result is not None and not result.empty:
                 # Create mapping based on member count
-                return {
-                    faction: idx
-                    for idx, faction in enumerate(result["FactionName"].tolist())
-                }
+                return {faction: idx for idx, faction in enumerate(result["FactionName"].tolist())}
 
     except Exception as e:
         logger_obj.warning(f"Error getting faction display mapping: {e}", exc_info=True)
@@ -66,9 +55,7 @@ def get_faction_display_mapping(
     return {}
 
 
-def get_database_summary(
-    db_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> Dict[str, Any]:
+def get_database_summary(db_path: Path, logger_obj: Optional[logging.Logger] = None) -> Dict[str, Any]:
     """Get a summary of the database contents."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
@@ -87,9 +74,7 @@ def get_database_summary(
     try:
         with get_db_connection(db_path, read_only=True, logger_obj=logger_obj) as con:
             # Get list of tables
-            tables_query = (
-                "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main'"
-            )
+            tables_query = "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main'"
             tables_result = safe_execute_query(con, tables_query, logger_obj)
 
             if tables_result is not None and not tables_result.empty:
@@ -110,9 +95,7 @@ def get_database_summary(
                             summary["tables"][table_name] = 0
 
                     except Exception as e:
-                        logger_obj.warning(
-                            f"Error getting count for table {table_name}: {e}"
-                        )
+                        logger_obj.warning(f"Error getting count for table {table_name}: {e}")
                         summary["tables"][table_name] = -1  # Error indicator
 
     except Exception as e:
@@ -121,9 +104,7 @@ def get_database_summary(
     return summary
 
 
-def validate_database_integrity(
-    db_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> Dict[str, Any]:
+def validate_database_integrity(db_path: Path, logger_obj: Optional[logging.Logger] = None) -> Dict[str, Any]:
     """Validate database integrity and return a report."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
@@ -148,9 +129,7 @@ def validate_database_integrity(
 
         with get_db_connection(db_path, read_only=True, logger_obj=logger_obj) as con:
             # Check which tables exist
-            tables_query = (
-                "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main'"
-            )
+            tables_query = "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main'"
             tables_result = safe_execute_query(con, tables_query, logger_obj)
 
             existing_tables: List[str] = []
@@ -160,26 +139,16 @@ def validate_database_integrity(
             # Check for missing tables
             missing_tables = [t for t in expected_tables if t not in existing_tables]
             if missing_tables:
-                report["warnings"].extend(
-                    [f"Missing table: {t}" for t in missing_tables]
-                )
+                report["warnings"].extend([f"Missing table: {t}" for t in missing_tables])
 
             # Check for unexpected tables
-            unexpected_tables = [
-                t
-                for t in existing_tables
-                if t not in expected_tables and not t.startswith("User")
-            ]
+            unexpected_tables = [t for t in existing_tables if t not in expected_tables and not t.startswith("User")]
             if unexpected_tables:
-                report["warnings"].extend(
-                    [f"Unexpected table: {t}" for t in unexpected_tables]
-                )
+                report["warnings"].extend([f"Unexpected table: {t}" for t in unexpected_tables])
 
             # Check each existing table
             for table_name in existing_tables:
-                table_check: Dict[str, Any] = {
-                    "exists": True, "row_count": 0, "has_data": False
-                }
+                table_check: Dict[str, Any] = {"exists": True, "row_count": 0, "has_data": False}
 
                 try:
                     count_query = f'SELECT COUNT(*) as count FROM "{table_name}"'
@@ -215,9 +184,7 @@ def validate_database_integrity(
     return report
 
 
-def backup_database(
-    db_path: Path, backup_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> bool:
+def backup_database(db_path: Path, backup_path: Path, logger_obj: Optional[logging.Logger] = None) -> bool:
     """Create a backup of the database."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
@@ -243,9 +210,7 @@ def backup_database(
         return False
 
 
-def restore_database(
-    backup_path: Path, db_path: Path, logger_obj: Optional[logging.Logger] = None
-) -> bool:
+def restore_database(backup_path: Path, db_path: Path, logger_obj: Optional[logging.Logger] = None) -> bool:
     """Restore database from backup."""
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)

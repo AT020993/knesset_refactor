@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import plotly.graph_objects as go
 
@@ -22,9 +22,7 @@ class ChartService:
         self.logger = logger_obj or logging.getLogger(__name__)
         self.chart_factory = ChartFactory(self.db_path, self.logger)
 
-    def create_chart(
-        self, chart_category: str, chart_type: str, **kwargs
-    ) -> Optional[go.Figure]:
+    def create_chart(self, chart_category: str, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Create a chart using the chart factory."""
         return self.chart_factory.create_chart(chart_category, chart_type, **kwargs)
 

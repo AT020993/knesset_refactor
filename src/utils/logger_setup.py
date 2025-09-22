@@ -11,14 +11,16 @@ LOG_FILE_BACKUP_COUNT_DEFAULT = 5
 # Global error tracking for monitoring
 error_metrics = defaultdict(int)
 
+
 class ErrorTrackingHandler(logging.Handler):
     """Custom handler to track error metrics."""
-    
+
     def emit(self, record):
         if record.levelno >= logging.ERROR:
-            error_type = getattr(record, 'error_category', 'unknown')
+            error_type = getattr(record, "error_category", "unknown")
             error_metrics[f"error_{error_type}"] += 1
             error_metrics["total_errors"] += 1
+
 
 def setup_logging(
     logger_name: str,
@@ -26,7 +28,7 @@ def setup_logging(
     log_dir: Path = LOG_DIR_DEFAULT,
     log_file_max_bytes: int = LOG_FILE_MAX_BYTES_DEFAULT,
     log_file_backup_count: int = LOG_FILE_BACKUP_COUNT_DEFAULT,
-    console_output: bool = True
+    console_output: bool = True,
 ):
     """
     Configures and returns a logger instance.
@@ -64,27 +66,26 @@ def setup_logging(
         logger.addHandler(console_handler)
 
     # File Handler (Rotating)
-    sanitized_logger_name = "".join(c if c.isalnum() or c in ['_', '-'] else '_' for c in logger_name)
+    sanitized_logger_name = "".join(c if c.isalnum() or c in ["_", "-"] else "_" for c in logger_name)
     log_file_path = log_dir / f"{sanitized_logger_name}.log"
 
     file_handler = RotatingFileHandler(
-        log_file_path,
-        maxBytes=log_file_max_bytes,
-        backupCount=log_file_backup_count,
-        encoding='utf-8'
+        log_file_path, maxBytes=log_file_max_bytes, backupCount=log_file_backup_count, encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    
+
     # Add error tracking handler
     error_tracker = ErrorTrackingHandler()
     logger.addHandler(error_tracker)
 
     return logger
 
+
 def get_error_metrics():
     """Get current error metrics for monitoring."""
     return dict(error_metrics)
+
 
 def reset_error_metrics():
     """Reset error metrics counters."""

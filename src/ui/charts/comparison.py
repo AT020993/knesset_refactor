@@ -1,7 +1,5 @@
 """Comparison and faction analysis chart generators."""
 
-import logging
-from pathlib import Path
 from typing import Any, List, Optional
 
 import pandas as pd
@@ -10,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
-from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
+from utils.faction_resolver import FactionResolver, get_faction_name_field
 
 from .base import BaseChart
 
@@ -31,12 +29,8 @@ class ComparisonCharts(BaseChart):
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="q", **kwargs)
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
-                if not self.check_tables_exist(
-                    con, ["KNS_Query", "KNS_PersonToPosition"]
-                ):
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                if not self.check_tables_exist(con, ["KNS_Query", "KNS_PersonToPosition"]):
                     return None
 
                 query = f"""
@@ -45,8 +39,8 @@ class ComparisonCharts(BaseChart):
                         {get_faction_name_field('f', "'Unknown'")} AS FactionName,
                         COUNT(q.QueryID) AS QueryCount
                     FROM KNS_Query q
-                    LEFT JOIN StandardFactionLookup sfl ON q.PersonID = sfl.PersonID 
-                        AND q.KnessetNum = sfl.KnessetNum 
+                    LEFT JOIN StandardFactionLookup sfl ON q.PersonID = sfl.PersonID
+                        AND q.KnessetNum = sfl.KnessetNum
                         AND sfl.rn = 1
                     LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
                     WHERE q.KnessetNum IS NOT NULL
@@ -60,9 +54,7 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(
-                        f"No faction query data found for '{filters['knesset_title']}'."
-                    )
+                    st.info(f"No faction query data found for '{filters['knesset_title']}'.")
                     return None
 
                 fig = px.bar(
@@ -87,9 +79,7 @@ class ComparisonCharts(BaseChart):
                 return fig
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating queries per faction chart: {e}", exc_info=True
-            )
+            self.logger.error(f"Error generating queries per faction chart: {e}", exc_info=True)
             st.error(f"Could not generate queries per faction chart: {e}")
             return None
 
@@ -109,20 +99,14 @@ class ComparisonCharts(BaseChart):
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
-            st.info(
-                "Please select a single Knesset to view the 'Agendas per Faction' plot."
-            )
-            self.logger.info(
-                "plot_agendas_per_faction requires a single Knesset filter."
-            )
+            st.info("Please select a single Knesset to view the 'Agendas per Faction' plot.")
+            self.logger.info("plot_agendas_per_faction requires a single Knesset filter.")
             return None
 
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Agenda",
                     "KNS_Person",
@@ -154,9 +138,7 @@ class ComparisonCharts(BaseChart):
 
                 params: List[Any] = [single_knesset_num]
                 if faction_filter:
-                    valid_ids = [
-                        str(fid) for fid in faction_filter if str(fid).isdigit()
-                    ]
+                    valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
                         query += f" AND p2p.FactionID IN ({placeholders})"
@@ -176,14 +158,10 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No agenda data found for Knesset {single_knesset_num} with the current filters."
-                    )
+                    st.info(f"No agenda data found for Knesset {single_knesset_num} with the current filters.")
                     return None
 
-                df["AgendaCount"] = pd.to_numeric(
-                    df["AgendaCount"], errors="coerce"
-                ).fillna(0)
+                df["AgendaCount"] = pd.to_numeric(df["AgendaCount"], errors="coerce").fillna(0)
 
                 fig = px.bar(
                     df,
@@ -235,20 +213,14 @@ class ComparisonCharts(BaseChart):
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
-            st.info(
-                "Please select a single Knesset to view the 'Agendas by Coalition Status' plot."
-            )
-            self.logger.info(
-                "plot_agendas_by_coalition_status requires a single Knesset filter."
-            )
+            st.info("Please select a single Knesset to view the 'Agendas by Coalition Status' plot.")
+            self.logger.info("plot_agendas_by_coalition_status requires a single Knesset filter.")
             return None
 
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Agenda",
                     "KNS_Person",
@@ -279,9 +251,7 @@ class ComparisonCharts(BaseChart):
 
                 params: List[Any] = [single_knesset_num]
                 if faction_filter:
-                    valid_ids = [
-                        str(fid) for fid in faction_filter if str(fid).isdigit()
-                    ]
+                    valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
                         query += f" AND p2p.FactionID IN ({placeholders})"
@@ -306,9 +276,7 @@ class ComparisonCharts(BaseChart):
                     )
                     return None
 
-                df["AgendaCount"] = pd.to_numeric(
-                    df["AgendaCount"], errors="coerce"
-                ).fillna(0)
+                df["AgendaCount"] = pd.to_numeric(df["AgendaCount"], errors="coerce").fillna(0)
 
                 fig = px.pie(
                     df,
@@ -355,9 +323,7 @@ class ComparisonCharts(BaseChart):
             st.info(
                 "Please select a single Knesset to view the 'Query Status Description with Faction Breakdown' plot."
             )
-            self.logger.info(
-                "plot_query_status_by_faction requires a single Knesset filter."
-            )
+            self.logger.info("plot_query_status_by_faction requires a single Knesset filter.")
             return None
 
         if start_date and end_date and start_date > end_date:
@@ -372,9 +338,7 @@ class ComparisonCharts(BaseChart):
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Query",
                     "KNS_Person",
@@ -400,9 +364,7 @@ class ComparisonCharts(BaseChart):
                     params.append(end_date)
 
                 if faction_filter:
-                    valid_ids = [
-                        str(fid) for fid in faction_filter if str(fid).isdigit()
-                    ]
+                    valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
                         conditions.append(f"p2p.FactionID IN ({placeholders})")
@@ -463,21 +425,15 @@ class ComparisonCharts(BaseChart):
                     )
                     return None
 
-                df["QueryCount"] = pd.to_numeric(
-                    df["QueryCount"], errors="coerce"
-                ).fillna(0)
-                df["StatusDescription"] = df["StatusDescription"].fillna(
-                    "Unknown Status"
-                )
+                df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors="coerce").fillna(0)
+                df["StatusDescription"] = df["StatusDescription"].fillna("Unknown Status")
 
                 ids = []
                 labels = []
                 parents = []
                 values = []
 
-                status_totals = (
-                    df.groupby("StatusDescription")["QueryCount"].sum().reset_index()
-                )
+                status_totals = df.groupby("StatusDescription")["QueryCount"].sum().reset_index()
                 for _, row in status_totals.iterrows():
                     status = row["StatusDescription"]
                     ids.append(status)
@@ -503,7 +459,9 @@ class ComparisonCharts(BaseChart):
                         date_range_text = f" (from {start_date})"
                     else:
                         date_range_text = f" (until {end_date})"
-                    title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
+                    title = (
+                        f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
+                    )
 
                 fig = go.Figure(
                     go.Sunburst(
@@ -547,20 +505,14 @@ class ComparisonCharts(BaseChart):
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
-            st.info(
-                "Please select a single Knesset to view the 'Bills per Faction' plot."
-            )
-            self.logger.info(
-                "plot_bills_per_faction requires a single Knesset filter."
-            )
+            st.info("Please select a single Knesset to view the 'Bills per Faction' plot.")
+            self.logger.info("plot_bills_per_faction requires a single Knesset filter.")
             return None
 
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Bill",
                     "KNS_BillInitiator",
@@ -570,7 +522,7 @@ class ComparisonCharts(BaseChart):
                 if not self.check_tables_exist(con, required_tables):
                     return None
 
-                query = f"""
+                query = """
                 SELECT
                     COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                     p2p.FactionID,
@@ -589,15 +541,13 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
-                
+
                 # Build filters using the base class method
                 filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
                 query += f" AND {filters['bill_origin_condition']}"
-                
+
                 if faction_filter:
-                    valid_ids = [
-                        str(fid) for fid in faction_filter if str(fid).isdigit()
-                    ]
+                    valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
                         query += f" AND p2p.FactionID IN ({placeholders})"
@@ -617,14 +567,10 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No bill data found for Knesset {single_knesset_num} with the current filters."
-                    )
+                    st.info(f"No bill data found for Knesset {single_knesset_num} with the current filters.")
                     return None
 
-                df["BillCount"] = pd.to_numeric(
-                    df["BillCount"], errors="coerce"
-                ).fillna(0)
+                df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
 
                 fig = px.bar(
                     df,
@@ -641,9 +587,7 @@ class ComparisonCharts(BaseChart):
                     color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE,
                 )
 
-                fig.update_traces(
-                    hovertemplate="<b>Faction:</b> %{x}<br><b>Bills:</b> %{customdata[0]}<extra></extra>"
-                )
+                fig.update_traces(hovertemplate="<b>Faction:</b> %{x}<br><b>Bills:</b> %{customdata[0]}<extra></extra>")
 
                 fig.update_layout(
                     xaxis_title="Initiating Faction",
@@ -676,20 +620,14 @@ class ComparisonCharts(BaseChart):
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
-            st.info(
-                "Please select a single Knesset to view the 'Bills by Coalition Status' plot."
-            )
-            self.logger.info(
-                "plot_bills_by_coalition_status requires a single Knesset filter."
-            )
+            st.info("Please select a single Knesset to view the 'Bills by Coalition Status' plot.")
+            self.logger.info("plot_bills_by_coalition_status requires a single Knesset filter.")
             return None
 
         single_knesset_num = knesset_filter[0]
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Bill",
                     "KNS_BillInitiator",
@@ -699,7 +637,7 @@ class ComparisonCharts(BaseChart):
                 if not self.check_tables_exist(con, required_tables):
                     return None
 
-                query = f"""
+                query = """
                 SELECT
                     ufs.CoalitionStatus AS CoalitionStatus,
                     COUNT(DISTINCT b.BillID) AS BillCount
@@ -717,15 +655,13 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
-                
+
                 # Build filters using the base class method
                 filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
                 query += f" AND {filters['bill_origin_condition']}"
-                
+
                 if faction_filter:
-                    valid_ids = [
-                        str(fid) for fid in faction_filter if str(fid).isdigit()
-                    ]
+                    valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
                         query += f" AND p2p.FactionID IN ({placeholders})"
@@ -745,14 +681,10 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No bill data for Knesset {single_knesset_num} to visualize 'Bills by Coalition Status'."
-                    )
+                    st.info(f"No bill data for Knesset {single_knesset_num} to visualize 'Bills by Coalition Status'.")
                     return None
 
-                df["BillCount"] = pd.to_numeric(
-                    df["BillCount"], errors="coerce"
-                ).fillna(0)
+                df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
 
                 fig = px.pie(
                     df,
@@ -789,12 +721,10 @@ class ComparisonCharts(BaseChart):
             return None
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Bill",
-                    "KNS_BillInitiator", 
+                    "KNS_BillInitiator",
                     "KNS_Person",
                     "KNS_PersonToPosition",
                     "KNS_Faction",
@@ -803,12 +733,12 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 params: List[Any] = []
-                
+
                 # Build base query - structure depends on Knesset selection
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
                         COUNT(DISTINCT b.BillID) AS BillCount,
@@ -816,7 +746,7 @@ class ComparisonCharts(BaseChart):
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
@@ -826,31 +756,29 @@ class ComparisonCharts(BaseChart):
                     """
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
                     GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name
                     ORDER BY BillCount DESC
                     LIMIT 10;
                     """
-                    
+
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
                         COUNT(DISTINCT b.BillID) AS BillCount,
@@ -859,14 +787,14 @@ class ComparisonCharts(BaseChart):
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
                         AND bi.PersonID IS NOT NULL
                     """
-                    
+
                     # Add Knesset filter for multiple Knessets
                     if knesset_filter:
                         knesset_placeholders = ", ".join("?" for _ in knesset_filter)
@@ -875,16 +803,14 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
@@ -903,20 +829,20 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No bill initiator data found for {knesset_title} with the current filters."
-                    )
+                    st.info(f"No bill initiator data found for {knesset_title} with the current filters.")
                     return None
 
-                df["BillCount"] = pd.to_numeric(
-                    df["BillCount"], errors="coerce"
-                ).fillna(0)
+                df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
 
                 # For multiple Knessets, aggregate by person
                 if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["MKName", "PersonID", "FactionName"]).agg({
-                        "BillCount": "sum"
-                    }).reset_index().sort_values("BillCount", ascending=False).head(10)
+                    df = (
+                        df.groupby(["MKName", "PersonID", "FactionName"])
+                        .agg({"BillCount": "sum"})
+                        .reset_index()
+                        .sort_values("BillCount", ascending=False)
+                        .head(10)
+                    )
                 else:
                     # For single Knesset, ensure proper sorting
                     df = df.sort_values("BillCount", ascending=False).head(10)
@@ -924,13 +850,13 @@ class ComparisonCharts(BaseChart):
                 fig = px.bar(
                     df,
                     x="MKName",
-                    y="BillCount", 
+                    y="BillCount",
                     color="FactionName",
                     title=f"<b>Top 10 Bill Main Initiators ({knesset_title})</b>",
                     labels={
                         "MKName": "Knesset Member",
                         "BillCount": "Number of Bills Initiated",
-                        "FactionName": "Faction"
+                        "FactionName": "Faction",
                     },
                     hover_name="MKName",
                     custom_data=["BillCount", "FactionName"],
@@ -950,13 +876,7 @@ class ComparisonCharts(BaseChart):
                     xaxis_categoryorder="array",  # Use explicit array order
                     xaxis_categoryarray=df["MKName"].tolist(),  # Preserve data order
                     showlegend=True,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left", 
-                        x=1.02
-                    ),
+                    legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
                     height=800,
                     margin=dict(t=180, b=150, l=80, r=50),
                 )
@@ -983,12 +903,10 @@ class ComparisonCharts(BaseChart):
             return None
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Bill",
-                    "KNS_BillInitiator", 
+                    "KNS_BillInitiator",
                     "KNS_Person",
                     "KNS_PersonToPosition",
                     "KNS_Faction",
@@ -997,18 +915,18 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 params: List[Any] = []
-                
+
                 # Build base query - structure depends on Knesset selection
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT p.PersonID) AS MKCount
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
@@ -1018,44 +936,42 @@ class ComparisonCharts(BaseChart):
                     """
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
                     GROUP BY f.Name
                     ORDER BY MKCount DESC;
                     """
-                    
+
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT CONCAT(p.PersonID, '-', b.KnessetNum)) AS MKCount,
                         b.KnessetNum
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
                         AND bi.PersonID IS NOT NULL
                     """
-                    
+
                     # Add Knesset filter for multiple Knessets
                     if knesset_filter:
                         knesset_placeholders = ", ".join("?" for _ in knesset_filter)
@@ -1064,16 +980,14 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
@@ -1091,36 +1005,32 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No bill initiator data found for {knesset_title} with the current filters."
-                    )
+                    st.info(f"No bill initiator data found for {knesset_title} with the current filters.")
                     return None
 
-                df["MKCount"] = pd.to_numeric(
-                    df["MKCount"], errors="coerce"
-                ).fillna(0)
+                df["MKCount"] = pd.to_numeric(df["MKCount"], errors="coerce").fillna(0)
 
                 # For multiple Knessets, aggregate by faction
                 if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["FactionName"]).agg({
-                        "MKCount": "sum"
-                    }).reset_index().sort_values("MKCount", ascending=False)
+                    df = (
+                        df.groupby(["FactionName"])
+                        .agg({"MKCount": "sum"})
+                        .reset_index()
+                        .sort_values("MKCount", ascending=False)
+                    )
                 else:
                     # For single Knesset, ensure proper sorting
                     df = df.sort_values("MKCount", ascending=False)
 
                 # Create bar chart
                 fig = go.Figure()
-                
+
                 fig.add_trace(
                     go.Bar(
                         x=df["FactionName"],
                         y=df["MKCount"],
                         name="MK Count",
-                        marker=dict(
-                            color=self.config.KNESSET_COLOR_SEQUENCE[0], 
-                            line=dict(color="black", width=1)
-                        ),
+                        marker=dict(color=self.config.KNESSET_COLOR_SEQUENCE[0], line=dict(color="black", width=1)),
                         text=df["MKCount"],
                         textposition="outside",
                         hovertemplate="<b>%{x}</b><br>MKs with Bills: %{y}<extra></extra>",
@@ -1164,12 +1074,10 @@ class ComparisonCharts(BaseChart):
             return None
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 required_tables = [
                     "KNS_Bill",
-                    "KNS_BillInitiator", 
+                    "KNS_BillInitiator",
                     "KNS_Person",
                     "KNS_PersonToPosition",
                     "KNS_Faction",
@@ -1178,18 +1086,18 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 params: List[Any] = []
-                
+
                 # Build base query - structure depends on Knesset selection
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT b.BillID) AS BillCount
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
@@ -1199,44 +1107,42 @@ class ComparisonCharts(BaseChart):
                     """
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
                     GROUP BY f.Name
                     ORDER BY BillCount DESC;
                     """
-                    
+
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT b.BillID) AS BillCount,
                         b.KnessetNum
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
                         AND bi.PersonID IS NOT NULL
                     """
-                    
+
                     # Add Knesset filter for multiple Knessets
                     if knesset_filter:
                         knesset_placeholders = ", ".join("?" for _ in knesset_filter)
@@ -1245,16 +1151,14 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
 
                     # Add faction filter for multiple Knessets
                     if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
+                        valid_ids = [str(fid) for fid in faction_filter if str(fid).isdigit()]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
@@ -1272,36 +1176,32 @@ class ComparisonCharts(BaseChart):
                 df = safe_execute_query(con, query, self.logger, params=params)
 
                 if df.empty:
-                    st.info(
-                        f"No bill data found for {knesset_title} with the current filters."
-                    )
+                    st.info(f"No bill data found for {knesset_title} with the current filters.")
                     return None
 
-                df["BillCount"] = pd.to_numeric(
-                    df["BillCount"], errors="coerce"
-                ).fillna(0)
+                df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
 
                 # For multiple Knessets, aggregate by faction
                 if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["FactionName"]).agg({
-                        "BillCount": "sum"
-                    }).reset_index().sort_values("BillCount", ascending=False)
+                    df = (
+                        df.groupby(["FactionName"])
+                        .agg({"BillCount": "sum"})
+                        .reset_index()
+                        .sort_values("BillCount", ascending=False)
+                    )
                 else:
                     # For single Knesset, ensure proper sorting
                     df = df.sort_values("BillCount", ascending=False)
 
                 # Create bar chart
                 fig = go.Figure()
-                
+
                 fig.add_trace(
                     go.Bar(
                         x=df["FactionName"],
                         y=df["BillCount"],
                         name="Bill Count",
-                        marker=dict(
-                            color=self.config.KNESSET_COLOR_SEQUENCE[1], 
-                            line=dict(color="black", width=1)
-                        ),
+                        marker=dict(color=self.config.KNESSET_COLOR_SEQUENCE[1], line=dict(color="black", width=1)),
                         text=df["BillCount"],
                         textposition="outside",
                         hovertemplate="<b>%{x}</b><br>Total Bills: %{y}<extra></extra>",
