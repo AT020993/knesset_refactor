@@ -497,7 +497,7 @@ class PlotsPageRenderer:
                     session_types_df = safe_execute_query(con, session_types_query, self.logger)
                     if not session_types_df.empty:
                         st.session_state.available_session_types = session_types_df["SubTypeDesc"].tolist()
-                except:
+                except Exception:
                     pass  # Table might not exist or column might be different
 
                 # Agenda statuses - join with KNS_Status table
@@ -512,7 +512,7 @@ class PlotsPageRenderer:
                     agenda_status_df = safe_execute_query(con, agenda_status_query, self.logger)
                     if not agenda_status_df.empty:
                         st.session_state.available_agenda_statuses = agenda_status_df["StatusDesc"].tolist()
-                except:
+                except Exception:
                     pass
 
                 # Bill types - use SubTypeDesc instead of BillTypeDesc
@@ -523,7 +523,7 @@ class PlotsPageRenderer:
                     bill_types_df = safe_execute_query(con, bill_types_query, self.logger)
                     if not bill_types_df.empty:
                         st.session_state.available_bill_types = bill_types_df["SubTypeDesc"].tolist()
-                except:
+                except Exception:
                     pass
 
                 # Bill statuses - join with KNS_Status table
@@ -538,7 +538,7 @@ class PlotsPageRenderer:
                     bill_status_df = safe_execute_query(con, bill_status_query, self.logger)
                     if not bill_status_df.empty:
                         st.session_state.available_bill_statuses = bill_status_df["StatusDesc"].tolist()
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -620,9 +620,9 @@ class PlotsPageRenderer:
                 return final_knesset_filter
             except ValueError:
                 st.error(f"Invalid Knesset number selected: {current_selection}")
-                return False
+                return None
         else:
-            return False
+            return None
 
     def _build_plot_arguments(
         self,

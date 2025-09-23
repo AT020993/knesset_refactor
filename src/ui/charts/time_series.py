@@ -102,7 +102,7 @@ class TimeSeriesCharts(BaseChart):
                 df["TimePeriod"] = df["TimePeriod"].astype(str)
 
                 # Create the chart
-                plot_title = f"<b>Queries per {aggregation_level.replace('ly','')} for {filters['knesset_title']}</b>"
+                plot_title = f"<b>Queries per {aggregation_level.replace('ly', '')} for {filters['knesset_title']}</b>"
                 color_param = (
                     "KnessetNum" if "KnessetNum" in df.columns and len(df["KnessetNum"].unique()) > 1 else None
                 )
@@ -252,7 +252,7 @@ class TimeSeriesCharts(BaseChart):
 
                 # Create the chart
                 plot_title = (
-                    f"<b>Agenda Items per {aggregation_level.replace('ly','')} for {filters['knesset_title']}</b>"
+                    f"<b>Agenda Items per {aggregation_level.replace('ly', '')} for {filters['knesset_title']}</b>"
                 )
                 color_param = (
                     "KnessetNum" if "KnessetNum" in df.columns and len(df["KnessetNum"].unique()) > 1 else None
@@ -403,7 +403,7 @@ class TimeSeriesCharts(BaseChart):
                 df["TimePeriod"] = df["TimePeriod"].astype(str)
 
                 # Create the chart
-                plot_title = f"<b>Bills per {aggregation_level.replace('ly','')} for {filters['knesset_title']}</b>"
+                plot_title = f"<b>Bills per {aggregation_level.replace('ly', '')} for {filters['knesset_title']}</b>"
                 color_param = (
                     "KnessetNum" if "KnessetNum" in df.columns and len(df["KnessetNum"].unique()) > 1 else None
                 )

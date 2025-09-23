@@ -1,7 +1,7 @@
 """Network and connection chart generators."""
 
 import math
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -605,7 +605,7 @@ class NetworkCharts(BaseChart):
             positions[person_id] = [random.uniform(-50, 50), random.uniform(-50, 50)]
 
         # Create adjacency list for connections
-        connections = {}
+        connections: Dict[str, int] = {}
         for _, node in nodes_df.iterrows():
             connections[node["PersonID"]] = []
 
@@ -686,7 +686,7 @@ class NetworkCharts(BaseChart):
             collaboration_strength[person_id] = len(connections)
 
         # Group by faction for initial positioning
-        faction_groups = {}
+        faction_groups: Dict[str, List[str]] = {}
         for _, node in nodes_df.iterrows():
             faction = node["Faction"]
             if faction not in faction_groups:
@@ -733,7 +733,7 @@ class NetworkCharts(BaseChart):
             positions[faction_id] = [random.uniform(-40, 40), random.uniform(-40, 40)]
 
         # Create adjacency list for connections
-        connections = {}
+        connections: Dict[str, int] = {}
         for _, faction in factions_df.iterrows():
             connections[faction["FactionID"]] = []
 
@@ -1691,14 +1691,14 @@ class NetworkCharts(BaseChart):
         collab_data = df[df["DataType"] == "collaboration"].copy()
 
         # Get all unique factions
-        all_factions = set()
+        all_factions_set = set()
 
         for _, row in df.iterrows():
-            all_factions.add(row["FactionName1"])
+            all_factions_set.add(row["FactionName1"])
             if row["FactionName1"] != row["FactionName2"]:  # Don't add same faction twice for solo bills
-                all_factions.add(row["FactionName2"])
+                all_factions_set.add(row["FactionName2"])
 
-        all_factions = sorted(list(all_factions))
+        all_factions = sorted(list(all_factions_set))
 
         # Get faction coalition status mapping
         faction_status = {}

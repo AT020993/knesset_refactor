@@ -107,7 +107,7 @@ class BaseChart(ABC):
     ) -> Tuple[Dict[str, Any], SecureQueryBuilder]:
         """Build common filter conditions using secure parameter binding."""
         builder = SecureQueryBuilder()
-        filters = {}
+        filters: Dict[str, Any] = {}
 
         # Add table prefix with dot if provided
         prefix = f"{table_prefix}." if table_prefix else ""
@@ -152,7 +152,7 @@ class BaseChart(ABC):
         """Legacy filter building method - converts secure filters to simple string conditions."""
         # For legacy compatibility, convert parameterized conditions to simple string conditions
         SecureQueryBuilder()
-        filters = {}
+        filters: Dict[str, Any] = {}
 
         # Add table prefix with dot if provided
         prefix = f"{table_prefix}." if table_prefix else ""

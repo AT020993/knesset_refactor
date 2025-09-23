@@ -212,7 +212,7 @@ class DataQualityDashboard:
 
     def _run_quick_validation(self) -> Dict[str, Any]:
         """Run a quick validation check."""
-        results = {"timestamp": datetime.now().isoformat(), "checks": []}
+        results: Dict[str, Any] = {"timestamp": datetime.now().isoformat(), "checks": []}
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:

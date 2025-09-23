@@ -39,7 +39,7 @@ class SessionStateManager:
         "ms_faction_filter": lambda: [],
     }
 
-    PLOT_KEYS: Dict[str, Union[str, None]] = {
+    PLOT_KEYS: Dict[str, Union[str, None, bool, Callable]] = {
         "selected_plot_topic": "",
         "selected_plot_name_from_topic": "",
         "generated_plot_figure": None,

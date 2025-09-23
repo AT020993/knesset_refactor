@@ -12,7 +12,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-from .predefined_queries import get_query_definition, get_query_filters, get_query_sql
+from .predefined_queries import get_query_info, get_query_sql
 
 
 class QueryExecutor:
@@ -50,13 +50,13 @@ class QueryExecutor:
         Returns:
             Tuple of (results_df, executed_sql, applied_filters_info)
         """
-        query_def = get_query_definition(query_name)
-        if not query_def:
+        query_info = get_query_info(query_name)
+        if not query_info:
             self.logger.error(f"Query '{query_name}' not found in predefined queries")
             return pd.DataFrame(), "", ["Error: Query not found"]
 
         base_sql = get_query_sql(query_name)
-        filter_columns = get_query_filters(query_name)
+        filter_columns = query_info.get("filter_columns", [])
 
         # Build dynamic filters
         where_conditions = []
@@ -190,7 +190,7 @@ class QueryExecutor:
                     else:
                         knesset_list = ", ".join(map(str, knesset_filter))
                         where_conditions.append(f"KnessetNum IN ({knesset_list})")
-                except:
+                except Exception:
                     # KnessetNum column doesn't exist, skip this filter
                     pass
 
@@ -211,7 +211,7 @@ class QueryExecutor:
                         else:
                             faction_list = ", ".join(map(str, faction_ids))
                             where_conditions.append(f"FactionID IN ({faction_list})")
-                    except:
+                    except Exception:
                         # FactionID column doesn't exist, skip this filter
                         pass
 

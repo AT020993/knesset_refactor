@@ -1,6 +1,7 @@
 import logging
 import sys
 from collections import defaultdict
+from typing import Dict
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -9,7 +10,7 @@ LOG_FILE_MAX_BYTES_DEFAULT = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT_DEFAULT = 5
 
 # Global error tracking for monitoring
-error_metrics = defaultdict(int)
+error_metrics: Dict[str, int] = defaultdict(int)
 
 
 class ErrorTrackingHandler(logging.Handler):
