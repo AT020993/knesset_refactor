@@ -573,13 +573,17 @@ class ComparisonCharts(BaseChart):
                 query = f"""
                 SELECT
                     COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
-                    p2p.FactionID,
+                    CASE
+                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                        ELSE 'הופסק/לא פעיל'
+                    END AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(b.PublicationDate AS TIMESTAMP)
+                    AND CAST(b.LastUpdatedDate AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
@@ -589,11 +593,11 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
-                
+
                 # Build filters using the base class method
                 filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
                 query += f" AND {filters['bill_origin_condition']}"
-                
+
                 if faction_filter:
                     valid_ids = [
                         str(fid) for fid in faction_filter if str(fid).isdigit()
@@ -604,9 +608,9 @@ class ComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), p2p.FactionID
+                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), Stage
                 HAVING BillCount > 0
-                ORDER BY BillCount DESC;
+                ORDER BY FactionName, Stage;
                 """
 
                 self.logger.debug(
@@ -626,23 +630,39 @@ class ComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
+
+                # Sort factions by total bill count
+                faction_totals = df.groupby('FactionName')['BillCount'].sum().sort_values(ascending=False)
+                faction_order = faction_totals.index.tolist()
+
                 fig = px.bar(
                     df,
                     x="FactionName",
                     y="BillCount",
-                    color="FactionName",
-                    title=f"<b>Bills per Initiating Faction (Knesset {single_knesset_num})</b>",
+                    color="Stage",
+                    title=f"<b>Bills per Initiating Faction by Status (Knesset {single_knesset_num})</b>",
                     labels={
                         "FactionName": "Faction",
                         "BillCount": "Number of Bills",
+                        "Stage": "Bill Status"
                     },
-                    hover_name="FactionName",
-                    custom_data=["BillCount"],
-                    color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE,
+                    category_orders={
+                        "FactionName": faction_order,
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
 
                 fig.update_traces(
-                    hovertemplate="<b>Faction:</b> %{x}<br><b>Bills:</b> %{customdata[0]}<extra></extra>"
+                    hovertemplate="<b>Faction:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
                 )
 
                 fig.update_layout(
@@ -650,7 +670,17 @@ class ComparisonCharts(BaseChart):
                     yaxis_title="Number of Bills",
                     title_x=0.5,
                     xaxis_tickangle=-45,
-                    showlegend=False,
+                    showlegend=True,
+                    legend_title_text='Bill Status',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    height=800,
+                    margin=dict(t=180)
                 )
 
                 return fig
@@ -702,12 +732,17 @@ class ComparisonCharts(BaseChart):
                 query = f"""
                 SELECT
                     ufs.CoalitionStatus AS CoalitionStatus,
+                    CASE
+                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                        ELSE 'הופסק/לא פעיל'
+                    END AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(b.PublicationDate AS TIMESTAMP)
+                    AND CAST(b.LastUpdatedDate AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
@@ -717,11 +752,11 @@ class ComparisonCharts(BaseChart):
                 """
 
                 params: List[Any] = [single_knesset_num]
-                
+
                 # Build filters using the base class method
                 filters = self.build_filters([single_knesset_num], faction_filter, table_prefix="b", **kwargs)
                 query += f" AND {filters['bill_origin_condition']}"
-                
+
                 if faction_filter:
                     valid_ids = [
                         str(fid) for fid in faction_filter if str(fid).isdigit()
@@ -732,9 +767,9 @@ class ComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY CoalitionStatus
+                GROUP BY CoalitionStatus, Stage
                 HAVING BillCount > 0
-                ORDER BY BillCount DESC;
+                ORDER BY CoalitionStatus, Stage;
                 """
 
                 self.logger.debug(
@@ -754,17 +789,50 @@ class ComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
-                fig = px.pie(
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
+
+                fig = px.bar(
                     df,
-                    values="BillCount",
-                    names="CoalitionStatus",
-                    title=f"<b>Bills by Initiator Coalition Status (Knesset {single_knesset_num})</b>",
-                    color="CoalitionStatus",
-                    color_discrete_map=self.config.COALITION_OPPOSITION_COLORS,
+                    x="CoalitionStatus",
+                    y="BillCount",
+                    color="Stage",
+                    title=f"<b>Bills by Coalition Status and Bill Stage (Knesset {single_knesset_num})</b>",
+                    labels={
+                        "CoalitionStatus": "Coalition Status",
+                        "BillCount": "Number of Bills",
+                        "Stage": "Bill Status"
+                    },
+                    category_orders={
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
 
-                fig.update_traces(textposition="inside", textinfo="percent+label")
-                fig.update_layout(title_x=0.5)
+                fig.update_traces(
+                    hovertemplate="<b>Coalition:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
+                )
+
+                fig.update_layout(
+                    xaxis_title="Coalition Status",
+                    yaxis_title="Number of Bills",
+                    title_x=0.5,
+                    showlegend=True,
+                    legend_title_text='Bill Status',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
 
                 return fig
 
@@ -808,15 +876,19 @@ class ComparisonCharts(BaseChart):
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
-                        COUNT(DISTINCT b.BillID) AS BillCount,
-                        COALESCE(f.Name, 'Unknown Faction') AS FactionName
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
+                        COUNT(DISTINCT b.BillID) AS BillCount
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
@@ -826,11 +898,11 @@ class ComparisonCharts(BaseChart):
                     """
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -840,33 +912,36 @@ class ComparisonCharts(BaseChart):
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
-                    GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name
-                    ORDER BY BillCount DESC
-                    LIMIT 10;
+                    GROUP BY p.PersonID, p.FirstName, p.LastName, Stage
+                    ORDER BY p.PersonID, Stage;
                     """
                     
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount,
-                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         b.KnessetNum
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
                         AND bi.PersonID IS NOT NULL
                     """
-                    
+
                     # Add Knesset filter for multiple Knessets
                     if knesset_filter:
                         knesset_placeholders = ", ".join("?" for _ in knesset_filter)
@@ -875,7 +950,7 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
@@ -891,9 +966,8 @@ class ComparisonCharts(BaseChart):
                             params.extend(valid_ids)
 
                     query += """
-                    GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name, b.KnessetNum
-                    ORDER BY BillCount DESC
-                    LIMIT 10;
+                    GROUP BY p.PersonID, p.FirstName, p.LastName, Stage, b.KnessetNum
+                    ORDER BY p.PersonID, Stage;
                     """
 
                 self.logger.debug(
@@ -912,53 +986,63 @@ class ComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
-                # For multiple Knessets, aggregate by person
-                if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["MKName", "PersonID", "FactionName"]).agg({
-                        "BillCount": "sum"
-                    }).reset_index().sort_values("BillCount", ascending=False).head(10)
-                else:
-                    # For single Knesset, ensure proper sorting
-                    df = df.sort_values("BillCount", ascending=False).head(10)
+                # Aggregate by person and stage to get top 10 MKs by total bills
+                person_totals = df.groupby(["MKName", "PersonID"])["BillCount"].sum().sort_values(ascending=False).head(10)
+                top_10_persons = person_totals.index.get_level_values("PersonID").tolist()
+
+                # Filter data to include only top 10 MKs
+                df = df[df["PersonID"].isin(top_10_persons)]
+
+                # Sort MKs by total bill count
+                mk_order = person_totals.index.get_level_values("MKName").tolist()
+
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
 
                 fig = px.bar(
                     df,
                     x="MKName",
-                    y="BillCount", 
-                    color="FactionName",
-                    title=f"<b>Top 10 Bill Main Initiators ({knesset_title})</b>",
+                    y="BillCount",
+                    color="Stage",
+                    title=f"<b>Top 10 Bill Initiators by Status ({knesset_title})</b>",
                     labels={
                         "MKName": "Knesset Member",
-                        "BillCount": "Number of Bills Initiated",
-                        "FactionName": "Faction"
+                        "BillCount": "Number of Bills",
+                        "Stage": "Bill Status"
                     },
-                    hover_name="MKName",
-                    custom_data=["BillCount", "FactionName"],
-                    color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE,
-                    category_orders={"MKName": df["MKName"].tolist()},  # Preserve data order
+                    category_orders={
+                        "MKName": mk_order,
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
 
                 fig.update_traces(
-                    hovertemplate="<b>MK:</b> %{x}<br><b>Bills:</b> %{customdata[0]}<br><b>Faction:</b> %{customdata[1]}<extra></extra>"
+                    hovertemplate="<b>MK:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
                 )
 
                 fig.update_layout(
                     xaxis_title="Knesset Member",
-                    yaxis_title="Number of Bills Initiated",
+                    yaxis_title="Number of Bills",
                     title_x=0.5,
                     xaxis_tickangle=-45,
-                    xaxis_categoryorder="array",  # Use explicit array order
-                    xaxis_categoryarray=df["MKName"].tolist(),  # Preserve data order
                     showlegend=True,
+                    legend_title_text='Bill Status',
                     legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left", 
-                        x=1.02
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
                     ),
                     height=800,
-                    margin=dict(t=180, b=150, l=80, r=50),
+                    margin=dict(t=180)
                 )
 
                 return fig
@@ -1183,13 +1267,18 @@ class ComparisonCharts(BaseChart):
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
@@ -1199,11 +1288,11 @@ class ComparisonCharts(BaseChart):
                     """
                     params.append(knesset_filter[0])
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -1213,30 +1302,35 @@ class ComparisonCharts(BaseChart):
                             placeholders = ", ".join("?" for _ in valid_ids)
                             query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
-                    GROUP BY f.Name
-                    ORDER BY BillCount DESC;
+                    GROUP BY f.Name, Stage
+                    ORDER BY FactionName, Stage;
                     """
-                    
+
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount,
                         b.KnessetNum
                     FROM KNS_Bill b
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
                         AND bi.PersonID IS NOT NULL
                     """
-                    
+
                     # Add Knesset filter for multiple Knessets
                     if knesset_filter:
                         knesset_placeholders = ", ".join("?" for _ in knesset_filter)
@@ -1245,7 +1339,7 @@ class ComparisonCharts(BaseChart):
                         knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
                     else:
                         knesset_title = "All Knessets"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
@@ -1261,8 +1355,8 @@ class ComparisonCharts(BaseChart):
                             params.extend(valid_ids)
 
                     query += """
-                    GROUP BY f.Name, b.KnessetNum
-                    ORDER BY BillCount DESC;
+                    GROUP BY f.Name, Stage, b.KnessetNum
+                    ORDER BY FactionName, Stage;
                     """
 
                 self.logger.debug(
@@ -1281,50 +1375,57 @@ class ComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
-                # For multiple Knessets, aggregate by faction
-                if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["FactionName"]).agg({
-                        "BillCount": "sum"
-                    }).reset_index().sort_values("BillCount", ascending=False)
-                else:
-                    # For single Knesset, ensure proper sorting
-                    df = df.sort_values("BillCount", ascending=False)
+                # Sort factions by total bill count
+                faction_totals = df.groupby('FactionName')['BillCount'].sum().sort_values(ascending=False)
+                faction_order = faction_totals.index.tolist()
 
-                # Create bar chart
-                fig = go.Figure()
-                
-                fig.add_trace(
-                    go.Bar(
-                        x=df["FactionName"],
-                        y=df["BillCount"],
-                        name="Bill Count",
-                        marker=dict(
-                            color=self.config.KNESSET_COLOR_SEQUENCE[1], 
-                            line=dict(color="black", width=1)
-                        ),
-                        text=df["BillCount"],
-                        textposition="outside",
-                        hovertemplate="<b>%{x}</b><br>Total Bills: %{y}<extra></extra>",
-                    )
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
+
+                fig = px.bar(
+                    df,
+                    x="FactionName",
+                    y="BillCount",
+                    color="Stage",
+                    title=f"<b>Total Bills per Faction by Status ({knesset_title})</b>",
+                    labels={
+                        "FactionName": "Faction",
+                        "BillCount": "Number of Bills",
+                        "Stage": "Bill Status"
+                    },
+                    category_orders={
+                        "FactionName": faction_order,
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
 
-                # Update layout
+                fig.update_traces(
+                    hovertemplate="<b>Faction:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
+                )
+
                 fig.update_layout(
-                    title=f"<b>Total Bills Initiated by Faction ({knesset_title})</b>",
-                    xaxis_title="<b>Faction</b>",
-                    yaxis_title="<b>Total Number of Bills Initiated</b>",
-                    showlegend=False,
-                    height=800,
-                    margin=dict(t=180, b=150, l=80, r=50),
-                    font=dict(size=12),
-                    title_font=dict(size=16),
-                    xaxis=dict(
-                        tickangle=-45,
-                        categoryorder="array",
-                        categoryarray=df["FactionName"].tolist(),
+                    xaxis_title="Faction",
+                    yaxis_title="Number of Bills",
+                    title_x=0.5,
+                    xaxis_tickangle=-45,
+                    showlegend=True,
+                    legend_title_text='Bill Status',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
                     ),
-                    yaxis=dict(gridcolor="lightgray"),
-                    plot_bgcolor="white",
+                    height=800,
+                    margin=dict(t=180)
                 )
 
                 return fig

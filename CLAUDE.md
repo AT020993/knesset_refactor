@@ -187,6 +187,15 @@ Understanding the three different metrics:
 
 ## Memory Notes
 
+### Bill Status Categorization (IMPLEMENTED 2025-10-05)
+- **All Bill Charts**: Display three color-coded status categories (Stopped, First Reading, Passed)
+- **Data Field**: Use `LastUpdatedDate` (100% coverage) instead of `PublicationDate` (6.6% coverage)
+- **Chart Type**: Stacked bar charts with consistent color scheme (Red/Blue/Green)
+- **Status IDs**:
+  - Passed = 118
+  - First Reading = 104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114
+  - Stopped = All others
+
 ### Chart Filtering Strategy (IMPLEMENTED)
 - **Bill Charts**: All bill analytics charts use simplified filtering with only Knesset number filter
 - **No Additional Filters**: Bill Type, Bill Status, and other advanced filters removed from bill charts
@@ -689,6 +698,40 @@ The platform now supports external coalition status management through a CSV-bas
 - **Excel Integration**: Proper encoding eliminates character display issues
 
 This system provides the foundation for accurate coalition vs opposition analysis while maintaining full user control over political categorization decisions.
+
+## Recent Updates (2025-10-05)
+
+### Bill Status Categorization Across All Bill Charts
+
+**Universal Bill Status Visualization**: All bill charts now display three color-coded status categories to provide comprehensive legislative tracking:
+
+- 🔴 **Stopped/Inactive** (הופסק/לא פעיל): Bills that were discontinued, merged, or became inactive
+- 🔵 **First Reading** (קריאה ראשונה): Bills in progress through various legislative stages (StatusID: 104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114)
+- 🟢 **Passed Third Reading** (התקבלה בקריאה שלישית): Bills that became law (StatusID: 118)
+
+**Charts Updated** (8 total):
+1. Bills by Time Period - Stacked bar chart by time with status breakdown
+2. Bills per Faction - Stacked bar chart showing faction legislative activity
+3. Bills by Coalition Status - Coalition vs Opposition with status breakdown
+4. Bill SubType Distribution - Government/Private/Committee bills with status breakdown
+5. Top 10 Bill Initiators - Individual MK productivity with status breakdown
+6. Bill Initiators by Faction - Count of active initiators per faction
+7. Total Bills per Faction - Cumulative faction legislative output
+8. Bill Status Distribution - Per-faction status breakdown (already implemented)
+
+**Critical Data Fix**:
+- **Problem**: Charts were using `PublicationDate` field with only 6.6% coverage (428/6,459 bills in Knesset 25)
+- **Impact**: Only showed bills that passed third reading; missing 6,031 bills in progress or stopped
+- **Solution**: Changed all bill queries from `PublicationDate` to `LastUpdatedDate` (100% coverage)
+- **Files Modified**: `src/ui/charts/comparison.py`, `src/ui/charts/time_series.py`, `src/ui/charts/distribution.py`, `src/ui/pages/plots_page.py`
+
+**Results for Knesset 25**:
+- 🔴 Stopped: 757 bills (11.7%)
+- 🔵 First Reading: 5,271 bills (81.6%)
+- 🟢 Passed: 431 bills (6.7%)
+- **Total**: 6,459 bills (100% coverage ✅)
+
+**Visualization Consistency**: All bill charts now use identical color scheme, stacked bar layout, and horizontal legend positioning for unified user experience.
 
 ## Recent Updates (2025-10-04)
 

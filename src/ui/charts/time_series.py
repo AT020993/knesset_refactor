@@ -327,21 +327,24 @@ class TimeSeriesCharts(BaseChart):
         show_average_line: bool = False,
         **kwargs
     ) -> Optional[go.Figure]:
-        """Generate a bar chart of Knesset bills per time period."""
-        
+        """Generate a stacked bar chart of Knesset bills per time period categorized by status."""
+
         if not self.check_database_exists():
             return None
-        
+
         filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
-        
+
+        # Override bill_status_condition - this chart does its own status categorization
+        filters['bill_status_condition'] = "1=1"
+
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 if not self.check_tables_exist(con, ["KNS_Bill"]):
                     return None
-                
+
                 current_year = datetime.now().year
-                date_column = "b.PublicationDate"
-                
+                date_column = "b.LastUpdatedDate"
+
                 # Configure time period aggregation
                 time_configs = {
                     "Monthly": {
@@ -357,115 +360,124 @@ class TimeSeriesCharts(BaseChart):
                         "label": "Year"
                     }
                 }
-                
+
                 config = time_configs.get(aggregation_level, time_configs["Yearly"])
                 time_period_sql = config["sql"]
                 x_axis_label = config["label"]
-                
-                # Build SQL query
+
+                # Build SQL query with bill status categorization
                 knesset_select = "" if filters['is_single_knesset'] else "b.KnessetNum,"
-                
-                # Add JOIN with KNS_Status table if status filters are used
-                status_join = ""
-                if filters['bill_status_condition'] != "1=1":
-                    status_join = "LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID"
-                
+
                 query = f"""
                     SELECT
                         {time_period_sql} AS TimePeriod,
                         {knesset_select}
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(b.BillID) AS BillCount
                     FROM KNS_Bill b
-                    {status_join}
                     WHERE {date_column} IS NOT NULL
                         AND b.KnessetNum IS NOT NULL
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) <= {current_year}
                         AND CAST(strftime(CAST({date_column} AS TIMESTAMP), '%Y') AS INTEGER) > 1940
                         AND {filters['knesset_condition']}
                         AND {filters['bill_type_condition']}
-                        AND {filters['bill_status_condition']}
                         AND {filters['bill_origin_condition']}
                         AND {filters['start_date_condition']}
                         AND {filters['end_date_condition']}
                 """
-                
-                group_by_terms = ["TimePeriod"]
+
+                group_by_terms = ["TimePeriod", "Stage"]
                 if not filters['is_single_knesset']:
-                    group_by_terms.append("b.KnessetNum")
-                
+                    group_by_terms.insert(1, "b.KnessetNum")
+
                 query += f" GROUP BY {', '.join(group_by_terms)}"
-                query += f" ORDER BY {', '.join(group_by_terms)}, BillCount DESC"
-                
+                query += f" ORDER BY TimePeriod"
+
                 self.logger.debug(f"Executing bills time series query: {query}")
                 df = safe_execute_query(con, query, self.logger)
-                
+
                 if df.empty:
                     st.info(f"No bill data found for '{filters['knesset_title']}' to visualize 'Bills by {x_axis_label}' with the current filters.")
                     return None
-                
+
                 # Prepare data for plotting
                 if "KnessetNum" in df.columns:
                     df["KnessetNum"] = df["KnessetNum"].astype(str)
                 df["TimePeriod"] = df["TimePeriod"].astype(str)
-                
-                # Create the chart
-                plot_title = f"<b>Bills per {aggregation_level.replace('ly','')} for {filters['knesset_title']}</b>"
-                color_param = "KnessetNum" if "KnessetNum" in df.columns and len(df["KnessetNum"].unique()) > 1 else None
-                
-                custom_data_cols = ["TimePeriod", "BillCount"]
-                if "KnessetNum" in df.columns:
-                    custom_data_cols.append("KnessetNum")
-                
+
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
+
+                # Create the stacked bar chart
+                plot_title = f"<b>Bills per {aggregation_level.replace('ly','')} by Status for {filters['knesset_title']}</b>"
+
                 fig = px.bar(
                     df,
                     x="TimePeriod",
                     y="BillCount",
-                    color=color_param,
+                    color="Stage",
                     title=plot_title,
                     labels={
                         "TimePeriod": x_axis_label,
                         "BillCount": "Number of Bills",
-                        "KnessetNum": "Knesset Number"
+                        "Stage": "Bill Status"
                     },
-                    category_orders={"TimePeriod": sorted(df["TimePeriod"].unique())},
-                    custom_data=custom_data_cols,
-                    color_discrete_sequence=self.config.KNESSET_COLOR_SEQUENCE
+                    category_orders={
+                        "TimePeriod": sorted(df["TimePeriod"].unique()),
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
-                
+
                 # Configure hover template
-                if "KnessetNum" in df.columns and len(custom_data_cols) > 2:
-                    hovertemplate = "<b>Period:</b> %{customdata[0]}<br><b>Knesset:</b> %{customdata[2]}<br><b>Bills:</b> %{y}<extra></extra>"
-                else:
-                    hovertemplate = "<b>Period:</b> %{customdata[0]}<br><b>Bills:</b> %{y}<extra></extra>"
-                
-                fig.update_traces(hovertemplate=hovertemplate)
-                
+                fig.update_traces(
+                    hovertemplate="<b>Period:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
+                )
+
                 # Update layout
                 fig.update_layout(
                     xaxis_title=x_axis_label,
                     yaxis_title="Number of Bills",
-                    legend_title_text='Knesset' if color_param else None,
-                    showlegend=bool(color_param),
+                    legend_title_text='Bill Status',
+                    showlegend=True,
                     title_x=0.5,
-                    xaxis_type='category'
+                    xaxis_type='category',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
                 )
-                
-                # Add average line if requested
+
+                # Add average line if requested (total bills per period)
                 if show_average_line and not df.empty:
-                    avg_bills = df.groupby("TimePeriod")["BillCount"].sum().mean()
+                    period_totals = df.groupby("TimePeriod")["BillCount"].sum()
+                    avg_bills = period_totals.mean()
                     if pd.notna(avg_bills):
                         fig.add_hline(
                             y=avg_bills,
                             line_dash="dash",
-                            line_color="red",
+                            line_color="black",
                             annotation_text=f"Avg Bills/Period: {avg_bills:.1f}",
                             annotation_position="bottom right",
                             annotation_font_size=10,
-                            annotation_font_color="red"
+                            annotation_font_color="black"
                         )
-                
+
                 return fig
-                
+
         except Exception as e:
             self.logger.error(f"Error generating bills time series: {e}", exc_info=True)
             st.error(f"Could not generate 'Bills by {x_axis_label}' plot: {e}")

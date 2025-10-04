@@ -639,6 +639,7 @@ class PlotsPageRenderer:
         can_show_all_knessets = selected_chart in [
             "Queries by Time Period",
             "Agenda Items by Time Period",
+            "Bills by Time Period",
         ]
 
         if current_selection == "All Knessets (Color Coded)" and can_show_all_knessets:
@@ -692,7 +693,7 @@ class PlotsPageRenderer:
         }
 
         # Add chart-specific arguments
-        if selected_chart in ["Queries by Time Period", "Agenda Items by Time Period"]:
+        if selected_chart in ["Queries by Time Period", "Agenda Items by Time Period", "Bills by Time Period"]:
             plot_args["aggregation_level"] = (
                 SessionStateManager.get_plot_aggregation_level()
             )

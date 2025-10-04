@@ -554,7 +554,7 @@ class DistributionCharts(BaseChart):
         faction_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate bill subtype distribution chart."""
+        """Generate bill subtype distribution chart with status breakdown."""
         if not self.check_database_exists():
             return None
 
@@ -570,13 +570,18 @@ class DistributionCharts(BaseChart):
                 query = f"""
                     SELECT
                         COALESCE(b.SubTypeDesc, 'Unknown') AS SubType,
+                        CASE
+                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
+                            ELSE 'הופסק/לא פעיל'
+                        END AS Stage,
                         COUNT(b.BillID) AS Count
                     FROM KNS_Bill b
                     WHERE b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
                         AND {filters["bill_origin_condition"]}
-                    GROUP BY b.SubTypeDesc
-                    ORDER BY Count DESC
+                    GROUP BY b.SubTypeDesc, Stage
+                    ORDER BY SubType, Stage
                 """
 
                 df = safe_execute_query(con, query, self.logger)
@@ -587,15 +592,58 @@ class DistributionCharts(BaseChart):
                     )
                     return None
 
-                fig = px.pie(
+                # Sort subtypes by total count
+                subtype_totals = df.groupby('SubType')['Count'].sum().sort_values(ascending=False)
+                subtype_order = subtype_totals.index.tolist()
+
+                # Define stage order and colors
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+                stage_colors = {
+                    'הופסק/לא פעיל': '#EF553B',  # Red
+                    'קריאה ראשונה': '#636EFA',    # Blue
+                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
+                }
+
+                fig = px.bar(
                     df,
-                    values="Count",
-                    names="SubType",
-                    title=f"<b>Bill SubType Distribution for {filters['knesset_title']}</b>",
+                    x="SubType",
+                    y="Count",
+                    color="Stage",
+                    title=f"<b>Bill SubType Distribution by Status for {filters['knesset_title']}</b>",
+                    labels={
+                        "SubType": "Bill SubType",
+                        "Count": "Number of Bills",
+                        "Stage": "Bill Status"
+                    },
+                    category_orders={
+                        "SubType": subtype_order,
+                        "Stage": stage_order
+                    },
+                    color_discrete_map=stage_colors,
+                    barmode='stack'
                 )
 
-                fig.update_traces(textposition="inside", textinfo="percent+label")
-                fig.update_layout(title_x=0.5)
+                fig.update_traces(
+                    hovertemplate="<b>SubType:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
+                )
+
+                fig.update_layout(
+                    xaxis_title="Bill SubType",
+                    yaxis_title="Number of Bills",
+                    title_x=0.5,
+                    xaxis_tickangle=-45,
+                    showlegend=True,
+                    legend_title_text='Bill Status',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    height=800,
+                    margin=dict(t=180)
+                )
 
                 return fig
 
