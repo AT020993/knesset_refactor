@@ -381,11 +381,11 @@ The algorithm prioritizes dates in this logical order:
 
 This approach provides the most accurate representation of when bills actually entered the legislative process.
 
-## Collaboration Network Analysis System (2025-08-06 - Updated)
+## Collaboration Network Analysis System (2025-10-04 - Updated)
 
-### Network/Connection Map Charts 
+### Network/Connection Map Charts
 
-The platform includes three interactive visualization charts that analyze collaboration patterns in Israeli parliamentary bill legislation:
+The platform includes four interactive visualization charts that analyze collaboration patterns in Israeli parliamentary bill legislation. These charts are integrated into the **Bills Analytics** section for streamlined bill-related analysis.
 
 #### 1. MK Collaboration Network (`plot_mk_collaboration_network`)
 - **Purpose**: Visualizes individual MK collaboration patterns through bill co-sponsorship
@@ -394,32 +394,50 @@ The platform includes three interactive visualization charts that analyze collab
 - **Features**:
   - **Enhanced Node Sizing**: 20-80px nodes based on total bills initiated (dramatically improved visibility)
   - **Force-Directed Layout**: Dynamic positioning that clusters connected nodes for better readability
-  - **Faction-Based Coloring**: Visual distinction by political faction with comprehensive legend
+  - **Faction-Based Coloring**: Visual distinction by political faction with comprehensive legend (gold for Independent MKs)
   - **Improved Text Rendering**: Black text on colored backgrounds for maximum readability
-  - **Advanced Faction Mapping**: Multi-level resolution with fallback logic achieving 100% faction coverage
+  - **Knesset-Specific Faction Resolution** (2025-10-04): Only shows factions relevant to selected Knesset(s)
   - **Minimum collaboration threshold**: Configurable (default 3+ bills)
   - **Interactive Hover**: Detailed information including collaboration counts and bill totals
-- **Technical Improvements**: Fixed gray node issues through enhanced SQL faction resolution
-- **Location**: `src/ui/charts/network.py:21`
+- **Key Fixes (2025-10-04)**:
+  - **Eliminated Grey Circles**: Fixed NULL faction assignment through improved SQL query with `AllRelevantPeople` CTE
+  - **Guaranteed Faction Assignment**: Every MK gets either their actual faction or 'Independent' - no NULL values
+  - **Extended Color Palette**: Multiple Plotly color sets ensure sufficient unique colors for all factions
+- **Location**: `src/ui/charts/network.py:22`
 
 #### 2. Faction Collaboration Network (`plot_faction_collaboration_network`)
 - **Purpose**: Shows inter-faction collaboration patterns with accurate bill counting
-- **Data**: Analyzes which factions work together across party lines on legislative initiatives  
+- **Data**: Analyzes which factions work together across party lines on legislative initiatives
 - **Visualization**: Network showing faction-to-faction collaboration relationships with proper node sizing
-- **Key Fixes (2025-08-06)**:
-  - **Accurate Bill Counting**: Uses `COUNT(DISTINCT bi.BillID)` to prevent double-counting when multiple MKs from same faction initiate the same bill
-  - **Enhanced Node Sizing**: 30-100px nodes based on total bills per faction (not collaboration count)
+- **Key Fixes**:
+  - **Accurate Bill Counting** (2025-08-06): Uses `COUNT(DISTINCT bi.BillID)` to prevent double-counting when multiple MKs from same faction initiate the same bill
+  - **Enhanced Node Sizing** (2025-08-06): 30-100px nodes based on total bills per faction (not collaboration count)
+  - **Knesset-Specific Faction Resolution** (2025-10-04): Removed fallback logic that pulled factions from other Knessets
   - **Coalition/Opposition Layout**: Clear visual separation between political alignments
   - **Comprehensive Hover Information**: Shows total bills, collaborations, and partner faction counts
 - **Features**:
   - Node sizes reflect **total unique bills** initiated by each faction
   - Color coding by coalition status (Coalition=Blue, Opposition=Orange, Unknown=Gray)
-  - Minimum collaboration threshold (configurable, default 5+ bills)  
+  - Minimum collaboration threshold (configurable, default 5+ bills)
   - Force-directed positioning for optimal readability
-- **Data Quality**: Proper faction-to-person mapping ensuring accurate bill attribution
-- **Location**: `src/ui/charts/network.py:112`
+- **Data Quality**: Proper faction-to-person mapping ensuring accurate bill attribution, strictly limited to selected Knesset(s)
+- **Location**: `src/ui/charts/network.py:137`
 
-#### 3. Faction Coalition Breakdown (`plot_faction_coalition_breakdown`) 
+#### 3. Faction Collaboration Matrix (`plot_faction_collaboration_matrix`)
+- **Purpose**: Heatmap showing collaboration intensity between all faction pairs
+- **Data**: Matrix view of faction-to-faction collaboration patterns with solo bill tracking
+- **Visualization**: Interactive heatmap with color intensity representing collaboration frequency
+- **Key Fixes (2025-10-04)**:
+  - **Knesset-Specific Faction Resolution**: Removed COALESCE fallback logic across all CTEs
+  - **Accurate Faction Filtering**: Only shows factions active in selected Knesset(s)
+- **Features**:
+  - Enhanced matrix showing both collaborations and solo bills per faction
+  - Minimum collaboration threshold (configurable, default 3+ bills)
+  - Solo bill tracking option (show/hide)
+  - Color-coded heatmap for visual pattern recognition
+- **Location**: `src/ui/charts/network.py:1267`
+
+#### 4. Faction Coalition Breakdown (`plot_faction_coalition_breakdown`)
 - **Purpose**: Shows percentage breakdown of each faction's collaborations with Coalition vs Opposition partners
 - **Data**: Analyzes collaboration patterns by political alignment rather than network topology
 - **Visualization**: Horizontal stacked bar chart showing Coalition vs Opposition collaboration percentages
@@ -432,36 +450,45 @@ The platform includes three interactive visualization charts that analyze collab
   - **Enhanced Spacing**: Proper title/legend positioning to prevent overlap
 - **Replaces**: Previously removed coalition/opposition network chart (2025-08-06)
 - **Use Case**: Understanding cross-party cooperation patterns by political alignment
-- **Location**: `src/ui/charts/network.py:235`
+- **Location**: `src/ui/charts/network.py:254`
 
-### Technical Implementation (Updated 2025-08-06)
+### Technical Implementation (Updated 2025-10-04)
 
 **Network Chart Architecture**:
 - Built on the modular chart system extending `BaseChart`
 - Uses Plotly interactive network visualizations with force-directed and coalition-based layouts
 - Implements robust Hebrew text handling with safe string conversion
-- Advanced SQL queries with multi-level faction resolution and double-counting prevention
+- Advanced SQL queries with Knesset-specific faction resolution and double-counting prevention
 
-**Enhanced SQL Analysis Logic**:
+**Enhanced SQL Analysis Logic (2025-10-04)**:
 - **Primary Initiators**: `main.Ordinal = 1` (bill sponsors)
 - **Supporting Initiators**: `supp.Ordinal > 1` (co-sponsors)
 - **Collaboration Detection**: JOIN on same BillID between primary and supporting initiators
-- **Advanced Faction Mapping**: Multi-level COALESCE queries with fallback logic:
+- **Knesset-Specific Faction Mapping**: Strict single-query approach (NO fallback logic):
   ```sql
-  COALESCE(
-      -- Try current Knesset first
-      (SELECT f.Name FROM KNS_PersonToPosition ptp 
-       JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-       WHERE ptp.PersonID = person.PersonID AND ptp.KnessetNum = current_knesset
-       ORDER BY ptp.StartDate DESC LIMIT 1),
-      -- Fallback to most recent faction
-      (SELECT f.Name FROM KNS_PersonToPosition ptp
-       JOIN KNS_Faction f ON ptp.FactionID = f.FactionID  
-       WHERE ptp.PersonID = person.PersonID
-       ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
+  -- MK Collaboration Network approach
+  AllRelevantPeople AS (
+      SELECT DISTINCT PersonID, KnessetNum
+      FROM BillCollaborations
+  ),
+  MKFactionInKnesset AS (
+      SELECT
+          arp.PersonID,
+          arp.KnessetNum,
+          COALESCE(
+              (SELECT f.Name
+               FROM KNS_PersonToPosition ptp
+               JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+               WHERE ptp.PersonID = arp.PersonID
+                   AND ptp.KnessetNum = arp.KnessetNum
+               ORDER BY ptp.StartDate DESC LIMIT 1),
+              'Independent'
+          ) as FactionName
+      FROM AllRelevantPeople arp
   )
   ```
-- **Bill Counting with Double-Count Prevention**: 
+- **Key Change**: Removed COALESCE fallback that searched other Knessets - now strictly matches bill's KnessetNum
+- **Bill Counting with Double-Count Prevention**:
   - Uses `COUNT(DISTINCT bi.BillID)` in `FactionTotalBills` CTE
   - Ensures accurate faction node sizing without duplicate counting
   - Proper bill-to-faction attribution through KnessetNum matching
@@ -479,9 +506,9 @@ The platform includes three interactive visualization charts that analyze collab
   - Black text annotations for clean readability
 
 **UI Integration**:
-- Available in "Collaboration Networks" section of Streamlit interface
+- Available in "Bills Analytics" section of Streamlit interface
 - Registered in `ChartFactory` under "network" category with updated chart types
-- Service layer methods in `chart_service.py` 
+- Service layer methods in `chart_service.py`
 - Legacy compatibility wrappers in `plot_generators.py`
 - Chart factory registration updated to include `faction_coalition_breakdown`
 
@@ -662,6 +689,85 @@ The platform now supports external coalition status management through a CSV-bas
 - **Excel Integration**: Proper encoding eliminates character display issues
 
 This system provides the foundation for accurate coalition vs opposition analysis while maintaining full user control over political categorization decisions.
+
+## Recent Updates (2025-10-04)
+
+### Collaboration Network Improvements and Chart Reorganization
+
+#### Knesset-Specific Faction Filtering
+- **Issue Resolved**: Collaboration charts were showing factions from other Knessets when a specific Knesset was selected
+- **Root Cause**: SQL queries used COALESCE fallback logic that searched across all Knessets when faction not found in selected Knesset
+- **Solution**: Removed all fallback logic - faction resolution now strictly limited to bill's KnessetNum
+- **Impact**: All network charts (MK, Faction, Matrix) now show only factions active in selected Knesset(s)
+- **Files Modified**: `src/ui/charts/network.py`
+
+#### Grey Circles Fix in MK Collaboration Network
+- **Issue Resolved**: Grey circles appeared for MKs without faction assignments in selected Knesset
+- **Root Cause**: SQL GROUP BY clause wasn't properly handling NULL faction values despite COALESCE
+- **Solution**:
+  - Added `AllRelevantPeople` CTE to track collaborators with their Knesset numbers
+  - Rewrote `MKFactionInKnesset` to guarantee every MK gets a faction assignment
+  - Changed GROUP BY to use resolved faction name, eliminating NULL issues
+  - Added gold color (#FFD700) for 'Independent' MKs
+  - Extended color palette with multiple Plotly color sets
+- **Result**: Every MK node now has proper coloring based on faction or shows as gold if independent
+- **Files Modified**: `src/ui/charts/network.py:63-99, 884-894, 962-964`
+
+#### Chord Chart Removal
+- **Action**: Removed Faction Collaboration Chord chart from platform
+- **Reason**: Simplified visualization options, focusing on more effective chart types
+- **Charts Removed**: `plot_faction_collaboration_chord()` and `_create_faction_chord_chart()`
+- **Files Modified**:
+  - `src/ui/charts/network.py`
+  - `src/ui/charts/factory.py`
+  - `src/ui/plot_generators.py`
+  - `src/ui/services/chart_service.py`
+
+#### Chart Reorganization
+- **Change**: Moved all collaboration network charts from standalone "Collaboration Networks" section to "Bills Analytics" section
+- **Charts Affected**:
+  - MK Collaboration Network
+  - Faction Collaboration Network
+  - Faction Collaboration Matrix
+  - Faction Coalition Breakdown
+- **Benefit**: Streamlined UI with all bill-related analysis in single location
+- **Files Modified**: `src/ui/plot_generators.py:240-253`
+
+#### Bill Status Distribution Chart Transformation
+- **Previous**: Single pie chart showing overall bill status distribution
+- **New**: Stacked bar chart showing bill status breakdown per faction
+- **Visualization**: Each faction gets a bar divided into three colored segments:
+  - 🔴 **Red (bottom)**: Bills that stopped (הופסק/לא פעיל)
+  - 🔵 **Blue (middle)**: Bills that passed first reading (קריאה ראשונה)
+  - 🟢 **Green (top)**: Bills that passed third reading/became law (התקבלה בקריאה שלישית)
+- **Features**:
+  - Factions ordered by total bill count (most active first)
+  - Count labels inside each segment
+  - Responsive height based on number of factions
+  - Angled faction names for readability
+  - Interactive hover showing faction, stage, and count
+- **Use Case**: Compare legislative success rates across factions at a glance
+- **Files Modified**: `src/ui/charts/distribution.py:230-359`
+
+### Technical Improvements
+
+**SQL Query Optimization**:
+- Eliminated nested COALESCE queries that caused performance issues
+- Simplified faction resolution logic with single-query approach
+- Added `RelevantKnessets` CTE for better query organization
+- Improved GROUP BY clauses to handle COALESCE expressions properly
+
+**Color Palette Enhancement**:
+- Extended from single Set3 palette to Set3 + Plotly + Set1
+- Added special gold color for Independent MKs
+- Changed fallback from grey (#808080) to purple (#9467BD)
+- Ensures sufficient unique colors for all factions in any Knesset
+
+**Data Quality**:
+- 100% faction coverage - no NULL or missing values
+- Accurate Knesset-specific data - no cross-Knesset contamination
+- Proper bill-to-faction attribution through KnessetNum matching
+- Guaranteed 'Independent' assignment when no faction found
 
 ## Recent Updates (2025-08-19)
 

@@ -39,45 +39,68 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_Person", "KNS_PersonToPosition", "KNS_Faction"]):
                     return None
 
-                # Get MK collaboration network data using standardized faction resolution
+                # Get MK collaboration network data with Knesset-specific faction resolution
                 query = f"""
-                WITH {FactionResolver.get_standard_faction_lookup_cte()},
-                BillCollaborations AS (
-                    SELECT 
+                WITH BillCollaborations AS (
+                    SELECT
                         main.PersonID as MainInitiatorID,
                         supp.PersonID as SupporterID,
+                        b.KnessetNum,
                         COUNT(DISTINCT main.BillID) as CollaborationCount
                     FROM KNS_BillInitiator main
                     JOIN KNS_Bill b ON main.BillID = b.BillID
-                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                    WHERE main.Ordinal = 1 
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID
+                    WHERE main.Ordinal = 1
                         AND supp.Ordinal > 1
                         AND b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
-                    GROUP BY main.PersonID, supp.PersonID
+                    GROUP BY main.PersonID, supp.PersonID, b.KnessetNum
                     HAVING COUNT(DISTINCT main.BillID) >= {min_collaborations}
                 ),
-                MKDetails AS (
-                    SELECT 
-                        p.PersonID,
-                        p.FirstName || ' ' || p.LastName as FullName,
-                        {get_faction_name_field('f', "'Independent'")} as FactionName,
-                        COUNT(DISTINCT bi.BillID) as TotalBills
-                    FROM KNS_Person p
-                    LEFT JOIN KNS_BillInitiator bi ON p.PersonID = bi.PersonID AND bi.Ordinal = 1
-                    LEFT JOIN StandardFactionLookup sfl ON p.PersonID = sfl.PersonID AND sfl.rn = 1
-                    LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
-                    WHERE p.PersonID IN (
-                        SELECT MainInitiatorID FROM BillCollaborations
+                RelevantKnessets AS (
+                    SELECT DISTINCT KnessetNum FROM BillCollaborations
+                ),
+                AllRelevantPeople AS (
+                    SELECT DISTINCT PersonID, KnessetNum
+                    FROM (
+                        SELECT MainInitiatorID as PersonID, KnessetNum FROM BillCollaborations
                         UNION
-                        SELECT SupporterID FROM BillCollaborations
-                    )
-                    GROUP BY p.PersonID, p.FirstName, p.LastName, f.Name
+                        SELECT SupporterID as PersonID, KnessetNum FROM BillCollaborations
+                    ) people
+                ),
+                MKFactionInKnesset AS (
+                    SELECT
+                        arp.PersonID,
+                        arp.KnessetNum,
+                        COALESCE(
+                            (SELECT f.Name
+                             FROM KNS_PersonToPosition ptp
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = arp.PersonID
+                                 AND ptp.KnessetNum = arp.KnessetNum
+                                 AND ptp.FactionID IS NOT NULL
+                             ORDER BY ptp.StartDate DESC
+                             LIMIT 1),
+                            'Independent'
+                        ) as FactionName
+                    FROM AllRelevantPeople arp
+                ),
+                MKDetails AS (
+                    SELECT
+                        mkf.PersonID,
+                        p.FirstName || ' ' || p.LastName as FullName,
+                        mkf.FactionName,
+                        COUNT(DISTINCT CASE WHEN bi.Ordinal = 1 AND b.KnessetNum = mkf.KnessetNum THEN bi.BillID END) as TotalBills
+                    FROM MKFactionInKnesset mkf
+                    JOIN KNS_Person p ON mkf.PersonID = p.PersonID
+                    LEFT JOIN KNS_BillInitiator bi ON mkf.PersonID = bi.PersonID
+                    LEFT JOIN KNS_Bill b ON bi.BillID = b.BillID
+                    GROUP BY mkf.PersonID, p.FirstName, p.LastName, mkf.FactionName
                 )
-                SELECT 
+                SELECT
                     bc.MainInitiatorID,
                     bc.SupporterID,
-                    bc.CollaborationCount,
+                    SUM(bc.CollaborationCount) as CollaborationCount,
                     main_mk.FullName as MainInitiatorName,
                     main_mk.FactionName as MainInitiatorFaction,
                     main_mk.TotalBills as MainInitiatorTotalBills,
@@ -87,7 +110,10 @@ class NetworkCharts(BaseChart):
                 FROM BillCollaborations bc
                 JOIN MKDetails main_mk ON bc.MainInitiatorID = main_mk.PersonID
                 JOIN MKDetails supp_mk ON bc.SupporterID = supp_mk.PersonID
-                ORDER BY bc.CollaborationCount DESC
+                GROUP BY bc.MainInitiatorID, bc.SupporterID,
+                    main_mk.FullName, main_mk.FactionName, main_mk.TotalBills,
+                    supp_mk.FullName, supp_mk.FactionName, supp_mk.TotalBills
+                ORDER BY SUM(bc.CollaborationCount) DESC
                 """
 
                 df = safe_execute_query(con, query, self.logger)
@@ -140,37 +166,30 @@ class NetworkCharts(BaseChart):
                         AND b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
                 ),
+                RelevantKnessets AS (
+                    SELECT DISTINCT KnessetNum FROM FactionCollaborations
+                ),
                 PersonFactions AS (
                     SELECT DISTINCT
                         fc.MainPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
+                        fc.KnessetNum,
+                        (SELECT f.FactionID
+                         FROM KNS_PersonToPosition ptp
+                         JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                         WHERE ptp.PersonID = fc.MainPersonID
+                             AND ptp.KnessetNum = fc.KnessetNum
+                         ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
                     FROM FactionCollaborations fc
                     UNION
                     SELECT DISTINCT
                         fc.SuppPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
+                        fc.KnessetNum,
+                        (SELECT f.FactionID
+                         FROM KNS_PersonToPosition ptp
+                         JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                         WHERE ptp.PersonID = fc.SuppPersonID
+                             AND ptp.KnessetNum = fc.KnessetNum
+                         ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
                     FROM FactionCollaborations fc
                 ),
                 FactionTotalBills AS (
@@ -862,10 +881,17 @@ class NetworkCharts(BaseChart):
         # Generate improved network layout with better spacing
         node_positions = self._create_better_network_layout(all_nodes, df)
         
-        # Prepare faction colors
+        # Prepare faction colors with extended palette
         unique_factions = all_nodes['Faction'].unique()
-        colors = px.colors.qualitative.Set3[:len(unique_factions)]
+        # Use multiple color palettes to ensure enough colors
+        base_colors = (px.colors.qualitative.Set3 +
+                      px.colors.qualitative.Plotly +
+                      px.colors.qualitative.Set1)
+        colors = base_colors[:len(unique_factions)]
         color_map = dict(zip(unique_factions, colors))
+        # Ensure 'Independent' has a distinct color
+        if 'Independent' in color_map:
+            color_map['Independent'] = '#FFD700'  # Gold color for independent MKs
         
         # Create the interactive network visualization
         fig = go.Figure()
@@ -935,7 +961,7 @@ class NetworkCharts(BaseChart):
                     mode='markers+text',
                     marker=dict(
                         size=node_sizes,
-                        color=color_map.get(faction, '#808080'),
+                        color=color_map.get(faction, '#9467BD'),  # Purple fallback instead of grey
                         line=dict(width=3, color='white'),
                         opacity=0.9
                     ),
@@ -1259,30 +1285,23 @@ class NetworkCharts(BaseChart):
                 query = f"""
                 WITH AllActiveFactions AS (
                     -- Get all factions that initiated bills (main or supporting) in selected Knesset(s)
-                    SELECT DISTINCT 
-                        f.FactionID, 
+                    SELECT DISTINCT
+                        f.FactionID,
                         f.Name as FactionName,
                         COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
                     FROM KNS_Faction f
                     LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
                     WHERE f.FactionID IN (
-                        SELECT DISTINCT 
-                            COALESCE(
-                                (SELECT f2.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f2 ON ptp.FactionID = f2.FactionID
-                                 WHERE ptp.PersonID = bi.PersonID 
-                                   AND ptp.KnessetNum = b.KnessetNum
-                                 ORDER BY ptp.StartDate DESC LIMIT 1),
-                                (SELECT f2.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f2 ON ptp.FactionID = f2.FactionID
-                                 WHERE ptp.PersonID = bi.PersonID
-                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                            ) as FactionID
+                        SELECT DISTINCT
+                            (SELECT f2.FactionID
+                             FROM KNS_PersonToPosition ptp
+                             JOIN KNS_Faction f2 ON ptp.FactionID = f2.FactionID
+                             WHERE ptp.PersonID = bi.PersonID
+                                 AND ptp.KnessetNum = b.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
                         FROM KNS_BillInitiator bi
                         JOIN KNS_Bill b ON bi.BillID = b.BillID
-                        WHERE b.KnessetNum IS NOT NULL 
+                        WHERE b.KnessetNum IS NOT NULL
                           AND {filters["knesset_condition"]}
                           AND bi.PersonID IS NOT NULL
                     )
@@ -1290,37 +1309,30 @@ class NetworkCharts(BaseChart):
                 ),
                 SoloBills AS (
                     -- Count bills where each faction worked alone (only 1 initiator total)
-                    SELECT 
+                    SELECT
                         af.FactionID,
                         af.FactionName,
                         af.CoalitionStatus,
                         COUNT(DISTINCT solo_bills.BillID) as SoloBillCount
                     FROM AllActiveFactions af
                     LEFT JOIN (
-                        SELECT DISTINCT 
+                        SELECT DISTINCT
                             bi.BillID,
-                            COALESCE(
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = bi.PersonID 
-                                   AND ptp.KnessetNum = b.KnessetNum
-                                 ORDER BY ptp.StartDate DESC LIMIT 1),
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = bi.PersonID
-                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                            ) as FactionID
+                            (SELECT f.FactionID
+                             FROM KNS_PersonToPosition ptp
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE ptp.PersonID = bi.PersonID
+                                 AND ptp.KnessetNum = b.KnessetNum
+                             ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
                         FROM KNS_BillInitiator bi
                         JOIN KNS_Bill b ON bi.BillID = b.BillID
                         WHERE bi.BillID IN (
-                            SELECT BillID 
-                            FROM KNS_BillInitiator 
-                            GROUP BY BillID 
+                            SELECT BillID
+                            FROM KNS_BillInitiator
+                            GROUP BY BillID
                             HAVING COUNT(*) = 1
                         )
-                        AND b.KnessetNum IS NOT NULL 
+                        AND b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
                     ) solo_bills ON af.FactionID = solo_bills.FactionID
                     GROUP BY af.FactionID, af.FactionName, af.CoalitionStatus
@@ -1341,7 +1353,7 @@ class NetworkCharts(BaseChart):
                         AND {filters["knesset_condition"]}
                 ),
                 CollaborationPairs AS (
-                    SELECT 
+                    SELECT
                         main_faction.FactionID as MainFactionID,
                         supp_faction.FactionID as SupporterFactionID,
                         COUNT(DISTINCT fc.BillID) as CollaborationCount,
@@ -1351,53 +1363,41 @@ class NetworkCharts(BaseChart):
                         supp_faction.CoalitionStatus as SupporterCoalitionStatus
                     FROM FactionCollaborations fc
                     JOIN (
-                        SELECT DISTINCT 
+                        SELECT DISTINCT
                             fc2.MainPersonID as PersonID,
                             af.FactionID,
                             af.FactionName,
                             af.CoalitionStatus
                         FROM FactionCollaborations fc2
                         JOIN AllActiveFactions af ON af.FactionID = (
-                            COALESCE(
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = fc2.MainPersonID AND ptp.KnessetNum = fc2.KnessetNum
-                                 ORDER BY ptp.StartDate DESC LIMIT 1),
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = fc2.MainPersonID
-                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                            )
+                            SELECT f.FactionID
+                            FROM KNS_PersonToPosition ptp
+                            JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                            WHERE ptp.PersonID = fc2.MainPersonID
+                                AND ptp.KnessetNum = fc2.KnessetNum
+                            ORDER BY ptp.StartDate DESC LIMIT 1
                         )
                     ) main_faction ON fc.MainPersonID = main_faction.PersonID
                     JOIN (
-                        SELECT DISTINCT 
+                        SELECT DISTINCT
                             fc2.SuppPersonID as PersonID,
                             af.FactionID,
                             af.FactionName,
                             af.CoalitionStatus
                         FROM FactionCollaborations fc2
                         JOIN AllActiveFactions af ON af.FactionID = (
-                            COALESCE(
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = fc2.SuppPersonID AND ptp.KnessetNum = fc2.KnessetNum
-                                 ORDER BY ptp.StartDate DESC LIMIT 1),
-                                (SELECT f.FactionID 
-                                 FROM KNS_PersonToPosition ptp 
-                                 JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                                 WHERE ptp.PersonID = fc2.SuppPersonID
-                                 ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                            )
+                            SELECT f.FactionID
+                            FROM KNS_PersonToPosition ptp
+                            JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                            WHERE ptp.PersonID = fc2.SuppPersonID
+                                AND ptp.KnessetNum = fc2.KnessetNum
+                            ORDER BY ptp.StartDate DESC LIMIT 1
                         )
                     ) supp_faction ON fc.SuppPersonID = supp_faction.PersonID
                     WHERE main_faction.FactionID IS NOT NULL
                         AND supp_faction.FactionID IS NOT NULL
                         AND main_faction.FactionID <> supp_faction.FactionID
-                    GROUP BY main_faction.FactionID, supp_faction.FactionID, 
+                    GROUP BY main_faction.FactionID, supp_faction.FactionID,
                              main_faction.FactionName, supp_faction.FactionName,
                              main_faction.CoalitionStatus, supp_faction.CoalitionStatus
                     HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
@@ -1444,111 +1444,6 @@ class NetworkCharts(BaseChart):
         except Exception as e:
             self.logger.error(f"Error generating faction collaboration matrix: {e}", exc_info=True)
             st.error(f"Could not generate faction collaboration matrix: {e}")
-            return None
-
-    def plot_faction_collaboration_chord(
-        self,
-        knesset_filter: Optional[List[int]] = None,
-        faction_filter: Optional[List[str]] = None,
-        min_collaborations: int = 5,
-        **kwargs,
-    ) -> Optional[go.Figure]:
-        """Generate faction collaboration chord diagram showing circular collaboration flows."""
-        if not self.check_database_exists():
-            return None
-
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
-
-        try:
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as con:
-                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
-                    return None
-
-                # Use similar query as matrix but aggregate bidirectionally for chord diagram
-                query = f"""
-                WITH FactionCollaborations AS (
-                    SELECT 
-                        main.PersonID as MainPersonID,
-                        supp.PersonID as SuppPersonID,
-                        main.BillID,
-                        b.KnessetNum
-                    FROM KNS_BillInitiator main
-                    JOIN KNS_Bill b ON main.BillID = b.BillID
-                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                    WHERE main.Ordinal = 1 
-                        AND supp.Ordinal > 1
-                        AND b.KnessetNum IS NOT NULL
-                        AND {filters["knesset_condition"]}
-                ),
-                PersonFactions AS (
-                    SELECT DISTINCT
-                        fc.MainPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.MainPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
-                    FROM FactionCollaborations fc
-                    UNION
-                    SELECT DISTINCT
-                        fc.SuppPersonID as PersonID,
-                        COALESCE(
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID AND ptp.KnessetNum = fc.KnessetNum
-                             ORDER BY ptp.StartDate DESC LIMIT 1),
-                            (SELECT f.FactionID 
-                             FROM KNS_PersonToPosition ptp 
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE ptp.PersonID = fc.SuppPersonID
-                             ORDER BY ptp.KnessetNum DESC, ptp.StartDate DESC LIMIT 1)
-                        ) as FactionID
-                    FROM FactionCollaborations fc
-                ),
-                FactionStats AS (
-                    SELECT 
-                        f.FactionID,
-                        f.Name as FactionName,
-                        COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus,
-                        COUNT(DISTINCT fc.BillID) as TotalCollaborations
-                    FROM KNS_Faction f
-                    LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
-                    JOIN PersonFactions pf ON f.FactionID = pf.FactionID
-                    JOIN FactionCollaborations fc ON pf.PersonID IN (fc.MainPersonID, fc.SuppPersonID)
-                    GROUP BY f.FactionID, f.Name, ufs.CoalitionStatus
-                    HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
-                )
-                SELECT 
-                    fs.FactionID,
-                    fs.FactionName,
-                    fs.CoalitionStatus,
-                    fs.TotalCollaborations
-                FROM FactionStats fs
-                ORDER BY fs.TotalCollaborations DESC
-                """
-
-                df = safe_execute_query(con, query, self.logger)
-
-                if df.empty:
-                    st.info(f"No faction collaboration chord data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
-                    return None
-
-                # Create chord diagram visualization 
-                return self._create_faction_chord_chart(df, filters['knesset_title'])
-
-        except Exception as e:
-            self.logger.error(f"Error generating faction collaboration chord: {e}", exc_info=True)
-            st.error(f"Could not generate faction collaboration chord: {e}")
             return None
 
     def _create_faction_matrix_chart(self, df: pd.DataFrame, title_suffix: str, min_collaborations: int) -> go.Figure:
@@ -1877,138 +1772,12 @@ class NetworkCharts(BaseChart):
         
         return fig
 
-    def _create_faction_chord_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
-        """Create faction collaboration chord diagram."""
-        
-        # For a simplified chord-like visualization using plotly, we'll create a circular scatter plot
-        # with faction points and curved connections showing collaboration strength
-        
-        n_factions = len(df)
-        if n_factions == 0:
-            fig = go.Figure()
-            fig.add_annotation(text="No faction data available", 
-                             xref="paper", yref="paper", x=0.5, y=0.5,
-                             showarrow=False, font=dict(size=16))
-            return fig
-        
-        # Arrange factions in a circle
-        angles = np.linspace(0, 2*np.pi, n_factions, endpoint=False)
-        radius = 100
-        
-        # Calculate positions
-        faction_positions = {}
-        for i, (_, faction) in enumerate(df.iterrows()):
-            x = radius * np.cos(angles[i])
-            y = radius * np.sin(angles[i])
-            faction_positions[faction['FactionName']] = (x, y, angles[i])
-        
-        # Create figure
-        fig = go.Figure()
-        
-        # Color mapping for coalition status
-        status_colors = {
-            'Coalition': '#1f77b4',
-            'Opposition': '#ff7f0e',
-            'Unknown': '#808080'
-        }
-        
-        # Add faction nodes grouped by status
-        max_collaborations = df['TotalCollaborations'].max()
-        
-        for status in ['Coalition', 'Opposition', 'Unknown']:
-            status_factions = df[df['CoalitionStatus'] == status]
-            if status_factions.empty:
-                continue
-                
-            faction_x = []
-            faction_y = []
-            faction_sizes = []
-            faction_names = []
-            hover_texts = []
-            
-            for _, faction in status_factions.iterrows():
-                pos = faction_positions[faction['FactionName']]
-                faction_x.append(pos[0])
-                faction_y.append(pos[1])
-                
-                # Size based on total collaborations
-                size = max(30, min(80, 30 + (faction['TotalCollaborations'] / max_collaborations * 50)))
-                faction_sizes.append(size)
-                faction_names.append(faction['FactionName'])
-                
-                hover_text = (
-                    f"<b>{faction['FactionName']}</b><br>"
-                    f"Status: {faction['CoalitionStatus']}<br>"
-                    f"Total Collaborations: {faction['TotalCollaborations']}"
-                )
-                hover_texts.append(hover_text)
-            
-            # Add faction trace
-            fig.add_trace(go.Scatter(
-                x=faction_x,
-                y=faction_y,
-                mode='markers+text',
-                marker=dict(
-                    size=faction_sizes,
-                    color=status_colors.get(status, '#808080'),
-                    line=dict(width=3, color='white'),
-                    opacity=0.9
-                ),
-                text=faction_names,
-                textposition="middle center",
-                textfont=dict(size=10, color='white', family="Arial Black"),
-                hovertext=hover_texts,
-                hoverinfo='text',
-                name=status,
-                showlegend=True
-            ))
-        
-        # Add curved connections between factions (simplified approach)
-        # Note: Full chord diagram implementation would require more complex path calculations
-        
-        fig.update_layout(
-            title=f"<b>🔄 Faction Collaboration Chord Diagram<br>{title_suffix}</b>",
-            title_x=0.5,
-            showlegend=True,
-            hovermode='closest',
-            margin=dict(b=40, l=40, r=40, t=80),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
-            height=800,
-            width=800,
-            plot_bgcolor='rgba(240,240,240,0.1)',
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.05,
-                font=dict(size=12)
-            ),
-            annotations=[
-                dict(
-                    text="Node size represents total collaborations<br>Colors indicate coalition status",
-                    showarrow=False,
-                    xref="paper", yref="paper",
-                    x=0.02, y=0.02,
-                    xanchor='left', yanchor='bottom',
-                    font=dict(size=10),
-                    bgcolor="rgba(255,255,255,0.8)",
-                    bordercolor="gray",
-                    borderwidth=1
-                )
-            ]
-        )
-        
-        return fig
-
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Generate the requested network chart."""
         chart_methods = {
             "mk_collaboration_network": self.plot_mk_collaboration_network,
             "faction_collaboration_network": self.plot_faction_collaboration_network,
             "faction_collaboration_matrix": self.plot_faction_collaboration_matrix,
-            "faction_collaboration_chord": self.plot_faction_collaboration_chord,
             "faction_coalition_breakdown": self.plot_faction_coalition_breakdown,
         }
 

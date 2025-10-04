@@ -233,7 +233,7 @@ class DistributionCharts(BaseChart):
         faction_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate bill status distribution chart with legislative stage categorization."""
+        """Generate bill status distribution chart by faction with legislative stage categorization."""
         if not self.check_database_exists():
             return None
 
@@ -243,25 +243,42 @@ class DistributionCharts(BaseChart):
             with get_db_connection(
                 self.db_path, read_only=True, logger_obj=self.logger
             ) as con:
-                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_Status"]):
+                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_Status", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
                     return None
 
-                # Categorize statuses into legislative stages
+                # Get bill status distribution by faction
                 query = f"""
+                    WITH BillFaction AS (
+                        SELECT DISTINCT
+                            b.BillID,
+                            b.StatusID,
+                            b.KnessetNum,
+                            (SELECT f.Name
+                             FROM KNS_BillInitiator bi
+                             JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
+                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                             WHERE bi.BillID = b.BillID
+                                 AND bi.Ordinal = 1
+                                 AND ptp.KnessetNum = b.KnessetNum
+                             ORDER BY ptp.StartDate DESC
+                             LIMIT 1) as FactionName
+                        FROM KNS_Bill b
+                        WHERE b.KnessetNum IS NOT NULL
+                            AND {filters["knesset_condition"]}
+                            AND {filters["bill_origin_condition"]}
+                    )
                     SELECT
-                        CASE 
-                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                            WHEN b.StatusID IN (108, 111, 141, 109, 101, 106, 142, 150) THEN 'קריאה ראשונה'
+                        COALESCE(bf.FactionName, 'Independent') as Faction,
+                        CASE
+                            WHEN bf.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
+                            WHEN bf.StatusID IN (108, 111, 141, 109, 101, 106, 142, 150) THEN 'קריאה ראשונה'
                             ELSE 'הופסק/לא פעיל'
                         END AS Stage,
-                        COUNT(b.BillID) AS Count
-                    FROM KNS_Bill b
-                    LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
-                    WHERE b.KnessetNum IS NOT NULL
-                        AND {filters["knesset_condition"]}
-                        AND {filters["bill_origin_condition"]}
-                    GROUP BY Stage
-                    ORDER BY Count DESC
+                        COUNT(bf.BillID) AS Count
+                    FROM BillFaction bf
+                    WHERE bf.FactionName IS NOT NULL
+                    GROUP BY COALESCE(bf.FactionName, 'Independent'), Stage
+                    ORDER BY SUM(COUNT(bf.BillID)) OVER (PARTITION BY COALESCE(bf.FactionName, 'Independent')) DESC, Faction, Stage
                 """
 
                 df = safe_execute_query(con, query, self.logger)
@@ -272,46 +289,64 @@ class DistributionCharts(BaseChart):
                     )
                     return None
 
-                # Calculate percentages and prepare labels with counts
-                total_bills = df['Count'].sum()
-                df['Percentage'] = (df['Count'] / total_bills * 100).round(1)
-                
                 # Define colors for each stage
                 colors = {
-                    'התקבלה בקריאה שלישית': '#2E8B57',      # Sea Green - success
+                    'הופסק/לא פעיל': '#CD5C5C',               # Indian Red - stopped
                     'קריאה ראשונה': '#4682B4',                # Steel Blue - in progress
-                    'הופסק/לא פעיל': '#CD5C5C'               # Indian Red - stopped
+                    'התקבלה בקריאה שלישית': '#2E8B57'       # Sea Green - success
                 }
 
-                # Create pie chart with custom hover and text
-                fig = go.Figure(data=[go.Pie(
-                    labels=df['Stage'],
-                    values=df['Count'],
-                    textinfo='percent',
-                    texttemplate='%{percent}<br><b>%{value}</b>',
-                    hovertemplate='<b>%{label}</b><br>' +
-                                  'Bills: %{value}<br>' +
-                                  'Percentage: %{percent}<br>' +
-                                  '<extra></extra>',
-                    marker_colors=[colors.get(stage, '#808080') for stage in df['Stage']],
-                    textposition='auto',
-                    textfont_size=14,
-                    textfont_color='white'
-                )])
+                # Order for stacking
+                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
+
+                # Create stacked bar chart
+                fig = go.Figure()
+
+                # Get unique factions ordered by total bills
+                faction_totals = df.groupby('Faction')['Count'].sum().sort_values(ascending=False)
+                factions = faction_totals.index.tolist()
+
+                # Add a trace for each stage
+                for stage in stage_order:
+                    stage_data = df[df['Stage'] == stage].set_index('Faction')
+                    counts = [stage_data.loc[faction, 'Count'] if faction in stage_data.index else 0
+                             for faction in factions]
+
+                    fig.add_trace(go.Bar(
+                        name=stage,
+                        x=factions,
+                        y=counts,
+                        marker_color=colors[stage],
+                        text=counts,
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{x}</b><br>' +
+                                      f'{stage}: %{{y}}<br>' +
+                                      '<extra></extra>'
+                    ))
 
                 fig.update_layout(
-                    title=f"<b>Bill Status Distribution by Legislative Stage<br>{filters['knesset_title']}</b>",
+                    barmode='stack',
+                    title=f"<b>Bill Status Distribution by Faction<br>{filters['knesset_title']}</b>",
                     title_x=0.5,
+                    xaxis_title="Faction",
+                    yaxis_title="Number of Bills",
                     font_size=12,
-                    height=600,
+                    height=max(600, len(factions) * 40),
                     showlegend=True,
                     legend=dict(
                         orientation="v",
-                        yanchor="middle",
-                        y=0.5,
+                        yanchor="top",
+                        y=1,
                         xanchor="left",
-                        x=1.05
-                    )
+                        x=1.02,
+                        title="Legislative Stage"
+                    ),
+                    xaxis=dict(
+                        tickangle=-45,
+                        automargin=True
+                    ),
+                    margin=dict(b=150, l=80, r=200, t=100)
                 )
 
                 return fig
