@@ -65,10 +65,11 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - **Implementation**: `BillFirstSubmission` CTE now used in:
   - `src/ui/queries/predefined_queries.py` - "Bills + Full Details" query
   - `src/ui/charts/time_series.py` - Bills by Time Period chart
-  - `src/ui/charts/comparison.py` - Bills per Faction, Bills by Coalition Status charts
+  - `src/ui/charts/comparison.py` - **ALL 4 bill charts**: Bills per Faction, Bills by Coalition Status, Top Bill Initiators, Bill Initiators by Faction
 - **Logic**: MIN(earliest_date) from 4 sources: KNS_BillInitiator.LastUpdatedDate, committee sessions, plenum sessions, PublicationDate
 - **Faction Attribution**: Uses FirstBillSubmissionDate for timeline matching (not LastUpdatedDate) to prevent wrong faction attribution when MKs changed parties
 - **Impact**: 97.8% of bills have different submission vs last-update dates - using correct date is critical for accuracy
+- **Consistency**: All 6 locations use identical CTE definition (49 lines each) for data accuracy across all bill analytics
 
 ## Collaboration Networks (src/ui/charts/network.py)
 
@@ -116,6 +117,35 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - `src/ui/charts/distribution.py` - Fixed status categorization
 - `src/ui/charts/time_series.py` - Added FirstBillSubmission CTE, accurate date usage
 - `src/ui/charts/comparison.py` - Added FirstBillSubmission CTE for 2 charts, faction timeline matching
+
+### 2025-10-05: Bill Initiator Charts - Faction Attribution Fix
+**Extended data consistency fixes to remaining bill charts**
+
+**Problem Identified**: Code review revealed two additional charts with incorrect faction attribution logic:
+1. **Top 10 Bill Initiators** chart lacked date-based faction matching
+2. **Bill Initiators by Faction** chart lacked date-based faction matching
+
+Both charts joined `KNS_PersonToPosition` on `KnessetNum` only, without checking if the bill submission date fell within the MK's faction membership period.
+
+**Fixes Applied**:
+- **Top Bill Initiators** (`comparison.py:903-1111`): Added BillFirstSubmission CTE and date-based faction attribution
+  - Single Knesset query: Lines 933-984
+  - Multiple Knessets query: Lines 1010-1061
+- **Bill Initiators by Faction** (`comparison.py:1177-1357`): Added BillFirstSubmission CTE and date-based faction attribution
+  - Single Knesset query: Lines 1207-1252
+  - Multiple Knessets query: Lines 1278-1323
+
+**Implementation Details**:
+- Added identical `BillFirstSubmission` CTE (49 lines) to both charts
+- Updated JOIN logic: `AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP)) BETWEEN CAST(ptp.StartDate AS TIMESTAMP) AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)`
+- Now matches pattern used in Bills per Faction and Bills by Coalition Status charts
+
+**Expected Impact**:
+- MKs who changed factions will have their bills correctly attributed to the faction they belonged to at submission time
+- Faction counts will accurately reflect historical faction membership
+- All 6 bill-related charts now use consistent faction attribution logic
+
+**Note**: BillFirstSubmission CTE now appears in 6 locations across comparison.py (consider future refactoring to shared utility)
 
 ### 2025-10-05: UI Simplification
 - **Removed "How This Works" Expander**: Deleted help section from main page header (`src/ui/pages/data_refresh_page.py:38-40`) for cleaner interface

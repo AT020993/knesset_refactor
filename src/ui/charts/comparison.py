@@ -930,6 +930,34 @@ class ComparisonCharts(BaseChart):
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
+                    WITH BillFirstSubmission AS (
+                        -- Get the earliest activity date for each bill (true submission date)
+                        SELECT
+                            B.BillID,
+                            MIN(earliest_date) as FirstSubmissionDate
+                        FROM KNS_Bill B
+                        LEFT JOIN (
+                            -- Initiator assignment dates
+                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                            UNION ALL
+                            -- Committee session dates
+                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                            UNION ALL
+                            -- Plenum session dates
+                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                            UNION ALL
+                            -- Publication dates
+                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                        ) all_dates ON B.BillID = all_dates.BillID
+                        WHERE all_dates.earliest_date IS NOT NULL
+                        GROUP BY B.BillID
+                    )
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
@@ -940,10 +968,14 @@ class ComparisonCharts(BaseChart):
                         END AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount
                     FROM KNS_Bill b
+                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
                     LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
+                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
@@ -975,6 +1007,34 @@ class ComparisonCharts(BaseChart):
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
+                    WITH BillFirstSubmission AS (
+                        -- Get the earliest activity date for each bill (true submission date)
+                        SELECT
+                            B.BillID,
+                            MIN(earliest_date) as FirstSubmissionDate
+                        FROM KNS_Bill B
+                        LEFT JOIN (
+                            -- Initiator assignment dates
+                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                            UNION ALL
+                            -- Committee session dates
+                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                            UNION ALL
+                            -- Plenum session dates
+                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                            UNION ALL
+                            -- Publication dates
+                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                        ) all_dates ON B.BillID = all_dates.BillID
+                        WHERE all_dates.earliest_date IS NOT NULL
+                        GROUP BY B.BillID
+                    )
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
@@ -986,10 +1046,14 @@ class ComparisonCharts(BaseChart):
                         COUNT(DISTINCT b.BillID) AS BillCount,
                         b.KnessetNum
                     FROM KNS_Bill b
+                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
                     LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
+                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
@@ -1140,14 +1204,46 @@ class ComparisonCharts(BaseChart):
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
                     query = """
-                    SELECT 
+                    WITH BillFirstSubmission AS (
+                        -- Get the earliest activity date for each bill (true submission date)
+                        SELECT
+                            B.BillID,
+                            MIN(earliest_date) as FirstSubmissionDate
+                        FROM KNS_Bill B
+                        LEFT JOIN (
+                            -- Initiator assignment dates
+                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                            UNION ALL
+                            -- Committee session dates
+                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                            UNION ALL
+                            -- Plenum session dates
+                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                            UNION ALL
+                            -- Publication dates
+                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                        ) all_dates ON B.BillID = all_dates.BillID
+                        WHERE all_dates.earliest_date IS NOT NULL
+                        GROUP BY B.BillID
+                    )
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT p.PersonID) AS MKCount
                     FROM KNS_Bill b
+                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
+                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
@@ -1179,15 +1275,47 @@ class ComparisonCharts(BaseChart):
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
                     query = """
-                    SELECT 
+                    WITH BillFirstSubmission AS (
+                        -- Get the earliest activity date for each bill (true submission date)
+                        SELECT
+                            B.BillID,
+                            MIN(earliest_date) as FirstSubmissionDate
+                        FROM KNS_Bill B
+                        LEFT JOIN (
+                            -- Initiator assignment dates
+                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                            UNION ALL
+                            -- Committee session dates
+                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                            UNION ALL
+                            -- Plenum session dates
+                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                            UNION ALL
+                            -- Publication dates
+                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                        ) all_dates ON B.BillID = all_dates.BillID
+                        WHERE all_dates.earliest_date IS NOT NULL
+                        GROUP BY B.BillID
+                    )
+                    SELECT
                         COALESCE(f.Name, 'Unknown Faction') AS FactionName,
                         COUNT(DISTINCT CONCAT(p.PersonID, '-', b.KnessetNum)) AS MKCount,
                         b.KnessetNum
                     FROM KNS_Bill b
+                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID 
+                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
                         AND b.KnessetNum = ptp.KnessetNum
+                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
                         AND ptp.FactionID IS NOT NULL
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
