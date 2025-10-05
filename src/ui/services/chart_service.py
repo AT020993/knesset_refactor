@@ -99,10 +99,6 @@ class ChartService:
         """Legacy method for bill initiators by faction."""
         return self.create_chart("comparison", "bill_initiators_by_faction", **kwargs)
 
-    def plot_total_bills_per_faction(self, **kwargs) -> Optional[go.Figure]:
-        """Legacy method for total bills per faction."""
-        return self.create_chart("comparison", "total_bills_per_faction", **kwargs)
-
     # Network chart methods
     def plot_mk_collaboration_network(self, **kwargs) -> Optional[go.Figure]:
         """Generate MK collaboration network chart."""

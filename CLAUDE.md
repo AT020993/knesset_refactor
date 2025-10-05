@@ -37,7 +37,6 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 ### Bill Initiator Charts (src/ui/charts/comparison.py)
 1. **Top 10 Bill Initiators** - Individual MKs by bill count
 2. **Bill Initiators by Faction** - Count of MKs per faction with 1+ bills
-3. **Total Bills per Faction** - Cumulative bills from all faction members
 
 **Chart Standards**: 800px height, 180px top margin, extends BaseChart, single/multiple Knesset filtering
 
@@ -71,10 +70,10 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 
 **4 Charts in Bills Analytics section**: MK Network, Faction Network, Collaboration Matrix, Coalition Breakdown
 
-### Key Features (2025-10-04 Updates)
+### Key Features (Latest: 2025-10-05)
 - **MK Network**: Force-directed layout, 20-80px nodes, faction coloring (gold for Independent), 3+ bill threshold
-- **Faction Network**: Coalition/opposition layout, 30-100px nodes (by total bills), Blue/Orange/Gray, 5+ bill threshold
-- **Collaboration Matrix**: Heatmap of faction-to-faction patterns, solo bill tracking
+- **Faction Network**: Weighted force-directed layout where distance reflects collaboration strength (closer = more collaborations), 30-100px nodes (by total bills), Blue/Orange/Gray, NO minimum threshold
+- **Collaboration Matrix**: Heatmap of faction-to-faction patterns, solo bill tracking, axes labeled "First Initiator Faction" (Y) and "Sponsored Factions" (X)
 - **Coalition Breakdown**: Stacked % bars showing Coalition vs Opposition collaborations
 
 ### Technical Implementation
@@ -82,13 +81,21 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - **Knesset-Specific Faction Resolution**: Strict KnessetNum matching (NO fallback to other Knessets) via `AllRelevantPeople` CTE
 - **Key Fixes**: Eliminated grey nodes, guaranteed faction assignment ('Independent' if none), extended color palette (Set3+Plotly+Set1)
 - **Collaboration Definition**: MK from Faction A initiates (Ordinal=1), MK from Faction B supports (Ordinal>1), bidirectional counting
+- **Weighted Layout Algorithm**: Attractive force proportional to `(0.5 + log(collaboration_count) × 0.3)`, repulsive force 1.5× stronger, 200 iterations with cooling
 
 ## Recent Updates
+
+### 2025-10-05: Collaboration Network Enhancements
+- **Faction Network Redesign**: Implemented weighted force-directed layout where faction distance inversely correlates with collaboration count (more collaborations = closer together)
+- **Removed min_collaborations Filter**: Faction Collaboration Network now shows ALL collaborations (minimum 1) without UI filter
+- **Enhanced Spacing**: Increased node repulsion (1.5×), optimal distance (k=80), viewport expanded to 400×360px
+- **Matrix Axis Labels**: Updated to "First Initiator Faction" (Y-axis) and "Sponsored Factions" (X-axis) for clarity
+- **Chart Consolidation**: Removed duplicate "Total Bills per Faction" chart (identical to "Bills per Faction")
 
 ### 2025-10-05: Bill Status Categorization
 - **All bill charts** now show 3 color-coded statuses: 🔴 Stopped, 🔵 First Reading (StatusID: 104,108,111,141,109,101,106,142,150,113,130,114), 🟢 Passed (StatusID: 118)
 - **Critical Fix**: Changed from `PublicationDate` (6.6% coverage) to `LastUpdatedDate` (100% coverage)
-- **8 charts updated**: Bills by Time Period, Bills per Faction, Bills by Coalition Status, Bill SubType Distribution, Top 10 Initiators, Initiators by Faction, Total Bills per Faction, Bill Status Distribution
+- **7 charts updated**: Bills by Time Period, Bills per Faction, Bills by Coalition Status, Bill SubType Distribution, Top 10 Initiators, Initiators by Faction, Bill Status Distribution
 
 ### 2025-10-04: Network Chart Improvements
 - **Knesset-Specific Filtering**: Removed COALESCE fallback - faction resolution strictly limited to selected KnessetNum

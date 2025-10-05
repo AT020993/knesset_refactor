@@ -190,12 +190,6 @@ def plot_bill_initiators_by_faction(db_path, connect_func, logger_obj, **kwargs)
     return chart_service.plot_bill_initiators_by_faction(**kwargs)
 
 
-def plot_total_bills_per_faction(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper for total bills per faction chart."""
-    chart_service = ChartService(db_path, logger_obj)
-    return chart_service.plot_total_bills_per_faction(**kwargs)
-
-
 # Network chart wrappers
 def plot_mk_collaboration_network(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for MK collaboration network chart."""
@@ -245,7 +239,6 @@ def get_available_plots():
             "Bills by Coalition Status": plot_bills_by_coalition_status,
             "Top 10 Bill Initiators": plot_top_bill_initiators,
             "Bill Initiators by Faction": plot_bill_initiators_by_faction,
-            "Total Bills per Faction": plot_total_bills_per_faction,
             "MK Collaboration Network": plot_mk_collaboration_network,
             "Faction Collaboration Network": plot_faction_collaboration_network,
             "Faction Collaboration Matrix": plot_faction_collaboration_matrix,

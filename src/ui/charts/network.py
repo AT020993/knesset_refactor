@@ -134,10 +134,12 @@ class NetworkCharts(BaseChart):
         self,
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[str]] = None,
-        min_collaborations: int = 5,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate faction collaboration network chart showing inter-faction connections."""
+        """Generate faction collaboration network chart showing inter-faction connections.
+
+        Distance between factions represents collaboration strength - more collaborations = closer together.
+        """
         if not self.check_database_exists():
             return None
 
@@ -153,15 +155,15 @@ class NetworkCharts(BaseChart):
                 # Get faction collaboration network data with proper faction bill counting
                 query = f"""
                 WITH FactionCollaborations AS (
-                    SELECT 
+                    SELECT
                         main.PersonID as MainPersonID,
                         supp.PersonID as SuppPersonID,
                         main.BillID,
                         b.KnessetNum
                     FROM KNS_BillInitiator main
                     JOIN KNS_Bill b ON main.BillID = b.BillID
-                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                    WHERE main.Ordinal = 1 
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID
+                    WHERE main.Ordinal = 1
                         AND supp.Ordinal > 1
                         AND b.KnessetNum IS NOT NULL
                         AND {filters["knesset_condition"]}
@@ -193,7 +195,7 @@ class NetworkCharts(BaseChart):
                     FROM FactionCollaborations fc
                 ),
                 FactionTotalBills AS (
-                    SELECT 
+                    SELECT
                         f.FactionID,
                         f.Name as FactionName,
                         COUNT(DISTINCT bi.BillID) as TotalBills
@@ -205,7 +207,7 @@ class NetworkCharts(BaseChart):
                         AND {filters["knesset_condition"]}
                     GROUP BY f.FactionID, f.Name
                 )
-                SELECT 
+                SELECT
                     main_pf.FactionID as MainFactionID,
                     supp_pf.FactionID as SupporterFactionID,
                     COUNT(DISTINCT fc.BillID) as CollaborationCount,
@@ -228,14 +230,14 @@ class NetworkCharts(BaseChart):
                     AND supp_pf.FactionID IS NOT NULL
                     AND main_pf.FactionID <> supp_pf.FactionID
                 GROUP BY main_pf.FactionID, supp_pf.FactionID, main_f.Name, supp_f.Name, main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus, main_ftb.TotalBills, supp_ftb.TotalBills
-                HAVING COUNT(DISTINCT fc.BillID) >= {min_collaborations}
+                HAVING COUNT(DISTINCT fc.BillID) >= 1
                 ORDER BY CollaborationCount DESC
                 """
 
                 df = safe_execute_query(con, query, self.logger)
 
                 if df.empty:
-                    st.info(f"No faction collaboration data found for '{filters['knesset_title']}' with minimum {min_collaborations} collaborations.")
+                    st.info(f"No faction collaboration data found for '{filters['knesset_title']}'.")
                     return None
 
                 # Create network visualization
@@ -807,15 +809,108 @@ class NetworkCharts(BaseChart):
         
         return positions
 
+    def _create_weighted_faction_layout(self, factions_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Create weighted force-directed layout where collaboration count determines distance.
+
+        More collaborations = stronger attractive force = closer distance between factions.
+        """
+        import random
+
+        # Initialize random positions
+        positions = {}
+        for _, faction in factions_df.iterrows():
+            faction_id = faction['FactionID']
+            positions[faction_id] = [
+                random.uniform(-50, 50),
+                random.uniform(-50, 50)
+            ]
+
+        # Create weighted adjacency dict (collaboration count as weight)
+        edge_weights = {}
+        for _, edge in edges_df.iterrows():
+            main_id = edge['MainFactionID']
+            supp_id = edge['SupporterFactionID']
+            collab_count = edge['CollaborationCount']
+
+            # Bidirectional edges with weights
+            if main_id in positions and supp_id in positions:
+                key = tuple(sorted([main_id, supp_id]))
+                if key not in edge_weights:
+                    edge_weights[key] = 0
+                edge_weights[key] += collab_count
+
+        # Force-directed algorithm parameters
+        iterations = 200
+        k = 80  # Optimal distance between unconnected nodes - INCREASED for more spacing
+        dt = 0.15  # Time step
+
+        for iteration in range(iterations):
+            # Calculate forces
+            forces = {}
+            for faction_id in positions:
+                forces[faction_id] = [0.0, 0.0]
+
+            # Repulsive forces (all nodes repel each other) - STRONGER repulsion
+            faction_ids = list(positions.keys())
+            for i, id1 in enumerate(faction_ids):
+                for id2 in faction_ids[i+1:]:
+                    dx = positions[id1][0] - positions[id2][0]
+                    dy = positions[id1][1] - positions[id2][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+
+                    # Repulsive force magnitude - INCREASED by 1.5x
+                    force_mag = (k * k * 1.5) / distance
+
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+                    forces[id2][0] -= fx
+                    forces[id2][1] -= fy
+
+            # Attractive forces (connected nodes attract proportional to collaboration count)
+            for (id1, id2), weight in edge_weights.items():
+                dx = positions[id2][0] - positions[id1][0]
+                dy = positions[id2][1] - positions[id1][1]
+                distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+
+                # Attractive force magnitude - WEIGHTED by collaboration count but REDUCED strength
+                # More collaborations = stronger attraction = closer together
+                force_mag = (distance * distance / k) * (0.5 + np.log1p(weight) * 0.3)
+
+                # Apply forces
+                fx = force_mag * dx / distance
+                fy = force_mag * dy / distance
+
+                forces[id1][0] += fx
+                forces[id1][1] += fy
+                forces[id2][0] -= fx
+                forces[id2][1] -= fy
+
+            # Update positions with cooling factor
+            cooling = 1.0 - (iteration / iterations) * 0.5  # Gradual cooling
+            for faction_id in positions:
+                # Limit force magnitude to prevent instability
+                force_magnitude = np.sqrt(forces[faction_id][0]**2 + forces[faction_id][1]**2)
+                if force_magnitude > 0:
+                    max_displacement = min(force_magnitude * dt * cooling, 12)
+                    positions[faction_id][0] += (forces[faction_id][0] / force_magnitude) * max_displacement
+                    positions[faction_id][1] += (forces[faction_id][1] / force_magnitude) * max_displacement
+
+        # Convert to tuple format for compatibility
+        return {faction_id: tuple(pos) for faction_id, pos in positions.items()}
+
     def _create_faction_layout(self, factions_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
         """Create clear faction layout with coalition/opposition separation."""
         import math
-        
+
         # Separate by coalition status
         coalition_factions = []
         opposition_factions = []
         unknown_factions = []
-        
+
         for _, faction in factions_df.iterrows():
             status = faction['Status']
             if status == 'Coalition':
@@ -824,9 +919,9 @@ class NetworkCharts(BaseChart):
                 opposition_factions.append(faction)
             else:
                 unknown_factions.append(faction)
-        
+
         positions = {}
-        
+
         # Position coalition factions on the left side
         if coalition_factions:
             for i, faction in enumerate(coalition_factions):
@@ -834,22 +929,22 @@ class NetworkCharts(BaseChart):
                 x = -60 + 40 * math.cos(angle)
                 y = 60 * math.sin(angle)
                 positions[faction['FactionID']] = (x, y)
-        
-        # Position opposition factions on the right side  
+
+        # Position opposition factions on the right side
         if opposition_factions:
             for i, faction in enumerate(opposition_factions):
                 angle = math.pi * i / max(1, len(opposition_factions) - 1) + math.pi/2  # Right semicircle
                 x = 60 + 40 * math.cos(angle)
                 y = 60 * math.sin(angle)
                 positions[faction['FactionID']] = (x, y)
-        
+
         # Position unknown factions at the bottom
         if unknown_factions:
             for i, faction in enumerate(unknown_factions):
                 x = -30 + (60 * i / max(1, len(unknown_factions) - 1)) if len(unknown_factions) > 1 else 0
                 y = -80
                 positions[faction['FactionID']] = (x, y)
-        
+
         return positions
 
     def _create_mk_network_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
@@ -1004,22 +1099,26 @@ class NetworkCharts(BaseChart):
         return fig
 
     def _create_faction_network_chart(self, df: pd.DataFrame, title_suffix: str) -> go.Figure:
-        """Create faction collaboration network chart with force-directed layout and interactive features."""
-        
+        """Create faction collaboration network chart with weighted force-directed layout.
+
+        Distance between factions is inversely proportional to collaboration count -
+        more collaborations = stronger attraction = closer together.
+        """
+
         try:
             # Extract unique factions with safe string conversion
             main_factions = df[['MainFactionID', 'MainFactionName', 'MainCoalitionStatus']].copy()
             main_factions.columns = ['FactionID', 'Name', 'Status']
             main_factions['Name'] = main_factions['Name'].astype(str)
             main_factions['Status'] = main_factions['Status'].astype(str)
-            
+
             supp_factions = df[['SupporterFactionID', 'SupporterFactionName', 'SupporterCoalitionStatus']].copy()
             supp_factions.columns = ['FactionID', 'Name', 'Status']
             supp_factions['Name'] = supp_factions['Name'].astype(str)
             supp_factions['Status'] = supp_factions['Status'].astype(str)
-            
+
             all_factions = pd.concat([main_factions, supp_factions]).drop_duplicates(subset=['FactionID'])
-            
+
             # Add total bills for proper node sizing (not just collaboration count)
             faction_total_bills = {}
             for _, row in df.iterrows():
@@ -1027,33 +1126,33 @@ class NetworkCharts(BaseChart):
                 main_faction_id = row['MainFactionID']
                 if main_faction_id not in faction_total_bills:
                     faction_total_bills[main_faction_id] = row['MainFactionTotalBills']
-                
-                # Get total bills for supporter faction  
+
+                # Get total bills for supporter faction
                 supp_faction_id = row['SupporterFactionID']
                 if supp_faction_id not in faction_total_bills:
                     faction_total_bills[supp_faction_id] = row['SupporterFactionTotalBills']
-            
+
             # Also calculate collaboration count for hover info
             faction_collaboration_counts = {}
             for _, faction in all_factions.iterrows():
                 faction_id = faction['FactionID']
                 collaborations = df[(df['MainFactionID'] == faction_id) | (df['SupporterFactionID'] == faction_id)]
                 faction_collaboration_counts[faction_id] = len(collaborations)
-            
+
             all_factions['TotalBills'] = all_factions['FactionID'].map(faction_total_bills).fillna(0)
             all_factions['CollaborationCount'] = all_factions['FactionID'].map(faction_collaboration_counts)
-            
+
         except Exception as e:
             self.logger.error(f"Error processing faction data: {e}")
             # Return empty chart on error
             fig = go.Figure()
-            fig.add_annotation(text="Error processing faction network data", 
+            fig.add_annotation(text="Error processing faction network data",
                              xref="paper", yref="paper", x=0.5, y=0.5,
                              showarrow=False, font=dict(size=16))
             return fig
-        
-        # Generate simplified faction layout
-        node_positions = self._create_faction_layout(all_factions, df)
+
+        # Generate weighted force-directed layout (collaboration strength determines distance)
+        node_positions = self._create_weighted_faction_layout(all_factions, df)
         
         # Prepare status colors
         status_colors = {
@@ -1155,13 +1254,13 @@ class NetworkCharts(BaseChart):
                 ))
         
         fig.update_layout(
-            title=f"<b>🏛️ Faction Network - Coalition vs Opposition Layout<br>{title_suffix}</b>",
+            title=f"<b>🏛️ Faction Collaboration Network<br>{title_suffix}</b><br><sub>Distance between factions reflects collaboration strength (closer = more collaborations)</sub>",
             title_x=0.5,
             showlegend=True,
             hovermode='closest',
-            margin=dict(b=40, l=40, r=40, t=80),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-140, 140]),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-120, 120]),
+            margin=dict(b=40, l=40, r=40, t=120),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-200, 200]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-180, 180]),
             height=900,
             width=900,
             plot_bgcolor='rgba(240,240,240,0.1)',
@@ -1540,12 +1639,12 @@ class NetworkCharts(BaseChart):
             title=f"<b>📊 Faction Collaboration Matrix<br>{title_suffix}</b>",
             title_x=0.5,
             xaxis=dict(
-                title="Supporting Factions",
+                title="Sponsored Factions",
                 side='bottom',
                 tickangle=45
             ),
             yaxis=dict(
-                title="Primary Initiating Factions",
+                title="First Initiator Faction",
                 tickmode='linear'
             ),
             height=max(600, len(pivot_data) * 30),
@@ -1753,19 +1852,19 @@ class NetworkCharts(BaseChart):
             title=title_text,
             title_x=0.5,
             xaxis=dict(
-                title="Supporting/Target Factions",
+                title="Sponsored Factions",
                 side='bottom',
                 tickangle=45,
                 tickfont=dict(size=10)
             ),
             yaxis=dict(
-                title="Primary Initiating Factions",
+                title="First Initiator Faction",
                 tickmode='linear',
                 tickfont=dict(size=10),
                 autorange='reversed'  # Show first faction at top
             ),
             height=max(700, n_factions * 35),
-            width=max(900, n_factions * 35), 
+            width=max(900, n_factions * 35),
             margin=dict(l=250, r=280, t=120, b=180),
             plot_bgcolor='white'
         )
