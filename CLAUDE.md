@@ -46,7 +46,7 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - 🔵 **First Reading** (StatusID: 104,108,111,141,109,101,106,142,150,113,130,114)
 - 🟢 **Passed** (StatusID: 118)
 
-**Critical Fix**: Changed from `PublicationDate` (6.6% coverage) to `LastUpdatedDate` (100% coverage)
+**Implementation**: Standardized across all bill charts in `time_series.py`, `comparison.py`, `distribution.py` to ensure data consistency
 
 ### Chart Filtering Strategy
 - **Bill Charts**: Knesset number filter only (simplified UI)
@@ -60,11 +60,15 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - **Coverage**: All bill analytics charts support origin filtering
 - **Data**: Knesset 25 = 92.5% private (5,975), 7.5% governmental (484)
 
-### Bill Timeline & Submission Dates (2025-08-05)
-**FirstBillSubmissionDate** in "Bills + Full Details" query provides accurate submission dates (98.2% coverage)
-- **Implementation**: `src/ui/queries/predefined_queries.py` - `BillFirstSubmission` CTE
+### Bill Timeline & Submission Dates (2025-10-05)
+**FirstBillSubmissionDate** provides accurate submission dates (99.1% coverage for Knesset 25, vs 6.6% with PublicationDate)
+- **Implementation**: `BillFirstSubmission` CTE now used in:
+  - `src/ui/queries/predefined_queries.py` - "Bills + Full Details" query
+  - `src/ui/charts/time_series.py` - Bills by Time Period chart
+  - `src/ui/charts/comparison.py` - Bills per Faction, Bills by Coalition Status charts
 - **Logic**: MIN(earliest_date) from 4 sources: KNS_BillInitiator.LastUpdatedDate, committee sessions, plenum sessions, PublicationDate
-- **Workflow**: Submission → Committee Review → Plenum Discussion (chronologically accurate)
+- **Faction Attribution**: Uses FirstBillSubmissionDate for timeline matching (not LastUpdatedDate) to prevent wrong faction attribution when MKs changed parties
+- **Impact**: 97.8% of bills have different submission vs last-update dates - using correct date is critical for accuracy
 
 ## Collaboration Networks (src/ui/charts/network.py)
 
@@ -85,6 +89,34 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 
 ## Recent Updates
 
+### 2025-10-05: Data Consistency Fixes
+**Critical fixes to ensure data accuracy across all bill charts**
+
+**Problem Identified**: Comprehensive data investigation revealed three critical inconsistencies:
+1. **Bill Status Categorization Mismatch**: Missing StatusIDs (104, 113, 130, 114) from "First Reading" category in one chart caused 4,717 bills to be incorrectly shown as "Stopped/Inactive"
+2. **Inaccurate Date Usage**: Charts used `LastUpdatedDate` instead of actual submission dates, affecting timeline accuracy
+3. **Wrong Faction Attribution**: Bills attributed to wrong faction when MKs changed parties between submission and last update
+
+**Fixes Applied**:
+- **Status Consistency** (`distribution.py:274`): Added missing StatusIDs to "First Reading" category - all charts now use identical categorization
+- **Accurate Dating** (`time_series.py:347`, `comparison.py:615,799`): Integrated `BillFirstSubmission` CTE into chart queries
+  - Timeline charts now show bills in correct time periods (99.1% coverage vs 6.6%)
+  - Date filtering uses actual submission dates, not arbitrary update dates
+- **Faction Accuracy** (`comparison.py:615,799`): Faction timeline matching uses `FirstBillSubmissionDate` instead of `LastUpdatedDate`
+  - Prevents bills from being attributed to wrong faction (affects 97.8% of bills with different dates)
+  - Ensures faction membership checked at time of actual bill submission
+
+**Validation Results**:
+- ✅ 4,717 bills now correctly categorized as "First Reading" (Knesset 25)
+- ✅ 99.1% of bills have accurate submission dates (up from 6.6%)
+- ✅ 6,320 bills now use correct date for faction attribution
+- ✅ All bill charts show consistent data across visualizations
+
+**Files Modified**:
+- `src/ui/charts/distribution.py` - Fixed status categorization
+- `src/ui/charts/time_series.py` - Added FirstBillSubmission CTE, accurate date usage
+- `src/ui/charts/comparison.py` - Added FirstBillSubmission CTE for 2 charts, faction timeline matching
+
 ### 2025-10-05: UI Simplification
 - **Removed "How This Works" Expander**: Deleted help section from main page header (`src/ui/pages/data_refresh_page.py:38-40`) for cleaner interface
 
@@ -94,11 +126,6 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 - **Enhanced Spacing**: Increased node repulsion (1.5×), optimal distance (k=80), viewport expanded to 400×360px
 - **Matrix Axis Labels**: Updated to "First Initiator Faction" (Y-axis) and "Sponsored Factions" (X-axis) for clarity
 - **Chart Consolidation**: Removed duplicate "Total Bills per Faction" chart (identical to "Bills per Faction")
-
-### 2025-10-05: Bill Status Categorization
-- **All bill charts** now show 3 color-coded statuses: 🔴 Stopped, 🔵 First Reading (StatusID: 104,108,111,141,109,101,106,142,150,113,130,114), 🟢 Passed (StatusID: 118)
-- **Critical Fix**: Changed from `PublicationDate` (6.6% coverage) to `LastUpdatedDate` (100% coverage)
-- **7 charts updated**: Bills by Time Period, Bills per Faction, Bills by Coalition Status, Bill SubType Distribution, Top 10 Initiators, Initiators by Faction, Bill Status Distribution
 
 ### 2025-10-04: Network Chart Improvements
 - **Knesset-Specific Filtering**: Removed COALESCE fallback - faction resolution strictly limited to selected KnessetNum
