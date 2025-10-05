@@ -63,6 +63,44 @@ ui_logger.info("--- Initializing session state ---")
 SessionStateManager.initialize_all_session_state()
 ui_logger.info("--- Finished initializing session state ---")
 
+# Initialize cloud storage sync on first load
+if 'cloud_sync_checked' not in st.session_state:
+    st.session_state.cloud_sync_checked = False
+
+if not st.session_state.cloud_sync_checked:
+    from data.services.storage_sync_service import StorageSyncService
+
+    sync_service = StorageSyncService(logger_obj=ui_logger)
+
+    if sync_service.is_enabled():
+        ui_logger.info("Cloud storage enabled, checking for data sync...")
+
+        # Check if local database exists
+        if not DB_PATH.exists():
+            ui_logger.info("Local database not found, attempting cloud sync...")
+
+            with st.spinner("Syncing data from cloud storage..."):
+                try:
+                    success = sync_service.smart_sync_on_startup(
+                        progress_callback=lambda msg: ui_logger.info(f"Sync: {msg}")
+                    )
+
+                    if success:
+                        st.success("Data synced from cloud storage successfully!")
+                        ui_logger.info("Cloud sync completed successfully")
+                    else:
+                        st.info("No data found in cloud storage. Please refresh data using the sidebar.")
+                        ui_logger.info("No cloud data available, local refresh required")
+                except Exception as e:
+                    st.warning(f"Cloud sync failed: {e}. Please refresh data manually.")
+                    ui_logger.error(f"Cloud sync error: {e}", exc_info=True)
+        else:
+            ui_logger.info("Local database exists, skipping cloud sync")
+    else:
+        ui_logger.info("Cloud storage not enabled")
+
+    st.session_state.cloud_sync_checked = True
+
 knesset_nums_options_global, factions_options_df_global = (
     ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
 )

@@ -1,4 +1,5 @@
-data/
+# Data directory (database files, parquet files, etc.)
+/data/
 
 # macOS
 .DS_Store
@@ -24,3 +25,17 @@ coverage.xml
 # Development
 *.pyc
 __pycache__/
+
+# Secrets and Credentials
+.streamlit/secrets.toml
+*-credentials.json
+*-key.json
+service-account.json
+gcp-*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
