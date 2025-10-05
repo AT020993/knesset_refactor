@@ -571,6 +571,34 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 query = f"""
+                WITH BillFirstSubmission AS (
+                    -- Get the earliest activity date for each bill (true submission date)
+                    SELECT
+                        B.BillID,
+                        MIN(earliest_date) as FirstSubmissionDate
+                    FROM KNS_Bill B
+                    LEFT JOIN (
+                        -- Initiator assignment dates
+                        SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                        UNION ALL
+                        -- Committee session dates
+                        SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                        UNION ALL
+                        -- Plenum session dates
+                        SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                        UNION ALL
+                        -- Publication dates
+                        SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                        FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                    ) all_dates ON B.BillID = all_dates.BillID
+                    WHERE all_dates.earliest_date IS NOT NULL
+                    GROUP BY B.BillID
+                )
                 SELECT
                     COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                     CASE
@@ -580,10 +608,11 @@ class ComparisonCharts(BaseChart):
                     END AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
+                LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(b.LastUpdatedDate AS TIMESTAMP)
+                    AND CAST(COALESCE(bfs.FirstSubmissionDate, b.LastUpdatedDate) AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
@@ -730,6 +759,30 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 query = f"""
+                WITH BillFirstSubmission AS (
+                    -- Get the earliest activity date for each bill (true submission date)
+                    SELECT
+                        B.BillID,
+                        MIN(earliest_date) as FirstSubmissionDate
+                    FROM KNS_Bill B
+                    LEFT JOIN (
+                        SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
+                        UNION ALL
+                        SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+                        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
+                        UNION ALL
+                        SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
+                        FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
+                        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
+                        UNION ALL
+                        SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
+                        FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
+                    ) all_dates ON B.BillID = all_dates.BillID
+                    WHERE all_dates.earliest_date IS NOT NULL
+                    GROUP BY B.BillID
+                )
                 SELECT
                     ufs.CoalitionStatus AS CoalitionStatus,
                     CASE
@@ -739,10 +792,11 @@ class ComparisonCharts(BaseChart):
                     END AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
+                LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(b.LastUpdatedDate AS TIMESTAMP)
+                    AND CAST(COALESCE(bfs.FirstSubmissionDate, b.LastUpdatedDate) AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID

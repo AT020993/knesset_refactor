@@ -271,7 +271,7 @@ class DistributionCharts(BaseChart):
                         COALESCE(bf.FactionName, 'Independent') as Faction,
                         CASE
                             WHEN bf.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                            WHEN bf.StatusID IN (108, 111, 141, 109, 101, 106, 142, 150) THEN 'קריאה ראשונה'
+                            WHEN bf.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
                             ELSE 'הופסק/לא פעיל'
                         END AS Stage,
                         COUNT(bf.BillID) AS Count
