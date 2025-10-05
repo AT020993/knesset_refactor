@@ -1,0 +1,9 @@
+﻿Category,Total,Coalition,Opposition,Coalition_Percentage
+Bill_Private,6038,2912,3126,48.2
+Bill_Government,24,24,0,100
+Bill_Status_104,4593,2145,2448,46.7
+Bill_Status_118,166,127,39,76.5
+Query_Regular,959,155,804,16.2
+Query_Urgent,138,56,82,40.6
+Agenda_QuickDiscussion,1206,552,654,45.8
+Agenda_Urgent,835,426,409,51
