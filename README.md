@@ -59,21 +59,6 @@ Transform complex parliamentary data into actionable insights with:
 - **Comprehensive Data Management:** Support robust and resumable fetching, efficient storage, and timely updates of parliamentary data
 - **User-Friendly Interface:** Offer an intuitive Streamlit-based interface for data interaction, exploration, and exportation
 
-### 🐳 Development Environment
-
-For AI tools (Jules, Codex, etc.) and developers, this project includes a complete Docker setup:
-
-```bash
-# Quick start for AI tools
-./docker-setup.sh setup      # One-time setup with sample data
-./docker-setup.sh up dev     # Start development environment
-./docker-setup.sh shell      # Get shell access for coding
-```
-
-- 🔗 **Development UI**: http://localhost:8502
-- 📖 **Full AI Guide**: See [`AI_SETUP.md`](AI_SETUP.md) for complete instructions
-- 🤖 **CI/CD Ready**: Automatic testing for AI-generated branches
-
 ## ✨ Key Features
 
 ### Backend Architecture (Clean & Modular - Recently Refactored)
@@ -271,7 +256,7 @@ knesset_refactor/
 ## 📸 Screenshots
 
 ### Streamlit Interface
-*Coming soon: Screenshots of the data refresh interface, visualizations, and chart builder*
+*Coming soon: Screenshots of the data refresh interface and visualizations*
 
 ### Sample Visualizations
 *Coming soon: Examples of parliamentary activity heatmaps, MK collaboration networks, and query analytics*
@@ -844,7 +829,7 @@ pytest
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**.
 
 </div>
 
