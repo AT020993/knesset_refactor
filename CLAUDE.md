@@ -90,6 +90,48 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 
 ## Recent Updates
 
+### 2025-10-06: Bill Initiators by Faction - Data Quality Fix
+**Fixed "Unknown Faction" issue caused by incomplete PersonToPosition records**
+
+**Problem Identified**: The "Bill Initiators by Faction" chart showed "Unknown Faction" for 18 MKs representing 1,895 bills in Knesset 25:
+1. **Multiple PersonToPosition Records**: MKs have multiple position records (ministerial roles with `FactionID=NULL` + actual faction membership with `FactionID`)
+2. **Incorrect JOIN Filter**: Query had `AND ptp.FactionID IS NOT NULL` in the JOIN, causing mismatches when bill dates aligned with NULL records instead of faction records
+3. **Data Completeness Issue**: Many MKs' faction records start weeks/months after Knesset 25 began (e.g., מישל בוסקילה joined הימין הממלכתי on 2024-07-05, but submitted 129 bills from 2022-12-12 onwards with no faction records)
+
+**Root Cause**: The Knesset API's `PersonToPosition` table has incomplete historical data for early Knesset 25 (Nov 2022 - early 2023). Bills submitted during these data gaps couldn't be matched to any faction.
+
+**Fixes Applied**:
+- **Removed JOIN Filter** (`comparison.py:1238-1398`): Eliminated `AND ptp.FactionID IS NOT NULL` restriction
+- **PersonFactions CTE** (`comparison.py:1238-1260,1329-1351`): Added new CTE using `ROW_NUMBER()` to prioritize non-NULL FactionIDs when multiple position records match date ranges
+  - Partition by BillID + PersonID
+  - Order by `CASE WHEN FactionID IS NULL THEN 1 ELSE 0 END` (faction records first), then `StartDate DESC`
+  - Only select `rn = 1` (best match)
+- **Updated Faction Filter**: Changed from `ptp.FactionID` to `pf.FactionID` to reference new CTE
+- **Changed Label**: "Unknown Faction" → "Data Unavailable" to accurately represent data quality issue (not political classification)
+
+**Implementation**:
+```sql
+PersonFactions AS (
+    SELECT bi.PersonID, b.BillID, ptp.FactionID,
+        ROW_NUMBER() OVER (
+            PARTITION BY b.BillID, bi.PersonID
+            ORDER BY CASE WHEN ptp.FactionID IS NULL THEN 1 ELSE 0 END,
+                     ptp.StartDate DESC
+        ) as rn
+    FROM KNS_Bill b
+    LEFT JOIN KNS_PersonToPosition ptp ON ...
+)
+SELECT COALESCE(f.Name, 'Data Unavailable') AS FactionName ...
+```
+
+**Results**:
+- ✅ Eliminated "Unknown Faction" - now shows "Data Unavailable" (18 MKs)
+- ✅ Fixed MK attribution: מרב מיכאלי now correctly shows as העבודה (221 bills)
+- ✅ Reduced misclassified MKs from 57 → 18 (correctly identified true data gaps)
+- ✅ Applied fix to both single-Knesset and multiple-Knessets queries
+
+**Data Quality Note**: "Data Unavailable" MKs are not truly independent - all Israeli MKs are elected on party lists. This label indicates periods where PersonToPosition records are missing or incomplete in the Knesset API data.
+
 ### 2025-10-05: Data Consistency Fixes
 **Critical fixes to ensure data accuracy across all bill charts**
 

@@ -999,7 +999,7 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            query += f" AND pf.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
 
                     query += """
@@ -1083,7 +1083,7 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            query += f" AND pf.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
 
                     query += """
@@ -1234,32 +1234,52 @@ class ComparisonCharts(BaseChart):
                         ) all_dates ON B.BillID = all_dates.BillID
                         WHERE all_dates.earliest_date IS NOT NULL
                         GROUP BY B.BillID
+                    ),
+                    PersonFactions AS (
+                        -- Match each bill to the best faction based on date, prioritizing non-NULL FactionIDs
+                        SELECT
+                            bi.PersonID,
+                            b.BillID,
+                            ptp.FactionID,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY b.BillID, bi.PersonID
+                                ORDER BY CASE WHEN ptp.FactionID IS NULL THEN 1 ELSE 0 END,
+                                         ptp.StartDate DESC
+                            ) as rn
+                        FROM KNS_Bill b
+                        LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
+                        JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                        LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
+                            AND b.KnessetNum = ptp.KnessetNum
+                            AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                                BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                                AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
+                        WHERE b.KnessetNum = ?
+                            AND bi.Ordinal = 1
+                            AND bi.PersonID IS NOT NULL
                     )
                     SELECT
-                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COALESCE(f.Name, 'Data Unavailable') AS FactionName,
                         COUNT(DISTINCT p.PersonID) AS MKCount
                     FROM KNS_Bill b
-                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
-                        AND b.KnessetNum = ptp.KnessetNum
-                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
-                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
-                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
-                        AND ptp.FactionID IS NOT NULL
-                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                    LEFT JOIN PersonFactions pf ON b.BillID = pf.BillID
+                        AND bi.PersonID = pf.PersonID
+                        AND pf.rn = 1
+                    LEFT JOIN KNS_Faction f ON pf.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1
                         AND bi.PersonID IS NOT NULL
                         AND b.KnessetNum = ?
                     """
-                    params.append(knesset_filter[0])
+                    params.append(knesset_filter[0])  # First ? in PersonFactions CTE
+                    params.append(knesset_filter[0])  # Second ? in main SELECT
                     knesset_title = f"Knesset {knesset_filter[0]}"
-                    
+
                     # Add bill origin filter using build_filters method
                     temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
                     query += f" AND {temp_filters['bill_origin_condition']}"
-                    
+
                     # Add faction filter for single Knesset
                     if faction_filter:
                         valid_ids = [
@@ -1267,9 +1287,9 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            query += f" AND pf.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
-                    
+
                     query += """
                     GROUP BY f.Name
                     ORDER BY MKCount DESC;
@@ -1305,23 +1325,42 @@ class ComparisonCharts(BaseChart):
                         ) all_dates ON B.BillID = all_dates.BillID
                         WHERE all_dates.earliest_date IS NOT NULL
                         GROUP BY B.BillID
+                    ),
+                    PersonFactions AS (
+                        -- Match each bill to the best faction based on date, prioritizing non-NULL FactionIDs
+                        SELECT
+                            bi.PersonID,
+                            b.BillID,
+                            b.KnessetNum,
+                            ptp.FactionID,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY b.BillID, bi.PersonID
+                                ORDER BY CASE WHEN ptp.FactionID IS NULL THEN 1 ELSE 0 END,
+                                         ptp.StartDate DESC
+                            ) as rn
+                        FROM KNS_Bill b
+                        LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
+                        JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
+                        LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
+                            AND b.KnessetNum = ptp.KnessetNum
+                            AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                                BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                                AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
+                        WHERE bi.Ordinal = 1
+                            AND bi.PersonID IS NOT NULL
                     )
                     SELECT
-                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COALESCE(f.Name, 'Data Unavailable') AS FactionName,
                         COUNT(DISTINCT CONCAT(p.PersonID, '-', b.KnessetNum)) AS MKCount,
                         b.KnessetNum
                     FROM KNS_Bill b
-                    LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
                     JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                     JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
-                        AND b.KnessetNum = ptp.KnessetNum
-                        AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
-                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
-                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
-                        AND ptp.FactionID IS NOT NULL
-                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                    WHERE bi.Ordinal = 1  -- Main initiators only (not supporting members)
+                    LEFT JOIN PersonFactions pf ON b.BillID = pf.BillID
+                        AND bi.PersonID = pf.PersonID
+                        AND pf.rn = 1
+                    LEFT JOIN KNS_Faction f ON pf.FactionID = f.FactionID
+                    WHERE bi.Ordinal = 1
                         AND bi.PersonID IS NOT NULL
                     """
                     
@@ -1345,7 +1384,7 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND ptp.FactionID IN ({placeholders})"
+                            query += f" AND pf.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
 
                     query += """
