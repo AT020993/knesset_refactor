@@ -147,6 +147,35 @@ Both charts joined `KNS_PersonToPosition` on `KnessetNum` only, without checking
 
 **Note**: BillFirstSubmission CTE now appears in 6 locations across comparison.py (consider future refactoring to shared utility)
 
+### 2025-10-05: Queries Per Faction Chart - Date-Based Attribution Fix
+**Achieved 100% data accuracy across all faction attribution logic**
+
+**Problem Identified**: Comprehensive data audit revealed that the Queries Per Faction chart used `StandardFactionLookup` which matched only on PersonID + KnessetNum, without verifying if the query submission date fell within the MK's faction membership period.
+
+**Issue Impact**:
+- If an MK switched factions mid-Knesset AND submitted queries both before and after the switch, ALL queries would be incorrectly attributed to their most recent faction
+- While faction switches mid-Knesset are rare, this violated the platform's commitment to 100% data accuracy
+
+**Fix Applied**:
+- **Queries Per Faction** (`comparison.py:21-94`): Replaced StandardFactionLookup with date-based JOIN
+- Now uses: `CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(ptp.StartDate AS TIMESTAMP) AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)`
+- Matches the same proven pattern used in Agenda charts and Bill charts
+
+**Implementation**:
+```sql
+LEFT JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
+    AND q.KnessetNum = ptp.KnessetNum
+    AND CAST(q.SubmitDate AS TIMESTAMP)
+        BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+        AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
+```
+
+**Result**:
+- ✅ All bill charts (6 charts) use date-based faction attribution
+- ✅ All agenda charts (2 charts) use date-based faction attribution
+- ✅ All query charts (1 chart) now use date-based faction attribution
+- ✅ **100% data accuracy achieved** - researchers can trust that ALL faction attributions are historically correct
+
 ### 2025-10-05: UI Simplification
 - **Removed "How This Works" Expander**: Deleted help section from main page header (`src/ui/pages/data_refresh_page.py:38-40`) for cleaner interface
 

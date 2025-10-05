@@ -24,7 +24,7 @@ class ComparisonCharts(BaseChart):
         faction_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate queries per faction chart."""
+        """Generate queries per faction chart with date-based faction attribution."""
         if not self.check_database_exists():
             return None
 
@@ -35,21 +35,24 @@ class ComparisonCharts(BaseChart):
                 self.db_path, read_only=True, logger_obj=self.logger
             ) as con:
                 if not self.check_tables_exist(
-                    con, ["KNS_Query", "KNS_PersonToPosition"]
+                    con, ["KNS_Query", "KNS_PersonToPosition", "KNS_Faction"]
                 ):
                     return None
 
+                # Use date-based faction attribution - queries attributed to faction MK belonged to at submission time
                 query = f"""
-                    WITH {FactionResolver.get_standard_faction_lookup_cte()}
                     SELECT
-                        {get_faction_name_field('f', "'Unknown'")} AS FactionName,
-                        COUNT(q.QueryID) AS QueryCount
+                        COALESCE(f.Name, 'Unknown') AS FactionName,
+                        COUNT(DISTINCT q.QueryID) AS QueryCount
                     FROM KNS_Query q
-                    LEFT JOIN StandardFactionLookup sfl ON q.PersonID = sfl.PersonID 
-                        AND q.KnessetNum = sfl.KnessetNum 
-                        AND sfl.rn = 1
-                    LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
+                    LEFT JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
+                        AND q.KnessetNum = ptp.KnessetNum
+                        AND CAST(q.SubmitDate AS TIMESTAMP)
+                            BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
+                    LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
                     WHERE q.KnessetNum IS NOT NULL
+                        AND q.SubmitDate IS NOT NULL
                         AND f.Name IS NOT NULL
                         AND {filters["knesset_condition"]}
                     GROUP BY f.Name
