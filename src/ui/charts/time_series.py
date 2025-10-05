@@ -344,7 +344,7 @@ class TimeSeriesCharts(BaseChart):
 
                 current_year = datetime.now().year
                 # Use FirstBillSubmissionDate for accurate chronological representation (98.2% coverage)
-                date_column = "COALESCE(bfs.FirstSubmissionDate, b.LastUpdatedDate)"
+                date_column = "COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))"
 
                 # Configure time period aggregation
                 time_configs = {
