@@ -85,6 +85,9 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 
 ## Recent Updates
 
+### 2025-10-05: UI Simplification
+- **Removed "How This Works" Expander**: Deleted help section from main page header (`src/ui/pages/data_refresh_page.py:38-40`) for cleaner interface
+
 ### 2025-10-05: Collaboration Network Enhancements
 - **Faction Network Redesign**: Implemented weighted force-directed layout where faction distance inversely correlates with collaboration count (more collaborations = closer together)
 - **Removed min_collaborations Filter**: Faction Collaboration Network now shows ALL collaborations (minimum 1) without UI filter

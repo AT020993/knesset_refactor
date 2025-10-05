@@ -38,24 +38,6 @@ class DataRefreshPageRenderer:
     def render_page_header(self) -> None:
         """Render the page title and help information."""
         st.title("🇮🇱 Knesset Data Console")
-        
-        with st.expander("ℹ️ How This Works", expanded=False):
-            st.markdown(dedent("""
-                * **Data Refresh:** Use sidebar controls to fetch OData tables or update faction statuses.
-                * **Predefined Queries & Table Explorer:** These sections use the **sidebar filters** for Knesset and Faction.
-                    * **Query Results:** After running a predefined query, an **additional Knesset filter** appears within the results area for further refinement.
-                    * **Smart Bill Analysis:** Bills show separate counts for main initiators vs supporting members, coalition status, and merge tracking.
-                    * **Coalition Status:** Displays political affiliation (Coalition/Opposition/Government) for bill initiators and query submitters.
-                    * **Bill Merge Tracking:** Shows leading bill information for merged bills (Status ID 122) to track legislative continuity.
-                    * **Institutional Items:** Government bills and procedural agenda items are clearly labeled.
-                * **Predefined Visualizations:**
-                    * Select a plot topic, then a specific plot.
-                    * **A Knesset selector will appear below these dropdowns.** This is the primary Knesset filter for the plots.
-                    * For plots like "Queries/Agendas by Time Period", you can select "All Knessets (Color Coded)" to see multiple Knessets, or pick a specific one. Other plots will typically focus on the single selected Knesset.
-                    * Time-based plots also offer aggregation level and average line options.
-                * **Interactive Chart Builder:** Data for charts is filtered by sidebar selections and then by chart-specific filters.
-                * **Ad-hoc SQL:** Use the sandbox at the bottom to run custom SQL.
-            """))
 
     def render_query_results_section(self) -> None:
         """Render the predefined query results section."""

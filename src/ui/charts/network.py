@@ -268,33 +268,64 @@ class NetworkCharts(BaseChart):
                 if not self.check_tables_exist(con, ["KNS_Bill", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction", "UserFactionCoalitionStatus"]):
                     return None
 
-                # Get faction collaboration breakdown data
+                # Get faction collaboration breakdown data with Knesset-specific faction resolution
                 query = f"""
-                WITH FactionCollaborations AS (
-                    SELECT 
+                WITH BillCollaborations AS (
+                    SELECT
+                        main.PersonID as MainPersonID,
+                        supp.PersonID as SuppPersonID,
+                        main.BillID,
+                        b.KnessetNum
+                    FROM KNS_BillInitiator main
+                    JOIN KNS_Bill b ON main.BillID = b.BillID
+                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID
+                    WHERE main.Ordinal = 1
+                        AND supp.Ordinal > 1
+                        AND b.KnessetNum IS NOT NULL
+                        AND {filters["knesset_condition"]}
+                ),
+                PersonFactions AS (
+                    SELECT DISTINCT
+                        bc.MainPersonID as PersonID,
+                        bc.KnessetNum,
+                        (SELECT f.FactionID
+                         FROM KNS_PersonToPosition ptp
+                         JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                         WHERE ptp.PersonID = bc.MainPersonID
+                             AND ptp.KnessetNum = bc.KnessetNum
+                         ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
+                    FROM BillCollaborations bc
+                    UNION
+                    SELECT DISTINCT
+                        bc.SuppPersonID as PersonID,
+                        bc.KnessetNum,
+                        (SELECT f.FactionID
+                         FROM KNS_PersonToPosition ptp
+                         JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                         WHERE ptp.PersonID = bc.SuppPersonID
+                             AND ptp.KnessetNum = bc.KnessetNum
+                         ORDER BY ptp.StartDate DESC LIMIT 1) as FactionID
+                    FROM BillCollaborations bc
+                ),
+                FactionCollaborations AS (
+                    SELECT
                         main_f.FactionID as MainFactionID,
                         main_f.Name as MainFactionName,
                         COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
                         COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
-                        COUNT(DISTINCT main.BillID) as CollaborationCount
-                    FROM KNS_BillInitiator main
-                    JOIN KNS_Bill b ON main.BillID = b.BillID
-                    JOIN KNS_BillInitiator supp ON main.BillID = supp.BillID 
-                    LEFT JOIN KNS_PersonToPosition main_ptp ON main.PersonID = main_ptp.PersonID AND b.KnessetNum = main_ptp.KnessetNum
-                    LEFT JOIN KNS_PersonToPosition supp_ptp ON supp.PersonID = supp_ptp.PersonID AND b.KnessetNum = supp_ptp.KnessetNum
-                    LEFT JOIN KNS_Faction main_f ON main_ptp.FactionID = main_f.FactionID
-                    LEFT JOIN KNS_Faction supp_f ON supp_ptp.FactionID = supp_f.FactionID
-                    LEFT JOIN UserFactionCoalitionStatus main_ufs ON main_f.FactionID = main_ufs.FactionID AND b.KnessetNum = main_ufs.KnessetNum
-                    LEFT JOIN UserFactionCoalitionStatus supp_ufs ON supp_f.FactionID = supp_ufs.FactionID AND b.KnessetNum = supp_ufs.KnessetNum
-                    WHERE main.Ordinal = 1 
-                        AND supp.Ordinal > 1
-                        AND main_f.FactionID IS NOT NULL
-                        AND supp_f.FactionID IS NOT NULL
-                        AND main_f.FactionID <> supp_f.FactionID
+                        COUNT(DISTINCT bc.BillID) as CollaborationCount
+                    FROM BillCollaborations bc
+                    JOIN PersonFactions main_pf ON bc.MainPersonID = main_pf.PersonID AND bc.KnessetNum = main_pf.KnessetNum
+                    JOIN PersonFactions supp_pf ON bc.SuppPersonID = supp_pf.PersonID AND bc.KnessetNum = supp_pf.KnessetNum
+                    JOIN KNS_Faction main_f ON main_pf.FactionID = main_f.FactionID
+                    JOIN KNS_Faction supp_f ON supp_pf.FactionID = supp_f.FactionID
+                    LEFT JOIN UserFactionCoalitionStatus main_ufs ON main_f.FactionID = main_ufs.FactionID AND bc.KnessetNum = main_ufs.KnessetNum
+                    LEFT JOIN UserFactionCoalitionStatus supp_ufs ON supp_f.FactionID = supp_ufs.FactionID AND bc.KnessetNum = supp_ufs.KnessetNum
+                    WHERE main_pf.FactionID IS NOT NULL
+                        AND supp_pf.FactionID IS NOT NULL
+                        AND main_pf.FactionID <> supp_pf.FactionID
                         AND supp_ufs.CoalitionStatus IS NOT NULL
                         AND supp_ufs.CoalitionStatus IN ('Coalition', 'Opposition')
-                        AND b.KnessetNum IS NOT NULL
-                        AND {filters["knesset_condition"]}
                     GROUP BY main_f.FactionID, main_f.Name, main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus
                 )
                 SELECT 
@@ -1668,14 +1699,14 @@ class NetworkCharts(BaseChart):
         collab_data = df[df['DataType'] == 'collaboration'].copy()
         
         # Get all unique factions
-        all_factions = set()
-        
+        all_factions_set = set()
+
         for _, row in df.iterrows():
-            all_factions.add(row['FactionName1'])
+            all_factions_set.add(row['FactionName1'])
             if row['FactionName1'] != row['FactionName2']:  # Don't add same faction twice for solo bills
-                all_factions.add(row['FactionName2'])
-        
-        all_factions = sorted(list(all_factions))
+                all_factions_set.add(row['FactionName2'])
+
+        all_factions = sorted(list(all_factions_set))
         
         # Get faction coalition status mapping
         faction_status = {}
