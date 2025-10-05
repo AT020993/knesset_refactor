@@ -612,7 +612,7 @@ class ComparisonCharts(BaseChart):
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(COALESCE(bfs.FirstSubmissionDate, b.LastUpdatedDate) AS TIMESTAMP)
+                    AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
@@ -796,7 +796,7 @@ class ComparisonCharts(BaseChart):
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
-                    AND CAST(COALESCE(bfs.FirstSubmissionDate, b.LastUpdatedDate) AS TIMESTAMP)
+                    AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
