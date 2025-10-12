@@ -152,11 +152,6 @@ def plot_agendas_by_coalition_status(db_path, connect_func, logger_obj, **kwargs
     return chart_service.plot_agendas_by_coalition_status(**kwargs)
 
 
-def plot_bill_status_distribution(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper for bill status distribution chart."""
-    chart_service = ChartService(db_path, logger_obj)
-    return chart_service.plot_bill_status_distribution(**kwargs)
-
 def plot_bills_by_time_period(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for bills by time period chart."""
     chart_service = ChartService(db_path, logger_obj)
@@ -182,12 +177,6 @@ def plot_top_bill_initiators(db_path, connect_func, logger_obj, **kwargs):
     """Legacy wrapper for top bill initiators chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_top_bill_initiators(**kwargs)
-
-
-def plot_bill_initiators_by_faction(db_path, connect_func, logger_obj, **kwargs):
-    """Legacy wrapper for bill initiators by faction chart."""
-    chart_service = ChartService(db_path, logger_obj)
-    return chart_service.plot_bill_initiators_by_faction(**kwargs)
 
 
 # Network chart wrappers
@@ -232,13 +221,11 @@ def get_available_plots():
             "Agendas by Coalition Status": plot_agendas_by_coalition_status,
         },
         "Bills Analytics": {
-            "Bill Status Distribution": plot_bill_status_distribution,
             "Bills by Time Period": plot_bills_by_time_period,
             "Bill SubType Distribution": plot_bill_subtype_distribution,
             "Bills per Faction": plot_bills_per_faction,
             "Bills by Coalition Status": plot_bills_by_coalition_status,
             "Top 10 Bill Initiators": plot_top_bill_initiators,
-            "Bill Initiators by Faction": plot_bill_initiators_by_faction,
             "MK Collaboration Network": plot_mk_collaboration_network,
             "Faction Collaboration Network": plot_faction_collaboration_network,
             "Faction Collaboration Matrix": plot_faction_collaboration_matrix,

@@ -1,246 +1,155 @@
 # 🏛️ Knesset Research Platform - Quick Start Guide
 
-*A simple guide for researchers with no coding experience*
+*Simple guide for researchers with no coding experience*
 
 ---
 
 ## 🎯 What This Tool Does
 
-The Knesset Research Platform gives you easy access to Israeli parliamentary data through a web browser. You can:
-
-- 📊 **Browse data tables** - View information about MKs, bills, queries, and committees
-- 🔍 **Run analytical queries** - Use pre-built searches to find specific information  
-- 📈 **Create visualizations** - Generate charts and graphs automatically
-- 📥 **Export data** - Download results to Excel or CSV files
+Access Israeli parliamentary data through a web browser:
+- 📊 **Browse data tables** - MKs, bills, queries, committees
+- 🔍 **Run analytical queries** - Pre-built searches
+- 📈 **Create visualizations** - Automated charts and graphs
+- 📥 **Export data** - Download to Excel or CSV
 - 🕒 **Track historical trends** - Analyze patterns over time
 
-**No coding required** - everything works through a simple web interface!
+**No coding required** - simple web interface!
 
 ---
 
 ## 🚀 First Time Setup (5 minutes)
 
-### Step 1: Run the Setup
-1. **Find the setup file**: Look for `setup_for_researcher.py` in your project folder
-2. **Double-click it** OR open Terminal/Command Prompt and type:
-   ```
-   python setup_for_researcher.py
-   ```
-3. **Wait for completion**: The setup will automatically:
-   - Check your Python installation
-   - Install required software
-   - Download sample data
-   - Create a desktop shortcut
-
-### Step 2: Verify Setup
-You should see:
-- ✅ All steps completed successfully
-- 🖥️ Desktop shortcut created (if possible)
-- 📁 New folders appeared in your project directory
+1. **Run setup**: Double-click `setup_for_researcher.py` or run `python setup_for_researcher.py`
+2. **Wait**: Auto-installs software, downloads sample data, creates desktop shortcut
+3. **Verify**: ✅ All steps completed, desktop shortcut created, new folders appeared
 
 ---
 
-## 🖥️ Daily Usage - Starting the Platform
+## 🖥️ Daily Usage
 
-### Option A: Desktop Shortcut (Easiest)
-1. **Double-click** "Knesset Research Platform" on your desktop
-2. **Click** "🚀 Start Research Platform" in the window that opens
-3. **Wait** for your web browser to open automatically
+**Launch Options:**
+- **Desktop Shortcut**: Double-click "Knesset Research Platform" → Click "🚀 Start Research Platform"
+- **Manual**: Double-click `researcher_launcher.py` → Click "🚀 Start Research Platform"
+- **Command Line**: `python launch_knesset.py`
 
-### Option B: Manual Launch
-1. **Find** `researcher_launcher.py` in your project folder
-2. **Double-click it** OR run: `python researcher_launcher.py`
-3. **Click** "🚀 Start Research Platform"
-
-### Option C: Command Line (Alternative)
-1. **Open Terminal/Command Prompt**
-2. **Navigate** to your project folder
-3. **Type**: `python launch_knesset.py`
+Browser opens automatically to `http://localhost:8501`
 
 ---
 
-## 🌐 Using the Web Interface
+## 🌐 Web Interface Sections
 
-Once started, your browser will open to `http://localhost:8501`
-
-### Main Sections:
-
-#### 📊 **Data Tables**
-- Browse raw parliamentary data
-- Filter by Knesset term, faction, etc.
-- Export filtered results
-
-#### 🔍 **Predefined Queries** 
-Pre-built searches for common research needs:
-- **Bills + Full Details** - Complete bill information with committee sessions
-- **Queries + Full Details** - Parliamentary questions with ministry responses
-- **Agenda Items + Full Details** - Meeting agenda analysis
-
-#### 📈 **Visualizations**
-Ready-made charts organized by topic:
-- **Query Analytics** - Response times, ministry performance
-- **Bills Analytics** - Bill status, faction activity
-- **Agenda Analytics** - Meeting patterns, classifications  
-- **Network Analysis** - Collaboration between MKs
-
-#### 💻 **Custom SQL** (Advanced)
-- Write your own database queries
-- For experienced users only
+**📊 Data Tables**: Browse raw data, filter by Knesset/faction, export results
+**🔍 Predefined Queries**: Pre-built searches (Bills, Queries, Agenda Items with full details)
+**📈 Visualizations**: Ready-made charts (Query Analytics, Bills Analytics, Agenda Analytics, Network Analysis)
+**💻 Custom SQL**: Write custom queries (advanced users)
 
 ---
 
-## 📋 Common Research Tasks
+## 📋 Common Tasks
 
 ### Finding Bill Information
-1. **Go to** "Predefined Queries"
-2. **Select** "Bills + Full Details"
-3. **Choose** Knesset number (25 = current)
-4. **Click** "Execute Query"
-5. **Use filters** to narrow results
-6. **Export** to Excel for further analysis
+1. Go to "Predefined Queries" → "Bills + Full Details"
+2. Choose Knesset number (25 = current)
+3. Execute Query → Use filters → Export to Excel
 
 ### Analyzing Ministry Response Times
-1. **Go to** "Predefined Visualizations"
-2. **Select** "Query Analytics" topic
-3. **Choose** "Response Times by Ministry"
-4. **Filter** by date range or coalition status
-5. **View** interactive charts
+1. "Predefined Visualizations" → "Query Analytics" → "Response Times by Ministry"
+2. Filter by date range or coalition status → View interactive charts
 
 ### Tracking MK Activity
-1. **Go to** "Data Tables"
-2. **Browse** "KNS_PersonToPosition" table
-3. **Filter** by KnessetNum and FactionID
-4. **Export** results for external analysis
+1. "Data Tables" → "KNS_PersonToPosition"
+2. Filter by KnessetNum and FactionID → Export results
 
 ### Committee Session Analysis
-1. **Go to** "Predefined Queries"  
-2. **Select** "Bills + Full Details"
-3. **Look for** "BillCommitteeSessions" column
-4. **Filter** where sessions > 0
-5. **Sort** by session count to find most-discussed bills
+1. "Predefined Queries" → "Bills + Full Details"
+2. Filter where "BillCommitteeSessions" > 0
+3. Sort by session count to find most-discussed bills
 
 ---
 
-## 📥 Exporting Your Data
+## 📥 Exporting Data
 
-### From Query Results:
-1. **Run any query** in "Predefined Queries"
-2. **Scroll down** to see results table
-3. **Click** "Download CSV" or "Download Excel"
-4. **Choose** file location to save
-
-### From Visualizations:
-1. **Open any chart**
-2. **Click** the camera icon (top-right of chart)
-3. **Choose** PNG, SVG, or PDF format
-4. **Save** to your computer
+**Query Results**: Run query → Scroll to results → Click "Download CSV" or "Download Excel"
+**Visualizations**: Open chart → Click camera icon → Choose PNG/SVG/PDF → Save
 
 ---
 
 ## 🔧 Troubleshooting
 
-### "Platform won't start"
-- ✅ **Check:** Did you run the setup script first?
-- ✅ **Try:** Run `python setup_for_researcher.py` again
-- ✅ **Verify:** Python 3.8+ is installed on your computer
+**Platform won't start**
+- Run `python setup_for_researcher.py` again
+- Verify Python 3.8+ installed
 
-### "Browser doesn't open automatically"
-- 🌐 **Manual:** Go to `http://localhost:8501` in any browser
-- 🔄 **Restart:** Close and reopen the launcher
+**Browser doesn't open**
+- Manually go to `http://localhost:8501`
+- Restart launcher
 
-### "No data showing"
-- 📊 **First time:** Platform may need to download data
-- 🔄 **Refresh:** Go to "Data Refresh" section and update tables
-- ⏰ **Wait:** Large downloads can take 10-30 minutes
+**No data showing**
+- Go to "Data Refresh" section and update tables
+- Large downloads take 10-30 minutes
 
-### "Connection errors"
-- 🌐 **Internet:** Ensure stable internet connection
-- 🔒 **Firewall:** Check if firewall blocks localhost connections
-- 🔄 **Restart:** Stop and restart the platform
+**Connection errors**
+- Check stable internet connection
+- Check firewall settings for localhost
+- Restart platform
 
 ---
 
-## 💡 Tips for Effective Research
+## 💡 Research Tips
 
-### Data Organization
-- **Export regularly** - Save your findings to files
-- **Use descriptive names** - "Knesset25_Bills_Analysis.xlsx"
-- **Document filters** - Note which settings you used
-
-### Analysis Workflow  
-1. **Start broad** - Look at overall patterns first
-2. **Narrow down** - Use filters to focus on specific areas
-3. **Cross-reference** - Compare multiple data sources
-4. **Visualize** - Charts often reveal hidden patterns
-
-### Time Management
-- **Download overnight** - Large data updates can take time
-- **Save interim results** - Don't lose work by closing browser
-- **Bookmark queries** - Note useful filter combinations
+**Data Organization**: Export regularly with descriptive names ("Knesset25_Bills_Analysis.xlsx"), document filters
+**Analysis Workflow**: Start broad → narrow with filters → cross-reference sources → visualize patterns
+**Time Management**: Download overnight, save interim results, bookmark useful queries
 
 ---
 
 ## 🆘 Getting Help
 
-### Built-in Help
-- **In the launcher:** Click "❓ Help & Documentation"
-- **In web interface:** Look for help icons and tooltips
-- **Activity log:** Check launcher window for error messages
+**Built-in Help**: Launcher "❓ Help & Documentation", web interface help icons
+**Data Source**: Knesset OData API (`http://knesset.gov.il/Odata/ParliamentInfo.svc`)
+**Documentation**: `docs/KnessetOdataManual.pdf`
 
-### Data Sources
-- **Official source:** Knesset OData API (`http://knesset.gov.il/Odata/ParliamentInfo.svc`)
-- **Documentation:** Check `docs/KnessetOdataManual.pdf` in project folder
+### FAQ
 
-### Common Questions
+**Q: How current is the data?**
+A: Fetched from official Knesset API, updated when you run data refresh
 
-**Q: How current is the data?**  
-A: Data is fetched from the official Knesset API and updated when you run data refresh
+**Q: Can I use offline?**
+A: Yes for basic analysis after download. New data requires internet.
 
-**Q: Can I use this offline?**  
-A: Once data is downloaded, basic analysis works offline. New data requires internet connection.
+**Q: Is this data official?**
+A: Yes, directly from official Israeli Knesset database
 
-**Q: Is this data official?**  
-A: Yes, all data comes directly from the official Israeli Knesset database
-
-**Q: Can I share my results?**  
-A: Yes, exported files can be shared freely. The tool itself requires setup on each computer.
+**Q: Can I share results?**
+A: Yes, exported files are shareable. Tool requires setup on each computer.
 
 ---
 
-## 🔒 Data Privacy & Security
+## 🔒 Data Privacy
 
-- **Local processing:** All analysis happens on your computer
-- **No data upload:** Your research stays private
-- **Official source:** Data comes only from public Knesset APIs
-- **No tracking:** The platform doesn't collect usage statistics
+- **Local processing** - Analysis on your computer
+- **No data upload** - Research stays private
+- **Official source** - Public Knesset APIs only
+- **No tracking** - No usage statistics collected
 
 ---
 
 ## ⚙️ Technical Notes
 
-### System Requirements
-- **Python 3.8+** (usually pre-installed on Mac/Linux)
-- **4GB RAM** recommended for large datasets
-- **2GB free disk space** for data storage
-- **Internet connection** for data updates
+**Requirements**: Python 3.8+, 4GB RAM, 2GB disk space, internet for updates
 
-### File Structure (Reference)
+**File Structure**:
 ```
-📁 Your Project Folder/
-├── 🐍 researcher_launcher.py     # Desktop launcher (main)
-├── ⚙️ setup_for_researcher.py    # One-time setup script  
-├── 🚀 launch_knesset.py          # Command line launcher
-├── 📖 RESEARCHER_GUIDE.md        # This guide
-├── 📁 data/                      # Downloaded data storage
-└── 📁 src/                       # Application code (don't modify)
+📁 Project Folder/
+├── 🐍 researcher_launcher.py     # Desktop launcher
+├── ⚙️ setup_for_researcher.py    # Setup script
+├── 🚀 launch_knesset.py          # CLI launcher
+├── 📁 data/                      # Downloaded data
+└── 📁 src/                       # Application code
 ```
 
-### URL Reference
-- **Main interface:** `http://localhost:8501`
-- **Stop platform:** Close launcher window or press Ctrl+C in terminal
+**URLs**: Main interface `http://localhost:8501`, Stop: Close launcher or Ctrl+C
 
 ---
-
-*This guide covers the essential features for non-technical researchers. The platform includes many advanced capabilities accessible through the web interface.*
 
 **Happy researching! 🎓📊**

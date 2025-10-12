@@ -2,200 +2,119 @@
 
 ## Overview
 
-This project has been refactored from a monolithic structure to a clean, modular architecture following dependency injection and separation of concerns principles. The refactoring dramatically improved maintainability while preserving all existing functionality.
+Clean, modular architecture following dependency injection and separation of concerns. Refactored from monolithic 624-line structure to focused modules (80% code reduction).
 
 ## Architecture Principles
 
-### 1. Clean Architecture
-- **Layered Separation**: Clear boundaries between API, data, UI, and configuration layers
-- **Dependency Inversion**: High-level modules don't depend on low-level modules
-- **Single Responsibility**: Each module has a focused, well-defined purpose
-
-### 2. Design Patterns
-- **Repository Pattern**: Abstracted data access layer for testability
-- **Factory Pattern**: Modular chart generation with inheritance hierarchy
-- **Circuit Breaker Pattern**: Resilient API communication with fault tolerance
-- **Dependency Injection**: Centralized container for managing dependencies
+**Clean Architecture**: Layered separation with dependency inversion and single responsibility
+**Design Patterns**: Repository, Factory, Circuit Breaker, Dependency Injection
 
 ## Directory Structure
 
 ```
 src/
-├── api/                    # External API integration layer
-│   ├── odata_client.py    # Async OData client with circuit breaker
-│   ├── circuit_breaker.py # Fault tolerance implementation
-│   └── error_handling.py  # Error categorization and handling
-├── backend/               # Legacy compatibility and core utilities  
-│   ├── connection_manager.py # Database connection management
-│   ├── duckdb_io.py      # DuckDB I/O operations
-│   ├── fetch_table.py    # Legacy compatibility layer
-│   └── utils.py          # Utility functions
-├── config/               # Centralized configuration management
-│   ├── settings.py      # Application settings and paths
-│   ├── database.py      # Database configuration
-│   ├── api.py          # API configuration
-│   └── charts.py       # Chart configuration and themes
-├── core/                # Core architecture components
-│   └── dependencies.py # Dependency injection container
-├── data/                # Data layer with clean architecture
-│   ├── repositories/   # Repository pattern implementations
-│   └── services/      # Business logic services
-└── ui/                 # Modular UI components
-    ├── charts/        # Modular chart system
-    │   ├── factory.py # Chart factory with inheritance
-    │   ├── base.py   # Base chart class
-    │   └── [specific chart types]
-    ├── pages/        # Page-specific UI components
-    │   ├── data_refresh_page.py # Main page renderer
-    │   └── plots_page.py # Plots interface renderer
-    ├── queries/      # Query management system
-    │   ├── predefined_queries.py # SQL definitions
-    │   └── query_executor.py # Query execution logic
-    ├── services/     # UI business logic services
-    ├── state/        # Session state management
-    │   └── session_manager.py # Centralized state management
-    └── data_refresh.py # Streamlined main interface
+├── api/                    # External API with circuit breaker
+│   ├── odata_client.py    # Async OData client
+│   ├── circuit_breaker.py # Fault tolerance
+│   └── error_handling.py  # Error categorization
+├── backend/               # Legacy compatibility
+│   ├── connection_manager.py # DB connection management
+│   ├── duckdb_io.py      # DuckDB I/O
+│   └── fetch_table.py    # Legacy layer
+├── config/               # Centralized configuration
+│   ├── settings.py      # Application settings
+│   ├── database.py      # Database config
+│   ├── api.py          # API config
+│   └── charts.py       # Chart config
+├── core/                # Architecture components
+│   └── dependencies.py # DI container
+├── data/                # Data layer
+│   ├── repositories/   # Data access
+│   └── services/      # Business logic
+└── ui/                 # Modular UI
+    ├── charts/        # Factory pattern charts
+    ├── pages/        # Page components
+    ├── queries/      # SQL definitions
+    ├── services/     # UI services
+    └── state/        # Session management
 ```
 
 ## Layer Responsibilities
 
 ### API Layer (`src/api/`)
-**Purpose**: External system integration with reliability patterns
-
-- **OData Client**: Async HTTP client with connection pooling
-- **Circuit Breaker**: Prevents cascade failures and provides fallback behavior
-- **Error Handling**: Categorizes errors for appropriate retry strategies
-- **Rate Limiting**: Prevents API abuse and manages request flow
+- Async OData client with connection pooling
+- Circuit breaker for fault tolerance
+- Error categorization for retry strategies
+- Rate limiting and request flow management
 
 ### Configuration Layer (`src/config/`)
-**Purpose**: Centralized configuration management
-
-- **Settings**: Application-wide settings and paths
-- **Database**: Table definitions and connection parameters
-- **API**: Endpoint configurations and request parameters
-- **Charts**: Visualization themes and styling configurations
+- Application-wide settings and paths
+- Table definitions and database parameters
+- API endpoint configurations
+- Visualization themes and styling
 
 ### Core Layer (`src/core/`)
-**Purpose**: Fundamental architecture components
-
-- **Dependency Container**: Manages object lifecycle and dependencies
-- **Service Registration**: Configures service dependencies
-- **Logger Factory**: Provides configured logger instances
+- Dependency container for lifecycle management
+- Service registration and configuration
+- Logger factory
 
 ### Data Layer (`src/data/`)
-**Purpose**: Business logic and data access abstraction
-
-#### Repositories (`src/data/repositories/`)
-- Abstract data access patterns
-- Database operations encapsulation
-- Query building and execution
-- Transaction management
-
-#### Services (`src/data/services/`)
-- Business logic implementation
-- Cross-cutting concerns (caching, validation)
-- Orchestration of repository operations
-- Data transformation and enrichment
+**Repositories**: Abstract data access, query building, transaction management
+**Services**: Business logic, data transformation, cross-cutting concerns
 
 ### UI Layer (`src/ui/`)
-**Purpose**: User interface with component-based architecture
+**Charts**: Factory pattern with inheritance hierarchy, modular design
+**Pages**: Single responsibility renderers with reusable components
+**Queries**: Extracted SQL with metadata, smart initiator detection, coalition status integration
+**State**: Centralized session management with type safety
 
-#### Charts (`src/ui/charts/`)
-- **Factory Pattern**: Dynamic chart creation based on type
-- **Inheritance Hierarchy**: Base chart class with specialized implementations
-- **Modular Design**: Each chart type in separate module
-- **Configuration-driven**: Chart behavior controlled by configuration
-
-#### Pages (`src/ui/pages/`)
-- **Single Responsibility**: Each page handles specific UI concern
-- **Renderer Pattern**: Separates UI logic from data processing
-- **Reusable Components**: Shared UI elements across pages
-
-#### Queries (`src/ui/queries/`)
-- **SQL Separation**: Complex queries extracted from UI code
-- **Metadata Management**: Query descriptions and filter configurations
-- **Execution Logic**: Parameter binding and result processing
-- **Smart Initiator Detection**: Uses Ordinal field to distinguish main vs supporting bill initiators
-- **Coalition Status Integration**: Political affiliation analysis for bill initiators and query submitters  
-- **Bill Merge Tracking**: Legislative continuity through merge relationship tracking (Status ID 122)
-- **Local Filtering**: In-results Knesset filtering independent of sidebar filters
-- **Institutional Handling**: Proper labeling of government and procedural items
-
-#### State (`src/ui/state/`)
-- **Centralized Management**: Single source of truth for session state
-- **Type Safety**: Type-safe accessors and mutators
-- **Encapsulation**: State changes through controlled interfaces
-
-## Key Improvements from Refactoring
+## Key Improvements
 
 ### Before Refactoring
-- **Monolithic Files**: Single 624-line `data_refresh.py` with mixed concerns
-- **Hardcoded SQL**: 170+ line queries embedded in UI code  
-- **Scattered State**: Session state initialized throughout codebase
-- **Tight Coupling**: UI directly coupled to database operations
-- **Limited Testability**: Hard to unit test due to dependencies
-- **No Design Patterns**: Lack of structured architectural patterns
+- Monolithic 624-line files with mixed concerns
+- 170+ line queries embedded in UI
+- Scattered session state initialization
+- Tight UI-database coupling
+- Limited testability
 
-### After Refactoring (80% Code Reduction)
-- **Modular Architecture**: Clear separation of concerns across focused modules
-- **Extracted Queries**: SQL queries centralized with metadata and helpers
-- **Centralized State**: Type-safe session state management
-- **Loose Coupling**: Dependency injection enables easy testing and changes
-- **High Testability**: Each component can be tested independently
-- **Design Patterns**: Repository, Factory, Circuit Breaker, and Dependency Injection patterns implemented
-- **Legacy Compatibility**: Backward compatibility maintained with deprecation warnings
-- **Enhanced Query Intelligence**: Smart initiator detection, coalition status analysis, bill merge tracking, local filtering, and institutional handling
-- **Data Accuracy**: Proper distinction between main and supporting bill initiators with political affiliation context
-- **Legislative Continuity**: Complete tracking of bill merge relationships and progression
+### After Refactoring (80% Reduction)
+- Modular architecture with focused modules
+- Centralized SQL queries with metadata
+- Type-safe session state management
+- Dependency injection for loose coupling
+- High testability with independent components
+- Repository, Factory, Circuit Breaker, DI patterns
+- Smart initiator detection and coalition analysis
+- Legislative continuity tracking with bill merge relationships
 
 ## Data Flow
 
 ```
-User Request → UI Page → Query Executor → Repository → Database
-                ↓
-Session Manager ← Service Layer ← Data Layer ← API Client → External API
+User → UI Page → Query Executor → Repository → Database
+         ↓
+Session Manager ← Service ← Data ← API Client → External API
 ```
 
-### Request Processing Flow
-1. **User Interaction**: User interacts with Streamlit UI components
-2. **State Management**: Session state updated through centralized manager
-3. **Service Layer**: Business logic processes request with injected dependencies
-4. **Repository Layer**: Data access abstracted through repository pattern
-5. **Database Operations**: Optimized queries executed against DuckDB
-6. **Result Processing**: Data transformed and returned through layers
-7. **UI Update**: Results displayed through component-based UI
+**Processing**: User interaction → State update → Service layer → Repository → Database → Transform → UI update
 
 ## Configuration Management
 
-### Centralized Configuration
-All application settings managed through dedicated configuration modules:
-
 ```python
-# settings.py - Application-wide settings
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+# settings.py - Application settings
 DEFAULT_DB_PATH = DATA_DIR / "warehouse.duckdb"
 
-# database.py - Database configuration
+# database.py - Tables and connections
 TABLES = ["KNS_Query", "KNS_Agenda", "KNS_Person", ...]
-CURSOR_TABLES = ["KNS_CommitteeSession", "KNS_Bill"]
 
-# api.py - API configuration  
+# api.py - API configuration
 BASE_URL = "http://knesset.gov.il/Odata/ParliamentInfo.svc"
 PAGE_SIZE = 1000
-MAX_RETRIES = 3
 ```
 
 ## Dependency Injection
 
-### Container Pattern
 ```python
 class DependencyContainer:
-    def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or Settings.DEFAULT_DB_PATH
-        self._data_refresh_service = None
-        self._logger = None
-    
     @property
     def data_refresh_service(self) -> DataRefreshService:
         if self._data_refresh_service is None:
@@ -203,206 +122,71 @@ class DependencyContainer:
         return self._data_refresh_service
 ```
 
-### Benefits
-- **Testability**: Easy to inject mocks for testing
-- **Flexibility**: Service implementations can be swapped
-- **Lifecycle Management**: Container manages object creation and cleanup
-- **Configuration**: Services configured consistently
+**Benefits**: Testability (easy mocking), flexibility (swappable implementations), lifecycle management, consistent configuration
 
-## Error Handling Strategy
+## Error Handling
 
-### Layered Error Handling
-1. **API Layer**: Categorizes external API errors (network, server, client)
-2. **Circuit Breaker**: Prevents cascade failures with configurable thresholds
-3. **Service Layer**: Handles business logic errors with appropriate responses
-4. **UI Layer**: Displays user-friendly error messages with context
-
-### Error Categories
-```python
-class ErrorCategory(Enum):
-    NETWORK = "network"     # Connection issues
-    SERVER = "server"       # 5xx HTTP responses  
-    CLIENT = "client"       # 4xx HTTP responses
-    TIMEOUT = "timeout"     # Request timeouts
-    DATA = "data"          # Data validation errors
-    UNKNOWN = "unknown"     # Unhandled errors
-```
+**Layered Strategy**:
+1. **API Layer**: Categorizes errors (network, server, client, timeout)
+2. **Circuit Breaker**: Prevents cascade failures
+3. **Service Layer**: Business logic error handling
+4. **UI Layer**: User-friendly error messages
 
 ## Testing Strategy
 
 ### Unit Testing
-- **Component Isolation**: Each module tested independently
-- **Mock Injection**: Dependencies mocked through injection container
-- **Focused Tests**: Tests target specific functionality without side effects
+- Component isolation with mock injection
+- 60%+ coverage requirement
+- pytest framework
 
 ### Integration Testing
-- **End-to-End Flows**: Complete request processing tested
-- **Database Integration**: Real database operations in controlled environment
-- **UI Components**: Streamlit components tested with proper mocking
+- End-to-end flows with real database
+- API integration with mocks
+- Service layer business logic
 
-## Performance Considerations
-
-### Optimization Strategies
-- **Connection Pooling**: Reuse database connections across requests
-- **Lazy Loading**: Services instantiated only when needed
-- **Query Optimization**: Parameterized queries with proper indexing
-- **Caching**: Strategic caching at service and repository levels
-- **Async Operations**: Non-blocking operations for external API calls
-
-### Memory Management
-- **Resource Cleanup**: Proper disposal of database connections
-- **State Management**: Efficient session state storage
-- **Streaming**: Large dataset processing without loading entire result sets
-
-## Testing Architecture
-
-### Multi-Layer Testing Strategy
-
-The project implements a comprehensive testing strategy with multiple layers:
-
-#### 1. Unit Testing
-- **Framework**: pytest with coverage reporting
-- **Coverage Target**: 60%+ coverage requirement
-- **Scope**: Individual functions, classes, and modules
-- **Test Types**: 
-  - Data validation tests
-  - API integration tests
-  - Database connection tests
-  - UI component tests
-
-#### 2. Integration Testing
-- **Database Integration**: Tests with actual DuckDB instances
-- **API Integration**: Tests with mock and real API endpoints
-- **Service Layer Testing**: Tests business logic integration
-- **Configuration Testing**: Tests configuration loading and validation
-
-#### 3. End-to-End Testing
-- **Framework**: Playwright with pytest integration
-- **Browser Coverage**: Chromium, Firefox, WebKit
-- **Test Coverage**:
-  ```
-  ✅ Main page loading and header verification
-  ✅ Data refresh controls functionality  
-  ✅ Predefined queries section
-  ✅ Sidebar navigation
-  ✅ Error handling with invalid inputs
-  ✅ Responsive design (mobile viewport)
-  ✅ Page load performance
-  ```
-- **Automation**: Integrated in CI/CD pipeline
-- **Success Rate**: 100% (7/7 tests passing)
-
-#### 4. Performance Testing
-- **Load Testing**: Database query performance under load
-- **Memory Testing**: Memory usage patterns and leak detection
-- **Response Time**: API response time monitoring
-- **Scalability Testing**: Large dataset processing validation
-
-### Testing Infrastructure
-
-#### CI/CD Integration
-- **GitHub Actions**: Automated testing on every push
-- **Multi-stage Pipeline**:
-  1. Unit tests (required to pass)
-  2. Code quality checks (linting, formatting)
-  3. Security scanning (dependency vulnerabilities)
-  4. End-to-end tests (browser automation)
-  5. Performance verification
-
-#### Test Data Management
-- **Fixtures**: Reusable test data in `tests/fixtures/`
-- **Mock Data**: Simulated API responses for reliable testing
-- **Test Databases**: Isolated test database instances
-- **Data Cleanup**: Automatic cleanup after test runs
-
-#### Quality Gates
-- **Coverage Requirements**: Minimum 60% code coverage
-- **Performance Thresholds**: Maximum response times
-- **Error Rate Limits**: Zero critical errors allowed
-- **Security Standards**: No high-severity vulnerabilities
+### End-to-End Testing
+- Playwright framework (Chromium, Firefox, WebKit)
+- 100% success rate (7/7 tests passing)
+- CI/CD automation in GitHub Actions
+- Coverage: Page loading, data refresh, queries, navigation, error handling, responsive design, performance
 
 ### Test Execution
-
 ```bash
-# Unit testing
-pytest                                    # All tests
-pytest --cov=src --cov-report=term      # With coverage
-pytest -m "not slow"                     # Fast tests only
-
-# End-to-end testing  
-pytest -m e2e --base-url http://localhost:8501
-
-# Performance testing
-pytest -m performance                    # Performance test suite
+pytest                                    # All tests with coverage
+pytest -m e2e --base-url http://localhost:8501  # E2E tests
 ```
 
-## Security Considerations
+## Security
 
-### Data Protection
-- **SQL Injection Prevention**: Parameterized queries throughout
-- **Input Validation**: All user inputs validated before processing
-- **Connection Security**: Secure database connections with proper credentials
-- **Error Information**: Limited error information exposed to users
+**Data Protection**: Parameterized queries, input validation, secure connections, limited error exposure
+**Access Control**: Read-only mode by default, permission isolation, audit logging
 
-### Access Control
-- **Read-only Operations**: Database connections use read-only mode by default
-- **Permission Isolation**: Different permission levels for different operations
-- **Audit Logging**: Comprehensive logging of data access operations
+## Migration Status
 
-## Migration Notes
-
-### Backward Compatibility
-- **Legacy Imports**: Old import paths still work with deprecation warnings
-- **Function Signatures**: Existing function signatures preserved where possible
-- **Configuration**: Existing configuration files continue to work
-- **Data Formats**: All existing data formats supported
-
-### Deprecation Strategy
-```python
-warnings.warn(
-    "plot_generators module is deprecated. Use ui.charts.factory.ChartFactory instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
-```
-
-## Current Migration Status
-
-### Completed Migrations
-- ✅ **Main UI Refactoring**: `data_refresh.py` reduced from 624 to ~120 lines
-- ✅ **Query Extraction**: SQL queries moved to dedicated modules
-- ✅ **State Management**: Centralized session state with type safety
-- ✅ **Configuration System**: All settings in dedicated configuration modules
-- ✅ **Service Layer**: Business logic separated from UI concerns
-- ✅ **Dependency Injection**: Container pattern implemented throughout
+### Completed
+- ✅ Main UI refactoring (624 → 120 lines)
+- ✅ Query extraction to dedicated modules
+- ✅ Centralized state management
+- ✅ Configuration system
+- ✅ Service layer separation
+- ✅ Dependency injection implementation
+- ✅ E2E testing with Playwright
+- ✅ Project cleanup
 
 ### In Progress
-- 🔄 **Chart System Migration**: Factory pattern implemented, some chart types still need full implementation
-- 🔄 **Legacy Deprecation**: Gradual phase-out of old modules with warnings
-
-### Recently Completed
-- ✅ **End-to-End Testing**: Comprehensive E2E test suite with Playwright (7/7 tests passing)
-- ✅ **Project Cleanup**: Removed legacy files while preserving all functionality
-- ✅ **CI/CD Enhancement**: Automated E2E testing in GitHub Actions pipeline
-- ✅ **Faction Coalition Mapping**: CSV export system for manual political status assignment (529 factions, Knesset 1-25, Excel-compatible Hebrew encoding)
+- 🔄 Chart system migration
+- 🔄 Legacy deprecation
 
 ### Planned
-- ⏳ **Legacy Code Removal**: Remove deprecated modules once new system is fully tested
-- ⏳ **Performance Optimization**: Further optimization of large files
-- ⏳ **Test Coverage Expansion**: Additional integration tests for modular components
+- ⏳ Legacy code removal
+- ⏳ Performance optimization
+- ⏳ Test coverage expansion
 
-## Future Architecture Considerations
+## Future Considerations
 
-### Scalability Enhancements
-- **Microservices**: Split into independent, scalable services
-- **Message Queues**: Async processing with message queue integration
-- **Caching Layer**: Redis integration for distributed caching
-- **Load Balancing**: Multi-instance deployment with load balancing
+**Scalability**: Microservices, message queues, Redis caching, load balancing
+**Technology**: DuckDB upgrades, Streamlit updates, Python version support, automated dependency updates
 
-### Technology Evolution
-- **Database Upgrades**: Migration path to newer DuckDB versions
-- **Framework Updates**: Streamlit version upgrade compatibility
-- **Python Version**: Support for newer Python versions
-- **Dependency Management**: Automated dependency updates with testing
+---
 
-This architecture provides a solid foundation for ongoing development while maintaining the high-quality, maintainable codebase that was achieved through the refactoring process. The modular design enables incremental improvements and makes the system highly maintainable for future development.
+*Modular architecture enables incremental improvements and high maintainability for future development.*

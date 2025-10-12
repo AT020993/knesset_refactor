@@ -7,272 +7,56 @@
 [![DuckDB](https://img.shields.io/badge/DuckDB-1.2.2-yellow.svg)](https://duckdb.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.44.1-red.svg)](https://streamlit.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#-license)
-[![Architecture](https://img.shields.io/badge/Architecture-Clean%20%26%20Modular-green.svg)](#-key-features)
 
-**A comprehensive platform for fetching, storing, analyzing, and visualizing Israeli parliamentary data**
+**Comprehensive platform for fetching, analyzing, and visualizing Israeli parliamentary data**
 
 *Democratizing access to parliamentary data for researchers, analysts, and citizens*
 
-[Quick Start](#-quick-start) • [Features](#-key-features) • [Documentation](#-project-structure) • [API Reference](#-usage-examples) • [Contributing](#-contributing)
+[Quick Start](#-quick-start) • [Features](#-key-features) • [Documentation](#-project-structure)
 
 </div>
 
 ---
 
-## 📋 Table of Contents
+## 🎯 Overview
 
-<details>
-<summary>Click to expand</summary>
+A complete parliamentary data platform providing:
 
-- [🎯 Project Overview](#-project-overview)
-- [✨ Key Features](#-key-features)
-- [🚀 Quick Start](#-quick-start)
-- [🛠️ Installation](#-installation)
-- [📖 Usage Guide](#-usage-guide)
-- [📊 Visualizations](#-available-visualizations)
-- [📂 Project Structure](#-project-structure)
-- [🧪 Testing](#-testing)
-- [🤖 AI & CI/CD](#-ai-powered-development--cicd)
-- [🔧 Troubleshooting](#-troubleshooting)
-- [📚 Examples](#-usage-examples)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
-
-</details>
-
----
-
-## 🎯 Project Overview
-
-Transform complex parliamentary data into actionable insights with:
-
-- 🔄 **Automated data fetching** from official Knesset OData API
+- 🔄 **Automated fetching** from official Knesset OData API with circuit breaker pattern
 - 💾 **Efficient storage** in DuckDB with Parquet backup
-- 📊 **18+ interactive visualizations** for parliamentary analysis  
-- 🖥️ **User-friendly Streamlit interface** for non-technical users
+- 📊 **18+ interactive visualizations** for parliamentary analysis
+- 🖥️ **User-friendly Streamlit interface** with modular architecture
 - ⚙️ **Robust CLI tools** for automated workflows
-
-### 🎯 Project Goals
-
-- **Data Accessibility:** Provide easy access to Israeli parliamentary data for researchers and analysts
-- **Self-Service:** Enable users (including non-technical ones) to independently refresh, explore, and download curated and raw data
-- **Comprehensive Data Management:** Support robust and resumable fetching, efficient storage, and timely updates of parliamentary data
-- **User-Friendly Interface:** Offer an intuitive Streamlit-based interface for data interaction, exploration, and exportation
 
 ## ✨ Key Features
 
-### Backend Architecture (Clean & Modular - Recently Refactored)
-* **Data Services Layer (`src/data/`):**
-    * **Automated OData Fetching:** Retrieves data directly from the official Knesset OData API with circuit breaker pattern
-    * **Repository Pattern:** Clean separation between data access and business logic
-    * **Dependency Injection:** Testable, maintainable architecture with centralized configuration
-    * **Resume State Management:** Advanced checkpoint system for interrupted downloads
-* **API Layer (`src/api/`):**
-    * **Robust OData Client:** Implements circuit breaker, retry logic, and proper error categorization
-    * **Fault Tolerance:** Circuit breaker pattern prevents cascade failures
-    * **Parallel Downloads:** Utilizes `asyncio` for concurrent fetching, significantly speeding up data acquisition
-    * **Connection Management:** Monitors and prevents database connection leaks
-* **Storage & Configuration:**
-    * **DuckDB Warehouse:** Stores all fetched data in a local DuckDB database (`data/warehouse.duckdb`) for fast querying
-    * **Parquet Files:** Mirrors each table into compressed Parquet files (`data/parquet/`) for optimized storage
-    * **Centralized Configuration:** All settings managed through dedicated configuration modules
-* **Manual Faction Coalition Status Integration:**
-    * Loads and integrates user-maintained faction coalition/opposition statuses from CSV
-    * Enriches parliamentary analysis by providing context on faction alignments
-* **Logging:** Comprehensive logging using the `src/utils/logger_setup.py` module
+### Backend Architecture
+* **Clean Architecture:** Repository pattern with dependency injection
+* **Robust API Client:** Async OData client with circuit breaker and retry logic
+* **DuckDB Warehouse:** Fast querying with Parquet backup
+* **Resume State Management:** Advanced checkpoint system for interrupted downloads
+* **Connection Management:** Monitors and prevents database connection leaks
 
-### Frontend - Modular Streamlit UI (Major Refactoring Complete)
-* **Clean Architecture (`src/ui/`):**
-    * **Page-based Structure:** Separate modules for different UI sections (`pages/`, `queries/`, `state/`)
-    * **Centralized State Management:** Type-safe session state management with proper encapsulation
-    * **Query Separation:** Complex SQL queries extracted to dedicated modules with metadata
-    * **Component-based UI:** Reusable UI components with clear separation of concerns
-    * **Factory Pattern Charts:** Modular chart system with inheritance hierarchy
-    * **Service Layer:** Decoupled UI from backend logic through service pattern
-* **Self-Service Data Refresh:**
-    * Select specific OData tables or refresh all predefined tables
-    * Monitor live progress of data fetching with real-time updates
-    * Dedicated controls for faction coalition status data refresh
-* **Predefined Queries System:**
-    * Execute curated SQL queries with proper filtering and parameterization
-    * Dynamic query execution with type-safe parameter handling
-    * Built-in examples: "Queries + Full Details", "Agenda Items + Full Details", "Bills + Full Details"
-    * Results displayed interactively with comprehensive download options
-    * **Local Knesset Filtering:** Additional filter controls within query results for refined analysis
-    * **Smart Initiator Detection:** Distinguishes between main bill initiators and supporting members using Ordinal field
-    * **Coalition Status Analysis:** Shows coalition/opposition status for bill initiators and query submitters
-    * **Bill Merge Tracking:** Displays leading bill information for merged bills (Status ID 122)
-    * **Enhanced Committee Resolution:** Improved committee name resolution from 14.8% to 71.4% success rate using historical committee data across Knessets 1-25
-    * **Committee Session Analysis:** **COMPLETE DATASET** - Downloaded 74,951/75,051 committee session items (99.9%) providing 10,232 bills with verified committee session connections (1-107 sessions per bill, 17.6% coverage - 5.1x improvement)
-    * **Plenum Session Integration:** Direct bill-to-plenum session connections with 14,411 bills linked to plenum sessions (2011-2025), showing session counts, timelines, duration analysis, and session details
-    * **Bill Timeline Analysis:** NEW `FirstBillSubmissionDate` column providing accurate bill submission dates using multi-source date resolution (98.2% coverage with chronologically ordered timelines: submission ≤ committee ≤ plenum)
-    * **Institutional Handling:** Properly labels government bills and institutional agenda items
-* **Interactive Table Explorer:**
-    * Dynamic table browsing with intelligent filter application
-    * Auto-detection of filterable columns (KnessetNum, FactionID)
-    * Real-time filter application with session state persistence
-* **Enhanced Filtering:** Centralized sidebar filters with proper state management
-* **Ad-hoc SQL Sandbox:** Advanced users can run custom SQL queries with error handling
-* **Data Export:** Multi-format download (CSV, Excel) with proper encoding support
-* **Faction Coalition Mapping:** Export complete faction-to-coalition status mapping CSV (529 factions, Knesset 1-25) with Excel-compatible Hebrew encoding for manual political categorization
-* **Comprehensive Visualizations:**
-    * **Predefined Charts:** Over 18 ready-to-use visualizations covering queries, agendas, bills, and advanced analytics
-    * **Query Analytics:** Response times by ministry, coalition status analysis with optional date range filtering, performance metrics
-    * **Parliamentary Activity:** Calendar heatmaps showing daily activity intensity patterns
-    * **Network Analysis:** MK collaboration networks based on shared ministry focus
-    * **Hierarchical Views:** Sunburst charts for ministry workload breakdown by query type and status
-    * **Timeline Analysis:** Coalition periods, MK tenure, and ministry leadership timelines
-    * **Temporal Filtering:** Date range controls for analyzing specific time periods in faction query patterns
-    * Interactive engagement with all charts powered by Plotly
+### Frontend - Streamlit UI
+* **Modular Design:** Page-based structure with centralized state management
+* **Predefined Queries:** Curated SQL queries with metadata and smart filtering
+  * **100% Data Accuracy:** Date-based faction attribution for bills, agendas, and queries
+  * **Complete Committee Data:** 74,951/75,051 committee sessions (99.9% coverage)
+  * **Bill Timeline Analysis:** Multi-source date resolution with 98.2% coverage
+  * **Coalition Status Integration:** Manual faction coalition/opposition tracking
+* **Interactive Visualizations:** 18+ charts covering queries, agendas, bills, and network analysis
+* **Table Explorer:** Dynamic browsing with intelligent filter application
+* **SQL Sandbox:** Custom query execution with error handling
+* **Data Export:** Multi-format download (CSV, Excel) with proper encoding
 
-### Command-Line Interface (CLI)
-* **Backend CLI (`src/backend/fetch_table.py`):**
-    * Refresh all or specific OData tables.
-    * Refresh only the faction coalition status data.
-    * Execute ad-hoc SQL queries directly.
-    * List available OData tables.
-* **Simplified CLI (`src/cli.py` & `scripts/refresh_all.sh`):**
-    * A `typer`-based CLI for quick refreshes, primarily used by the `scripts/refresh_all.sh` script for a full data refresh.
-
-## 📂 Project Structure
-
-```plaintext
-knesset_refactor/
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # GitHub Actions CI configuration
-├── .streamlit/
-│   └── config.toml            # Streamlit configuration
-├── data/
-│   ├── faction_coalition_status.csv # User-managed faction status (create this file)
-│   ├── parquet/               # Raw parquet files (auto-generated)
-│   ├── warehouse.duckdb       # DuckDB database storage (auto-generated)
-│   └── .resume_state.json     # Internal file for resuming downloads (auto-generated)
-├── faction_coalition_mapping.csv # Generated CSV with all factions for manual status entry
-├── docs/
-│   └── KnessetOdataManual.pdf # Official Knesset OData documentation
-├── scripts/
-│   └── refresh_all.sh         # Shell script for a full data refresh using the Typer CLI
-├── src/
-│   ├── api/                   # API layer with robust OData client
-│   │   ├── odata_client.py    # Async OData client with circuit breaker
-│   │   ├── circuit_breaker.py # Circuit breaker pattern implementation
-│   │   ├── error_handling.py  # Error categorization and handling
-│   │   └── __init__.py
-│   ├── backend/               # Legacy compatibility and core utilities
-│   │   ├── connection_manager.py # Database connection management
-│   │   ├── duckdb_io.py      # DuckDB I/O operations
-│   │   ├── fetch_table.py    # Legacy compatibility layer
-│   │   ├── tables.py         # Table definitions
-│   │   ├── utils.py          # Utility functions
-│   │   └── __init__.py
-│   ├── config/               # Centralized configuration management
-│   │   ├── settings.py       # Application settings
-│   │   ├── database.py       # Database configuration
-│   │   ├── api.py           # API configuration
-│   │   ├── charts.py        # Chart configuration
-│   │   └── __init__.py
-│   ├── core/                 # Core architecture components
-│   │   ├── dependencies.py  # Dependency injection container
-│   │   └── __init__.py
-│   ├── data/                 # Data layer with clean architecture
-│   │   ├── repositories/     # Repository pattern implementations
-│   │   ├── services/        # Business logic services
-│   │   └── __init__.py
-│   ├── ui/                   # Modular UI components
-│   │   ├── charts/          # Modular chart system
-│   │   │   ├── factory.py   # Chart factory with inheritance
-│   │   │   ├── base.py      # Base chart class
-│   │   │   ├── comparison.py # Comparison charts
-│   │   │   ├── distribution.py # Distribution charts
-│   │   │   ├── network.py   # Network analysis charts
-│   │   │   ├── timeline.py  # Timeline charts
-│   │   │   └── __init__.py
-│   │   ├── pages/           # Page-specific UI components
-│   │   │   ├── data_refresh_page.py # Main page renderer
-│   │   │   ├── plots_page.py # Plots interface renderer
-│   │   │   └── __init__.py
-│   │   ├── queries/         # Query management system
-│   │   │   ├── predefined_queries.py # SQL definitions
-│   │   │   ├── query_executor.py # Query execution logic
-│   │   │   └── __init__.py
-│   │   ├── services/        # UI business logic services
-│   │   │   ├── chart_service.py # Chart generation service
-│   │   │   └── __init__.py
-│   │   ├── state/           # Session state management
-│   │   │   ├── session_manager.py # Centralized state management
-│   │   │   └── __init__.py
-│   │   ├── data_refresh.py  # Streamlined main interface
-│   │   ├── sidebar_components.py # Sidebar UI components
-│   │   ├── ui_utils.py      # UI utility functions
-│   │   ├── plot_generators.py # Legacy compatibility layer
-│   │   └── __init__.py
-│   ├── utils/
-│   │   ├── logger_setup.py  # Logging configuration
-│   │   └── __init__.py
-│   └── cli.py               # Typer-based CLI with dependency injection
-├── tests/
-│   ├── conftest.py            # Pytest fixtures and configuration
-│   ├── test_fetch_table.py    # Unit tests for data-fetching logic
-│   └── test_views.py          # Unit tests for UI predefined queries
-├── requirements.txt           # Project dependencies
-└── README.md                  # This file
+### Command-Line Interface
+```bash
+PYTHONPATH="./src" python -m backend.fetch_table --all              # Refresh all tables
+PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query  # Specific table
+bash scripts/refresh_all.sh                                         # Alternative CLI
 ```
 
-## 🛠️ Technologies Used
-
-### Core Technologies
-* **Python 3.12+** (Required)
-* **DuckDB 1.2.2:** High-performance analytical database for the data warehouse
-* **Pandas 2.2.3:** Data manipulation and analysis
-* **PyArrow 19.0.1:** Columnar data format support
-* **FastParquet 2024.11.0:** Fast parquet file I/O
-
-### Architecture & Patterns (Recently Implemented)
-* **Clean Architecture:** Layered separation with dependency injection
-* **Repository Pattern:** Abstracted data access layer
-* **Circuit Breaker Pattern:** Resilient API communication with fault tolerance
-* **Factory Pattern:** Modular chart generation system with inheritance
-* **Dependency Injection:** Centralized container for testable, maintainable codebase
-* **Service Layer:** Decoupled business logic from UI concerns
-
-### Frontend & Visualization
-* **Streamlit 1.44.1:** Modern web UI framework
-* **Plotly 5.0+:** Interactive data visualizations
-* **Component-based Architecture:** Reusable UI components
-
-### Networking & Reliability
-* **aiohttp 3.9.4:** Asynchronous HTTP client with connection pooling
-* **backoff 2.2.1:** Intelligent retry strategies
-* **Circuit Breaker:** Fault tolerance for API calls
-
-### Development & Testing
-* **Pytest 8.3.5:** Comprehensive unit testing framework
-* **Type Hints:** Full type safety with runtime validation
-* **Typer 0.12+:** Modern CLI framework with dependency injection
-* **OpenPyXL 3.1.5:** Excel export functionality
-* **tqdm 4.66.1:** Progress visualization
-
-## 📸 Screenshots
-
-### Streamlit Interface
-*Coming soon: Screenshots of the data refresh interface and visualizations*
-
-### Sample Visualizations
-*Coming soon: Examples of parliamentary activity heatmaps, MK collaboration networks, and query analytics*
-
 ## 🚀 Quick Start
-
-Get up and running in 5 minutes:
-
-<details>
-<summary><b>🔧 Prerequisites</b></summary>
-
-- **Python 3.12+** (Required)
-- **Git**
-- **4GB+ RAM** (recommended for large datasets)
-
-</details>
 
 ```bash
 # 1. Clone and setup
@@ -292,552 +76,196 @@ PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 streamlit run src/ui/data_refresh.py
 ```
 
-🎉 **Open `http://localhost:8501`** and explore the modular UI!
+🎉 **Open `http://localhost:8501`** and explore!
 
-### ✨ Recent Major Updates
+## 📂 Project Structure
 
-- 🎯 **October 2025: 100% Data Accuracy Achievement** - Fixed systematic faction attribution issues across the entire platform. All charts (bills, agendas, queries) now use date-based faction matching, ensuring 100% historically accurate attribution when MKs change factions. Fixed 786 bills (7.63% of Knesset 25) that were incorrectly attributed. Comprehensive validation and testing included.
-- 🧪 **August 2025: End-to-End Testing with Playwright** - Added comprehensive E2E test suite with 100% pass rate, automated in CI/CD pipeline
-- 🗂️ **Project Cleanup** - Removed legacy files and documentation while preserving all visualization functionality
-- 📅 **Enhanced Bill Timeline Analysis** - Added `FirstBillSubmissionDate` column with multi-source date resolution, ensuring chronological accuracy (submission ≤ committee ≤ plenum) and 98.2% coverage across all bills
-- 🏗️ **Architecture Refactoring**: Broke down monolithic 624-line file into focused modules (80% reduction)
-- 🧩 **Component-based UI** with clean separation of concerns
-- 🎯 **Type-safe session management** with centralized state
-- 📊 **Extracted SQL queries** for better maintainability
-- 🔄 **Circuit Breaker Pattern** for resilient API communication
-- 🏭 **Factory Pattern Charts** with inheritance hierarchy
-- 🔧 **Dependency Injection** throughout the application
-- 📈 **Enhanced Filtering** for all predefined visualizations
-- 🗃️ **SubTypeDesc Integration** for improved query accuracy
-
-### 🎉 **MAJOR BREAKTHROUGH: Complete Committee Session Data**
-
-- **📥 Complete Download**: 74,951/75,051 committee session items (99.9% coverage)
-- **🚀 5.1x Coverage Improvement**: From 1,992 to 10,232 bills with committee session data
-- **📊 Coverage Jump**: From 3.4% to 17.6% of all bills having accurate committee dates
-- **✅ User Impact**: About 1 in 6 bills now show verified committee session information
-- **⏱️ Session Range**: 1-107 sessions per bill (average 3.6), spanning decades of legislative history
-- **🎯 Examples**: חוק התכנון והבנייה (107 sessions), הצעת חוק שירות ביטחון (57 sessions)
-- **🏛️ Knesset Coverage**: 15.4% in Knesset 25, 17.2% in Knesset 20, 8.7% in Knesset 24
-
----
-
-### 📁 Optional Configuration
-
-<details>
-<summary><b>Faction Status CSV (Recommended)</b></summary>
-
-Create `data/faction_coalition_status.csv` to track coalition/opposition status:
-
-```csv
-KnessetNum,FactionID,FactionName,CoalitionStatus,DateJoinedCoalition,DateLeftCoalition
-25,961,Likud,Coalition,2022-12-29,
-25,954,Yesh Atid,Opposition,,
+```plaintext
+knesset_refactor/
+├── .github/workflows/           # CI/CD with automated testing
+├── data/
+│   ├── faction_coalition_status.csv  # User-managed faction status
+│   ├── parquet/                 # Raw parquet files (auto-generated)
+│   └── warehouse.duckdb         # DuckDB database (auto-generated)
+├── src/
+│   ├── api/                     # OData client with circuit breaker
+│   ├── backend/                 # Legacy compatibility and utilities
+│   ├── config/                  # Centralized configuration
+│   ├── core/                    # Dependency injection container
+│   ├── data/                    # Repository pattern implementations
+│   ├── ui/                      # Streamlit interface
+│   │   ├── charts/              # Modular chart system
+│   │   ├── pages/               # Page components
+│   │   ├── queries/             # SQL query definitions
+│   │   └── services/            # Business logic services
+│   └── utils/                   # Logging and utilities
+├── tests/                       # Unit and E2E tests
+└── requirements.txt             # Dependencies
 ```
 
-</details>
+## 🛠️ Technologies
 
----
+**Core:** Python 3.12+, DuckDB 1.2.2, Pandas 2.2.3, PyArrow 19.0.1
+**Frontend:** Streamlit 1.44.1, Plotly 5.0+
+**Networking:** aiohttp 3.9.4 with backoff 2.2.1
+**Architecture:** Clean Architecture, Repository Pattern, Circuit Breaker, Factory Pattern, Dependency Injection
+**Testing:** Pytest 8.3.5, Playwright (E2E)
 
 ## 📖 Usage Guide
 
-### 1️⃣ Initial Data Setup
-
-Download parliamentary data (15-30 minutes for full dataset):
-
+### Initial Data Setup
 ```bash
-# Download all essential tables
+# Download all essential tables (15-30 minutes)
 PYTHONPATH="./src" python -m backend.fetch_table --all
 
-# OR download specific critical tables individually
+# Or download specific tables
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Agenda
 ```
 
-### 2️⃣ Launch the Interface
-
+### Launch Interface
 ```bash
 streamlit run src/ui/data_refresh.py --server.address localhost --server.port 8501
 ```
 
-Access the UI at `http://localhost:8501`
-
-### 3️⃣ What You Can Do
-
-<div align="center">
-
+### What You Can Do
 | Feature | Description |
 |---------|-------------|
 | 🔄 **Data Refresh** | Update OData tables and faction statuses |
 | 🔍 **Table Explorer** | Browse tables with dynamic filters |
-| 📊 **Predefined Queries** | Run analytical queries with coalition status, bill merge tracking, and local filtering |
+| 📊 **Predefined Queries** | Run analytical queries with coalition status, bill merge tracking |
 | 📈 **18+ Visualizations** | Query analytics, activity patterns, bill analysis, collaboration networks |
 | 💻 **SQL Sandbox** | Execute custom SQL queries |
 | 📥 **Data Export** | Download results in CSV or Excel format |
 
-</div>
+### Common Scenarios
 
-### 4️⃣ Command-Line Interface (CLI)
-
-<details>
-<summary><b>📋 CLI Commands Reference</b></summary>
-
+**Analyzing Parliamentary Questions:**
 ```bash
-# Show help
-PYTHONPATH="./src" python -m backend.fetch_table --help
-
-# Data Operations
-PYTHONPATH="./src" python -m backend.fetch_table --all                    # Refresh all tables
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person       # Specific table
-PYTHONPATH="./src" python -m backend.fetch_table --refresh-faction-status # Faction data only
-PYTHONPATH="./src" python -m backend.fetch_table --list-tables            # List available tables
-
-# Query Operations
-PYTHONPATH="./src" python -m backend.fetch_table --sql "SELECT * FROM KNS_Person LIMIT 5;"
-
-# Export faction coalition mapping CSV (all factions Knesset 1-25)
-python -c "
-import sys; sys.path.insert(0, 'src'); import csv, duckdb; from config.settings import Settings
-with duckdb.connect(str(Settings.DEFAULT_DB_PATH), read_only=True) as con:
-    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC, Name ASC').fetchall()
-    with open('faction_coalition_mapping.csv', 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f); writer.writerow(['KnessetNum', 'FactionID', 'FactionName', 'CoalitionStatus'])
-        for row in result: writer.writerow([row[0], row[1], row[2], ''])
-print('✅ faction_coalition_mapping.csv created (529 records, Hebrew Excel compatible)')
-"
-
-# Alternative simplified CLI
-bash scripts/refresh_all.sh
-```
-
-</details>
-
-## 📚 Usage Examples
-
-### Common Research Scenarios
-
-#### Scenario 1: Analyzing Parliamentary Questions by Ministry
-```bash
-# 1. Download query and ministry data
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_GovMinistry
-
-# 2. Run analysis query
 PYTHONPATH="./src" python -m backend.fetch_table --sql "
-SELECT 
-    m.Name as Ministry, 
-    COUNT(*) as Query_Count,
-    AVG(DATEDIFF('day', q.StartDate, q.ReplyDate)) as Avg_Response_Days
-FROM KNS_Query q 
-JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID 
-WHERE q.ReplyDate IS NOT NULL 
-GROUP BY m.Name 
-ORDER BY Query_Count DESC
+SELECT m.Name as Ministry, COUNT(*) as Query_Count,
+       AVG(DATEDIFF('day', q.StartDate, q.ReplyDate)) as Avg_Response_Days
+FROM KNS_Query q
+JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+WHERE q.ReplyDate IS NOT NULL
+GROUP BY m.Name ORDER BY Query_Count DESC
 "
 ```
 
-#### Scenario 2: Setting Up Faction Coalition Status Mapping
+**Setting Up Faction Coalition Mapping:**
 ```bash
-# 1. Export all factions to CSV for manual status entry
+# Export all factions to CSV for manual status entry
 python -c "
 import sys; sys.path.insert(0, 'src'); import csv, duckdb; from config.settings import Settings
 with duckdb.connect(str(Settings.DEFAULT_DB_PATH), read_only=True) as con:
-    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC, Name ASC').fetchall()
+    result = con.execute('SELECT KnessetNum, FactionID, Name FROM KNS_Faction WHERE KnessetNum BETWEEN 1 AND 25 ORDER BY KnessetNum DESC').fetchall()
     with open('faction_coalition_mapping.csv', 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f); writer.writerow(['KnessetNum', 'FactionID', 'FactionName', 'CoalitionStatus'])
         for row in result: writer.writerow([row[0], row[1], row[2], ''])
-print('✅ faction_coalition_mapping.csv created with 529 faction records')
 "
-
-# 2. Open faction_coalition_mapping.csv in Excel 
-# 3. Hebrew faction names display correctly
-# 4. Manually enter Coalition/Opposition status in Column D
-# 5. Use completed CSV for political analysis
-```
-
-#### Scenario 3: Tracking Coalition vs Opposition Activity
-```bash
-# Launch Streamlit UI
-streamlit run src/ui/data_refresh.py
-
-# In the UI:
-# 1. Go to "Predefined Queries" → "Bills + Full Details"
-# 2. Apply sidebar filter: Coalition Status = "Coalition" 
-# 3. Use local Knesset filter in results area for specific Knesset term
-# 4. View BillCommitteeSessions column for accurate session counts (1-107 sessions)
-# 5. Export filtered results to Excel with complete committee session data
-```
-
-#### Scenario 3: Analyzing Committee Session Activity
-```bash
-# Download complete committee session data (one-time setup)
-python download_committee_sessions.py
-
-# Launch Streamlit UI
-streamlit run src/ui/data_refresh.py
-
-# In the UI:
-# 1. Go to "Predefined Queries" → "Bills + Full Details"
-# 2. Filter results where BillCommitteeSessions > 0
-# 3. Sort by BillCommitteeSessions DESC to see most-discussed bills
-# 4. View examples: חוק התכנון והבנייה (107 sessions), חוק הירושה (100 sessions)
-# 5. Export data showing first/last committee session dates for timeline analysis
-```
-
-
-### Power User Workflows
-
-#### Daily Data Refresh Automation
-```bash
-# Add to cron job for daily refresh:
-0 6 * * * cd /path/to/knesset_refactor && PYTHONPATH="./src" python -m backend.fetch_table --all >> logs/daily_refresh.log 2>&1
-```
-
-#### Research Paper Data Export
-```python
-# Custom analysis script
-import duckdb
-
-# Connect to warehouse
-conn = duckdb.connect('data/warehouse.duckdb')
-
-# Complex analytical query
-results = conn.execute("""
-    SELECT 
-        EXTRACT(year FROM q.StartDate) as Year,
-        f.Name as Faction,
-        COUNT(*) as Questions_Asked,
-        COUNT(q.ReplyDate) as Questions_Answered,
-        ROUND(COUNT(q.ReplyDate) * 100.0 / COUNT(*), 2) as Answer_Rate
-    FROM KNS_Query q
-    JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
-    JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-    WHERE q.StartDate >= '2020-01-01'
-    GROUP BY Year, f.Name
-    ORDER BY Year DESC, Questions_Asked DESC
-""").fetchdf()
-
-# Export for academic paper
-results.to_excel('research_data.xlsx', index=False)
+# Open in Excel, enter Coalition/Opposition status in Column D
 ```
 
 ## 🧪 Testing
 
-### Unit Testing
-
-Run unit tests using pytest:
-
 ```bash
-# Run all tests
-pytest
-
-# Run with coverage
+# Unit tests with coverage
 pytest --cov=src --cov-report=term-missing
 
-# Run specific test categories
-pytest -m "not slow"           # Skip slow tests
-pytest -m integration          # Run integration tests only
-```
-
-### End-to-End Testing
-
-Comprehensive E2E testing with Playwright:
-
-```bash
-# Install E2E dependencies
+# E2E tests (requires app running)
 pip install -r requirements-dev.txt
 playwright install --with-deps
-
-# Start the application
-streamlit run src/ui/data_refresh.py
-
-# Run E2E tests (in another terminal)
-pytest -m e2e --base-url http://localhost:8501
+streamlit run src/ui/data_refresh.py  # In one terminal
+pytest -m e2e --base-url http://localhost:8501  # In another terminal
 ```
 
-**E2E Test Coverage:**
-- ✅ Main page loading and header verification
-- ✅ Data refresh controls functionality
-- ✅ Predefined queries section
-- ✅ Sidebar navigation
-- ✅ Error handling with invalid inputs
-- ✅ Responsive design (mobile viewport)
-- ✅ Page load performance
-
-### Quick Verification
-
-Test core functionality:
-
-```bash
-# Test imports
-python -c "import streamlit, duckdb, pandas, plotly, aiohttp; print('✅ All core libraries imported successfully!')"
-
-# Test database
-PYTHONPATH="./src" python -m backend.fetch_table --sql "SHOW TABLES;"
-```
+**E2E Coverage:** Page loading, data refresh controls, predefined queries, sidebar navigation, error handling, responsive design, performance.
 
 ## 🤖 AI-Powered Development & CI/CD
 
-This project is optimized for AI-assisted development with **automated testing for AI-generated branches**.
+Automated testing for AI-generated branches:
+- ✅ Full pytest suite with 80%+ coverage
+- ✅ E2E testing with Playwright (7/7 passing)
+- ✅ Code quality checks (flake8, Black, isort, mypy)
+- ✅ Security scanning (Safety, Bandit)
 
-### Automated Testing Pipeline
-
-When AI tools (Codex, Jules, etc.) create new branches, our GitHub Actions workflow automatically:
-
-✅ **Comprehensive Testing**
-- Runs full pytest suite with 80%+ coverage requirement
-- Tests async functionality with proper asyncio handling
-- Verifies critical imports and database functionality
-- **End-to-End testing** with Playwright (7/7 tests passing)
-- Automated browser testing across Chrome, Firefox, and Safari
-
-✅ **Code Quality Checks**
-- Linting with flake8 (syntax errors block merge)
-- Code formatting suggestions with Black
-- Import sorting with isort
-- Type checking with mypy
-
-✅ **Security Scanning**
-- Dependency vulnerability checks with Safety
-- Code security analysis with Bandit
-
-✅ **Intelligent Reporting**
-- Detailed test summaries in GitHub Actions
-- Clear merge readiness indicators
-- Non-blocking suggestions for improvements
-
-### Workflow Triggers
-
-The CI pipeline runs on:
-- 🔄 **All branch pushes** (especially AI-generated branches)
-- 🔀 **Pull requests** to main/master
-- 📊 **Generates comprehensive test reports**
-
-### AI Development Best Practices
-
-When using AI tools with this repository:
-
-1. **Let AI create feature branches** - CI will automatically test them
-2. **Check the Actions tab** for detailed test results  
-3. **Look for the green checkmark** before merging
-4. **Review the automated summary** for any suggestions
-
-The workflow ensures AI-generated code meets quality standards before integration.
+**Workflow triggers:** All branch pushes, pull requests to main/master.
 
 ## 🔧 Troubleshooting
 
-### Common Issues and Solutions
-
-**1. ModuleNotFoundError: No module named 'utils'**
+**ModuleNotFoundError:**
 ```bash
-# Ensure PYTHONPATH is set when running CLI commands
 PYTHONPATH="./src" python -m backend.fetch_table --help
 ```
 
-**2. Installation issues**
+**Database errors:**
 ```bash
-# Ensure you're using the correct requirements
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-**3. Database connection/serialization errors**
-```bash
-# Remove old database files and fetch fresh data
 rm -rf data/warehouse.duckdb data/parquet/ data/.resume_state.json
 PYTHONPATH="./src" python -m backend.fetch_table --all
 ```
 
-**4. Timestamp conversion errors**
+**Missing tables:**
 ```bash
-# If you get "timestamp field value out of range" errors, the data may need cleaning
-# This typically happens after version upgrades - re-fetch the problematic tables
-```
-
-**5. Missing tables after download**
-```bash
-# Some large tables may fail during bulk download. Fetch them individually:
 PYTHONPATH="./src" python -m backend.fetch_table --table KNS_PersonToPosition
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
 ```
 
-## 🏆 Performance & Data Quality Achievements
+## 🏆 Performance Achievements
 
-### Committee Session Data Breakthrough
-- **99.9% Complete Dataset**: Downloaded 74,951 out of 75,051 available committee session items
-- **5.1x Coverage Improvement**: Increased from 1,992 to 10,232 bills with committee session data
-- **User Experience Revolution**: From mostly empty committee dates to 17.6% coverage (1 in 6 bills)
-- **Data Accuracy**: 100% verified direct bill-to-session connections (no estimates)
-- **Historical Span**: Committee session data spanning decades of Israeli legislative history
+### Committee Session Data
+- **99.9% Complete Dataset:** 74,951/75,051 committee session items
+- **5.1x Coverage Improvement:** From 1,992 to 10,232 bills with session data
+- **17.6% Bill Coverage:** 1 in 6 bills with verified committee information
+- **Session Range:** 1-107 sessions per bill (average 3.6)
 
-### Coverage Statistics by Knesset
-| Knesset | Total Bills | With Sessions | Coverage |
-|---------|-------------|---------------|----------|
-| 25      | 6,459       | 992          | 15.4%    |
-| 20      | 6,645       | 1,142        | 17.2%    |
-| 24      | 4,278       | 371          | 8.7%     |
-| 23      | 2,722       | 176          | 6.5%     |
-
-### Session Quality Metrics
-- **Range**: 1-107 committee sessions per bill
-- **Average**: 3.6 sessions per bill with verified data
-- **Top Bills**: חוק התכנון והבנייה (107 sessions, 1963-1965), חוק הירושה (100 sessions, 1962-1965)
-- **Recent Examples**: הצעת חוק שירות ביטחון (57 sessions, 2022-2025)
+### Data Quality
+- **100% Faction Attribution Accuracy:** Date-based matching across all charts
+- **98.2% Bill Timeline Coverage:** Multi-source date resolution
+- **71.4% Committee Resolution:** Historical committee data (Knessets 1-25)
 
 ## 📊 Available Data Tables
 
-The system downloads and manages these core tables:
-
-* **KNS_Person** - Members of Knesset (MKs) personal information
-* **KNS_Faction** - Political parties and factions
-* **KNS_PersonToPosition** - Links people to their positions and factions *(Critical)*
-* **KNS_Query** - Parliamentary questions and queries *(Critical)*
-* **KNS_Agenda** - Parliamentary agenda items
-* **KNS_Committee** - Committee information with historical coverage (Knessets 1-25)
-* **KNS_CommitteeSession** - Committee meeting records
-* **KNS_CmtSessionItem** - **COMPLETE DATASET** (74,951/75,051 records) for direct bill-to-session mapping
-* **KNS_GovMinistry** - Government ministries
-* **KNS_Status** - Various status codes
-* **KNS_PlenumSession** - Plenary session records
-* **KNS_PlmSessionItem** - Plenum session agenda items *(Enhanced with 26,400 records 2011-2025)*
-* **KNS_KnessetDates** - Knesset terms and dates
-* **KNS_Bill** - Bills and legislation
-* **KNS_Law** - Laws and legal documents
-* **KNS_IsraelLaw** - Israeli law references
-* **UserFactionCoalitionStatus** - Manual coalition/opposition tracking
-
-## 💻 System Requirements
-
-<div align="center">
-
-| Component | Requirement | Notes |
-|-----------|-------------|-------|
-| **Python** | 3.12+ | Required |
-| **Memory** | 4GB+ RAM | Recommended for large datasets |
-| **Storage** | 2GB+ free space | Database and parquet files |
-| **Network** | Stable internet | For API data fetching |
-| **OS** | Windows/macOS/Linux | Cross-platform support |
-
-</div>
+**Core Tables:** KNS_Person, KNS_Faction, KNS_PersonToPosition, KNS_Query, KNS_Agenda, KNS_Committee, KNS_CommitteeSession, KNS_CmtSessionItem, KNS_GovMinistry, KNS_Status, KNS_PlenumSession, KNS_PlmSessionItem, KNS_KnessetDates, KNS_Bill, KNS_Law, KNS_IsraelLaw, UserFactionCoalitionStatus
 
 ## 📊 Available Visualizations
 
-The platform includes 18+ predefined visualizations organized into four categories:
-
-### Query Analytics
-* **Queries by Time Period** - Track submission patterns over time
-* **Query Types Distribution** - Breakdown by query type (regular, urgent, direct)
-* **Response Times Analysis** - Box plots showing ministry response times by coalition status
-* **Faction Status Analysis** - Query patterns by coalition/opposition membership with optional date range filtering
-* **Ministry Performance** - Query distribution and reply rates by ministry
-* **Ministry Workload Hierarchy** - Sunburst view of ministry → query type → status
-
-### Agenda Analytics  
-* **Agenda Items by Time Period** - Track agenda activity over time
-* **Classification Distribution** - Pie charts of agenda item classifications
-* **Status Distribution** - Current status of agenda items
-* **Faction Activity** - Agenda items by initiating faction
-* **Coalition Impact** - Agenda success rates by coalition/opposition status
-
-### Bills Analytics
-* **Bill Status Distribution** - Breakdown of bills by current status (active, passed, rejected)
-* **Bills by Time Period** - Track bill submission patterns over time
-* **Bill SubType Distribution** - Classification of bills by subtype (private, government, etc.)
-* **Bills per Faction** - Number of bills initiated by each faction
-* **Bills by Coalition Status** - Bill activity comparison between coalition and opposition
-* **Top 10 Bill Initiators** - Individual MKs with highest number of initiated bills
-* **Bill Initiators by Faction** - Count of MKs per faction who initiated at least one bill
-* **Total Bills per Faction** - Cumulative bill count from all members of each faction
-
-### Advanced Analytics
-* **Parliamentary Activity Heatmap** - Calendar view of daily activity intensity
-* **MK Collaboration Network** - Network graph showing MKs with shared ministry focus
-* **Coalition Timeline** - Gantt chart of coalition participation periods
-* **MK Tenure Timeline** - Service periods across Knessets
-* **Ministry Leadership** - Minister appointment timelines
-
-## 🔮 Future Roadmap
-
-### Architecture Improvements (In Progress)
-* **Complete Chart Migration:** Finish migrating remaining chart implementations to the new modular system
-* **Legacy Code Removal:** Phase out deprecated modules once migration is complete
-* **Advanced Caching:** Redis integration for improved performance
-* **Microservices:** Split into independent, scalable services
-
-### Feature Enhancements
-* **Advanced Statistical Analysis:** Time series forecasting, sentiment analysis integration
-* **Real-time Updates:** WebSocket integration for live data streaming
-* **Machine Learning:** Predictive analytics for parliamentary patterns
-* **API Gateway:** RESTful API for external integrations
-
-### User Experience
-* **Dashboard Customization:** User-configurable dashboard layouts
-* **Export Automation:** Scheduled report generation and distribution
-* **Mobile Responsiveness:** Progressive Web App (PWA) capabilities
-* **User Authentication:** Role-based access control and personalization
-
-### Data & Integration
-* **Additional Data Sources:** Integration with complementary parliamentary datasets
-* **Data Quality Monitoring:** Automated data validation and quality metrics
-* **Performance Optimization:** Query optimization and database tuning
-* **Backup & Recovery:** Automated backup strategies and disaster recovery
-
+**Query Analytics:** Time periods, types distribution, response times, faction status, ministry performance
+**Agenda Analytics:** Time periods, classifications, status, faction activity, coalition impact
+**Bills Analytics:** Status distribution, time periods, subtypes, faction activity, coalition status, top initiators
+**Advanced Analytics:** Activity heatmap, MK collaboration network, coalition timeline, MK tenure timeline, ministry leadership
 
 ## 🤝 Contributing
 
-We welcome contributions! Here are some ways you can help:
+We welcome contributions!
 
-### Issues & Bug Reports
-- 🐛 **Found a bug?** [Open an issue](https://github.com/AT020993/knesset_refactor/issues) with steps to reproduce
-- 💡 **Have an idea?** Share feature requests and suggestions
-- 📖 **Documentation gaps?** Help improve our docs
-
-### Development Setup
+**Development Setup:**
 ```bash
-# Fork the repo, then:
 git clone https://github.com/AT020993/knesset_refactor.git
 cd knesset_refactor
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Run tests
-pytest
-
-# Run linting (if available)
-# Add your preferred linting commands here
+pytest  # Run tests
 ```
 
-### Pull Request Guidelines
-- 🧪 **Add tests** for new functionality
-- 📝 **Update documentation** for API changes  
-- 🏷️ **Follow existing code style** and naming conventions
-- ✅ **Ensure all tests pass** before submitting
+**Guidelines:**
+- 🧪 Add tests for new functionality
+- 📝 Update documentation for API changes
+- 🏷️ Follow existing code style
+- ✅ Ensure all tests pass
 
-### Areas Where We Need Help
-- 📊 **Chart Migration:** Complete the migration of remaining chart implementations to the new modular system
-- 🏗️ **Architecture Enhancement:** Further refactoring of large files (connection_manager.py, chart_renderer.py)
-- 🔍 **Performance optimizations** for large dataset handling and query optimization
-- 🌐 **API enhancements** for better OData integration and real-time capabilities
-- 📱 **UI/UX improvements** using the new component-based architecture
-- 🧪 **Test coverage** expansion, especially for the new modular components
-- 📚 **Documentation** updates for the new architecture patterns and modules
-- 🗑️ **Legacy Cleanup:** Help remove deprecated code once new systems are fully tested
+**Areas for Help:**
+- Chart migration to modular system
+- Performance optimizations
+- UI/UX improvements
+- Test coverage expansion
+- Documentation updates
 
 ## 📄 License
-
-<div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This project is licensed under the **MIT License**.
 
-</div>
-
-### 📋 Third-Party Acknowledgments
-
-- **Knesset OData API**: Data provided by the Israeli Knesset under their terms of service
-- **Dependencies**: See [`requirements.txt`](requirements.txt) for all third-party libraries and their respective licenses
+**Acknowledgments:** Knesset OData API, third-party libraries in [`requirements.txt`](requirements.txt)
 
 ---
 
@@ -849,13 +277,11 @@ This project is licensed under the **MIT License**.
 
 </div>
 
-
-
 ## 📚 References
 
-* The official Knesset OData service description can be found in `docs/KnessetOdataManual.pdf`.
+* Official Knesset OData documentation: `docs/KnessetOdataManual.pdf`
 * Knesset OData API: `http://knesset.gov.il/Odata/ParliamentInfo.svc`
 
 ---
 
-This project aims to continually improve data transparency and accessibility for parliamentary research and analytics.
+*Continually improving data transparency and accessibility for parliamentary research and analytics.*

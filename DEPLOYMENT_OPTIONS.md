@@ -1,462 +1,213 @@
-# Knesset Data Platform - Deployment Options for Research Institute
+# Knesset Data Platform - Deployment Options
 
-**Document Version:** 1.0
-**Date:** October 2025
-**Prepared for:** Management Decision-Making
+**Version:** 1.0 | **Date:** October 2025
 
 ---
 
-## 📋 Executive Summary
+## Executive Summary
 
-This document outlines deployment options for making the **Knesset Parliamentary Data Analysis Platform** accessible to research institute colleagues who do not have coding experience. The platform is production-ready with 21+ interactive visualizations, automated data fetching, and comprehensive analytical capabilities.
+Deployment options for the **Knesset Parliamentary Data Analysis Platform** for non-technical users.
 
-**Key Requirements:**
-- ✅ Simple access for non-technical users (click-and-use interface)
-- ✅ No coding knowledge required for end users
-- ✅ Secure data handling
-- ✅ Minimal maintenance overhead
-- ✅ Cost-effective solution
+**Key Requirements**: Simple access, no coding required, secure, minimal maintenance, cost-effective
 
-**Recommended Approach:** Start with **Option 1 (Streamlit Community Cloud)** for immediate deployment, then upgrade based on usage patterns and privacy requirements.
+**Recommended**: Start with **Option 1 (Streamlit Community Cloud)**, upgrade based on usage and privacy needs
 
 ---
 
-## 🎯 Platform Overview
+## Platform Overview
 
-### What We're Deploying
-
-A comprehensive web-based platform that provides:
-
-- **Automated Data Collection:** Direct integration with Israeli Knesset's official OData API
-- **21+ Interactive Visualizations:** Parliamentary activity analysis, bill tracking, coalition dynamics, MK collaboration networks
-- **Self-Service Interface:** No coding required - researchers can refresh data, run queries, and export results via browser
-- **Advanced Analytics:** Predefined SQL queries with filtering, custom analysis capabilities
-- **Multi-Format Export:** CSV and Excel downloads for further analysis
-
-### Current Technical Status
-
-- ✅ **Database Size:** 48MB (lightweight, efficient storage)
-- ✅ **Architecture:** Clean, modular codebase with 60%+ test coverage
-- ✅ **CI/CD:** Automated testing pipeline via GitHub Actions
-- ✅ **Cloud Integration:** Google Cloud Storage sync already implemented
-- ✅ **Documentation:** Comprehensive user and developer guides
+**Capabilities**: 21+ visualizations, automated data collection, self-service interface, multi-format export
+**Status**: 48MB database, 60%+ test coverage, CI/CD via GitHub Actions, GCS sync implemented
 
 ---
 
-## 🚀 Deployment Options Comparison
+## Deployment Options
 
-### Option 1: Streamlit Community Cloud ⭐ RECOMMENDED FOR START
+### Option 1: Streamlit Community Cloud ⭐ RECOMMENDED
 
-**Overview:**
-Cloud-based hosting platform specifically designed for data science applications. Researchers access the platform through a simple web URL (e.g., `https://knesset-data.streamlit.app`).
+**Overview**: Cloud hosting for data apps. Users access via web URL (`https://knesset-data.streamlit.app`)
 
-#### How It Works
-1. Platform automatically deploys from our GitHub repository
-2. Users access via web browser (any device - desktop, tablet, mobile)
-3. Data persists using Google Cloud Storage (already integrated)
-4. Automatic updates when we improve the platform
-5. Zero installation or configuration for end users
+**How It Works**: Auto-deploys from GitHub, browser access, data persists in GCS, automatic updates, zero installation
 
-#### Pros
-- ✅ **FREE** for public deployments (or $20/month for private)
-- ✅ **Zero infrastructure management** - no servers to maintain
-- ✅ **Instant deployment** - ready in ~30 minutes
-- ✅ **Automatic HTTPS security** - encrypted connections
-- ✅ **Auto-updates** - new features deploy automatically from GitHub
-- ✅ **No IT support required** - fully managed service
-- ✅ **Cross-platform access** - works on Windows, Mac, mobile
-- ✅ **Simple URL sharing** - just send colleagues a link
+**Pros**: FREE (or $20/month private), zero maintenance, instant deployment, HTTPS security, auto-updates, cross-platform
+**Cons**: Public by default ($20 for privacy), 1GB RAM limit, spindown after 7 days inactivity, shared infrastructure
 
-#### Cons
-- ⚠️ **Public by default** - requires paid plan ($20/month) for privacy
-- ⚠️ **Resource limits** - 1GB RAM on free tier (sufficient for our 48MB database)
-- ⚠️ **Spindown after inactivity** - 30-second restart if unused for 7+ days
-- ⚠️ **Shared infrastructure** - performance may vary during peak times
+**Cost**:
+| Tier | Monthly | Features |
+|------|---------|----------|
+| Public | $0 | Public access, 1GB RAM |
+| Private | $20 | Private access, 1GB RAM |
+| Teams | $42 | Private, 4GB RAM, SSO, no spindown |
 
-#### Cost Structure
-| Tier | Monthly Cost | Features |
-|------|--------------|----------|
-| **Public** | **$0** | Public access, 1GB RAM, basic resources |
-| **Private** | **$20** | Private access, 1GB RAM, custom domain |
-| **Teams** | **$42** | Private, 4GB RAM, SSO, team management, no spindown |
+**Setup**: 30 minutes | **Maintenance**: 1 hour/month
 
-#### Implementation Timeline
-- **Setup Time:** 30 minutes (one-time)
-  - GCS bucket setup: 10 minutes
-  - Streamlit deployment: 10 minutes
-  - Testing & documentation: 10 minutes
-- **Maintenance:** ~1 hour/month (monitoring, updates)
-
-#### Best For
-- ✅ Quick deployment to test with team
-- ✅ Budget-conscious deployments
-- ✅ Distributed teams (remote access)
-- ✅ Non-sensitive or public research data
+**Best For**: Quick deployment, budget-conscious, distributed teams, public research data
 
 ---
 
 ### Option 2: Institutional Server (Self-Hosted)
 
-**Overview:**
-Platform runs on institute's internal server infrastructure, accessible only within the organizational network.
+**Overview**: Platform on internal server, accessible within organizational network
 
-#### How It Works
-1. IT department provisions a Linux/Windows server
-2. Platform installed and configured by IT staff
-3. Runs as a system service (24/7 availability)
-4. Researchers access via internal URL (e.g., `http://research-server.institute.edu:8501`)
-5. Data stored locally on institute servers
+**How It Works**: IT provisions server, platform installed, 24/7 service, internal URL, data stored locally
 
-#### Pros
-- ✅ **Complete data control** - all data stays within institute boundaries
-- ✅ **Network isolation** - only accessible on institute network
-- ✅ **Integration potential** - can connect to institutional authentication (LDAP, Active Directory)
-- ✅ **No external dependencies** - works offline after initial data download
-- ✅ **Dedicated resources** - guaranteed performance
-- ✅ **Customizable infrastructure** - tailor to specific needs
-- ✅ **No subscription fees** - one-time setup cost
+**Pros**: Complete data control, network isolation, institutional integration, offline capable, dedicated resources, no subscription
+**Cons**: Requires IT resources, manual updates, VPN for remote access, backup responsibility, security maintenance, 2-4 days setup
 
-#### Cons
-- ⚠️ **Requires IT resources** - server provisioning, maintenance, monitoring
-- ⚠️ **Manual updates** - IT must deploy new versions
-- ⚠️ **Limited remote access** - requires VPN for off-campus use
-- ⚠️ **Backup responsibility** - institute must manage data backups
-- ⚠️ **Security maintenance** - institute responsible for patches and security
-- ⚠️ **Higher initial effort** - 2-4 days for IT setup and testing
+**Cost**: Initial 16-32 IT hours + ongoing 2-4 hours/month
 
-#### Cost Structure
-| Component | Estimated Cost | Notes |
-|-----------|----------------|-------|
-| **Server Hardware** | Variable | May use existing infrastructure |
-| **IT Setup Time** | 16-32 hours | Initial configuration and testing |
-| **Ongoing Maintenance** | 2-4 hours/month | Updates, monitoring, backups |
-| **Infrastructure Costs** | Varies | Depends on institutional rates |
+**Setup**: 3-5 days | **Maintenance**: 2-4 hours/month
 
-#### Implementation Timeline
-- **Setup Time:** 3-5 days
-  - Server provisioning: 1-2 days (IT department)
-  - Software installation: 4-6 hours
-  - Configuration & testing: 4-8 hours
-  - Documentation & training: 2-4 hours
-- **Maintenance:** 2-4 hours/month (IT staff)
-
-#### Best For
-- ✅ Strict data privacy/security requirements
-- ✅ Institutions with dedicated IT support
-- ✅ Primarily on-campus usage
-- ✅ Integration with existing institutional systems
+**Best For**: Strict privacy, dedicated IT support, on-campus usage, institutional integration
 
 ---
 
 ### Option 3: Streamlit Cloud for Teams (Professional)
 
-**Overview:**
-Premium cloud hosting with enhanced resources, privacy guarantees, and professional support. Same simplicity as Option 1, with enterprise features.
+**Overview**: Premium cloud with enhanced resources and privacy. Same simplicity as Option 1, enterprise features
 
-#### How It Works
-- Identical to Option 1, but with enhanced capabilities
-- Private deployment with team management
-- Better resource allocation (4GB RAM vs 1GB)
-- No spindown (always-on availability)
-- Single Sign-On (SSO) integration available
+**How It Works**: Like Option 1 with 4GB RAM, private deployment, no spindown, SSO integration
 
-#### Pros
-- ✅ **All benefits of Option 1** - simple deployment, zero maintenance
-- ✅ **Private deployment** - not publicly accessible
-- ✅ **Better performance** - 4GB RAM, guaranteed uptime
-- ✅ **No spindown** - instant access, no waiting
-- ✅ **Team management** - control who has access
-- ✅ **Priority support** - faster response times
-- ✅ **SSO integration** - institutional login possible
-- ✅ **Custom branding** - institute logo and domain
+**Pros**: All Option 1 benefits + private, better performance (4GB), no spindown, team management, priority support, SSO, custom branding
+**Cons**: $42/month cost, cloud-hosted, less control than self-hosted
 
-#### Cons
-- ⚠️ **Subscription cost** - $42/month ongoing
-- ⚠️ **Still cloud-hosted** - data stored externally (with encryption)
-- ⚠️ **Less control** - compared to self-hosted option
+**Cost**: $42/month ($504/year)
 
-#### Cost Structure
-| Plan | Monthly Cost | Annual Cost | Key Features |
-|------|--------------|-------------|--------------|
-| **Teams** | **$42** | **$504** | 4GB RAM, unlimited users, private, SSO, no spindown |
+**Setup**: 45 minutes | **Maintenance**: 30 minutes/month
 
-#### Implementation Timeline
-- **Setup Time:** 45 minutes (one-time)
-  - Same as Option 1, plus team configuration
-- **Maintenance:** ~30 minutes/month (user management, monitoring)
-
-#### Best For
-- ✅ Professional research environments
-- ✅ Need for guaranteed uptime and performance
-- ✅ Teams requiring private but easily accessible platform
-- ✅ Budget available for professional tools ($500/year)
+**Best For**: Professional environments, guaranteed uptime, private + accessible, $500/year budget
 
 ---
 
 ### Option 4: Cloud Platform Deployment (GCP/AWS/Azure)
 
-**Overview:**
-Custom deployment on major cloud platforms using containerization (Docker). Maximum flexibility and control.
+**Overview**: Custom deployment using Docker containers. Maximum flexibility
 
-#### How It Works
-1. Package application in Docker container
-2. Deploy to cloud platform (Google Cloud Run, AWS App Runner, or Azure Container Apps)
-3. Configure auto-scaling, load balancing, monitoring
-4. Manage via cloud provider console
+**How It Works**: Docker packaging, deploy to cloud platform, auto-scaling, load balancing, monitoring
 
-#### Pros
-- ✅ **Full customization** - complete control over infrastructure
-- ✅ **Scalability** - auto-scale based on usage
-- ✅ **Integration** - connect to other cloud services
-- ✅ **Professional features** - load balancing, CDN, advanced monitoring
-- ✅ **Geographic deployment** - serve from multiple regions
+**Pros**: Full customization, scalability, cloud integration, load balancing, geographic deployment
+**Cons**: High complexity (DevOps required), 1-2 weeks setup, ongoing management, $30-100/month, learning curve
 
-#### Cons
-- ⚠️ **High complexity** - requires DevOps expertise
-- ⚠️ **Time-intensive setup** - 1-2 weeks for proper configuration
-- ⚠️ **Ongoing management** - continuous monitoring and updates required
-- ⚠️ **Higher costs** - typically $30-100/month depending on usage
-- ⚠️ **Learning curve** - team needs cloud platform expertise
+**Cost**: $10-40/month depending on platform
 
-#### Cost Structure
-| Platform | Monthly Estimate | Setup Complexity |
-|----------|------------------|------------------|
-| **Google Cloud Run** | $10-30 | Medium-High |
-| **AWS App Runner** | $15-40 | High |
-| **Azure Container Apps** | $15-35 | High |
+**Setup**: 1-2 weeks | **Maintenance**: 4-8 hours/month
 
-#### Implementation Timeline
-- **Setup Time:** 1-2 weeks
-  - Docker containerization: 1-2 days
-  - Cloud platform configuration: 2-3 days
-  - Security & networking: 1-2 days
-  - Testing & documentation: 1-2 days
-- **Maintenance:** 4-8 hours/month (DevOps staff)
-
-#### Best For
-- ✅ Organizations with DevOps teams
-- ✅ Need for enterprise-grade infrastructure
-- ✅ Complex integration requirements
-- ✅ High-traffic scenarios (100+ concurrent users)
+**Best For**: DevOps teams, enterprise-scale, complex integrations, 100+ concurrent users
 
 ---
 
-## 📊 Side-by-Side Comparison
+## Side-by-Side Comparison
 
-| Criteria | Option 1:<br/>Community Cloud | Option 2:<br/>Institutional Server | Option 3:<br/>Teams Cloud | Option 4:<br/>Custom Cloud |
-|----------|-------------------------------|-----------------------------------|-------------------------|---------------------------|
+| Criteria | Community Cloud | Institutional Server | Teams Cloud | Custom Cloud |
+|----------|-----------------|---------------------|-------------|--------------|
 | **Setup Time** | ⚡ 30 min | ⏰ 3-5 days | ⚡ 45 min | ⏰ 1-2 weeks |
-| **Initial Cost** | 💰 Free-$20/mo | 💰💰 Variable | 💰💰 $42/mo | 💰💰💰 $30-100/mo |
-| **Monthly Maintenance** | ✅ 1 hour | ⚠️ 2-4 hours | ✅ 30 min | ⚠️ 4-8 hours |
-| **Technical Expertise** | ✅ None required | ⚠️ IT staff needed | ✅ None required | ❌ DevOps required |
-| **Data Privacy** | ⚠️ Cloud-hosted | ✅ On-premise | ⚠️ Cloud-hosted | ⚠️ Cloud-hosted |
-| **Remote Access** | ✅ Anywhere | ⚠️ VPN required | ✅ Anywhere | ✅ Anywhere |
+| **Cost** | 💰 Free-$20/mo | 💰💰 Variable | 💰💰 $42/mo | 💰💰💰 $30-100/mo |
+| **Maintenance** | ✅ 1 hour | ⚠️ 2-4 hours | ✅ 30 min | ⚠️ 4-8 hours |
+| **Expertise** | ✅ None | ⚠️ IT staff | ✅ None | ❌ DevOps |
+| **Privacy** | ⚠️ Cloud | ✅ On-premise | ⚠️ Cloud | ⚠️ Cloud |
+| **Remote Access** | ✅ Anywhere | ⚠️ VPN | ✅ Anywhere | ✅ Anywhere |
 | **Performance** | ⚠️ 1GB RAM | ✅ Configurable | ✅ 4GB RAM | ✅ Configurable |
-| **Scalability** | ⚠️ Limited | ✅ Manual | ✅ Good | ✅ Excellent |
-| **Automatic Updates** | ✅ Yes | ❌ Manual | ✅ Yes | ⚠️ Configurable |
-| **Support** | ⚠️ Community | ✅ Internal IT | ✅ Priority | ⚠️ Cloud provider |
-| **Best For** | Testing, Budget | High security | Professional use | Enterprise scale |
+| **Auto-updates** | ✅ Yes | ❌ Manual | ✅ Yes | ⚠️ Configurable |
 
-**Legend:**
-✅ Excellent/Easy | ⚠️ Moderate/Acceptable | ❌ Challenging/Not recommended
-💰 Low cost | 💰💰 Medium cost | 💰💰💰 Higher cost
+**Legend**: ✅ Excellent | ⚠️ Moderate | ❌ Challenging | 💰 Low | 💰💰 Medium | 💰💰💰 High
 
 ---
 
-## 💰 Total Cost of Ownership (1 Year)
+## Total Cost of Ownership (1 Year)
 
-| Option | Setup | Monthly | Annual Total | Hidden Costs |
-|--------|-------|---------|--------------|--------------|
-| **Community (Public)** | $0 | $0 | **$0** | None |
-| **Community (Private)** | $0 | $20 | **$240** | None |
-| **Institutional Server** | Variable | Variable | **$2,000-5,000*** | IT staff time, infrastructure |
-| **Teams Cloud** | $0 | $42 | **$504** | None |
-| **Custom Cloud** | Variable | $50 avg | **$600-1,200** | DevOps time, monitoring tools |
-
-**Estimated IT staff costs (institutional server):*
-- Initial setup: 32 hours @ $50/hr = $1,600
-- Monthly maintenance: 3 hours @ $50/hr × 12 = $1,800
-- Infrastructure costs: Variable
-- **Total Year 1:** ~$3,400 + infrastructure
+| Option | Setup | Monthly | Annual Total | Notes |
+|--------|-------|---------|--------------|-------|
+| Community (Public) | $0 | $0 | **$0** | None |
+| Community (Private) | $0 | $20 | **$240** | None |
+| Institutional Server | Variable | Variable | **$2,000-5,000** | IT time + infrastructure |
+| Teams Cloud | $0 | $42 | **$504** | None |
+| Custom Cloud | Variable | $50 | **$600-1,200** | DevOps time |
 
 ---
 
-## 🎯 Decision Matrix
+## Decision Matrix
 
-### Choose Option 1 (Community Cloud - Free/Private) If:
-- ✅ Need immediate deployment (within 1 day)
-- ✅ Limited budget ($0-240/year acceptable)
-- ✅ Comfortable with cloud hosting
-- ✅ Want zero maintenance overhead
-- ✅ Need easy remote access for distributed team
-- ✅ Data is not highly sensitive OR willing to pay $20/month for privacy
+**Choose Community Cloud If**: Immediate deployment, limited budget ($0-240/year), cloud OK, zero maintenance, easy remote access
 
-### Choose Option 2 (Institutional Server) If:
-- ✅ Strict data privacy/compliance requirements
-- ✅ Have dedicated IT support available
-- ✅ Primarily on-campus usage
-- ✅ Want complete control over infrastructure
-- ✅ Need integration with institutional systems
-- ✅ Can accept 3-5 day setup timeline
+**Choose Institutional Server If**: Strict privacy, dedicated IT support, on-campus usage, complete control, institutional integration
 
-### Choose Option 3 (Teams Cloud) If:
-- ✅ Need professional-grade reliability
-- ✅ Budget allows $500/year investment
-- ✅ Want guaranteed performance (no spindown)
-- ✅ Require team management and SSO
-- ✅ Value simplicity + privacy combination
+**Choose Teams Cloud If**: Professional reliability, $500/year budget, guaranteed performance, team management + SSO, simplicity + privacy
 
-### Choose Option 4 (Custom Cloud) If:
-- ✅ Have DevOps team available
-- ✅ Need enterprise-scale performance
-- ✅ Require complex integrations
-- ✅ Anticipate 100+ concurrent users
-- ✅ Want maximum customization
+**Choose Custom Cloud If**: DevOps available, enterprise-scale, complex integrations, 100+ users, maximum customization
 
 ---
 
-## 📋 Recommended Phased Approach
+## Phased Approach (Recommended)
 
 ### Phase 1: Pilot (Months 1-3) - Option 1
-**Goal:** Validate platform with small research team
-
-**Actions:**
-1. Deploy on Streamlit Community Cloud (free or $20/month private)
-2. Onboard 5-10 initial users
-3. Gather feedback on usability and requirements
-4. Assess actual usage patterns (daily active users, data refresh frequency)
-5. Evaluate privacy and performance needs
-
-**Budget:** $0-60 (if using private tier)
+- Deploy on Community Cloud ($0-20/month)
+- Onboard 5-10 users, gather feedback
+- Assess usage patterns and requirements
+- **Budget**: $0-60
 
 ### Phase 2: Evaluate (Month 3)
-**Goal:** Make informed decision based on real usage
-
-**Decision Points:**
-- Is data privacy a major concern? → Consider Option 2
-- Is performance/uptime critical? → Consider Option 3
-- Is current solution working well? → Stay with Option 1
-- Do we need institutional integration? → Consider Option 2
+- Privacy concerns? → Option 2
+- Performance critical? → Option 3
+- Current working well? → Stay Option 1
+- Institutional integration? → Option 2
 
 ### Phase 3: Scale (Months 4+)
-**Goal:** Deploy production solution based on Phase 1 learnings
-
-**Likely Outcomes:**
-- **Most Common:** Upgrade to Option 3 (Teams) for $42/month if privacy + performance needed
-- **Privacy-Critical:** Migrate to Option 2 (Institutional Server) with IT support
-- **Budget-Constrained:** Continue with Option 1 if working satisfactorily
+- Most common: Upgrade to Option 3 ($42/month)
+- Privacy-critical: Migrate to Option 2
+- Budget-constrained: Continue Option 1
 
 ---
 
-## 👥 User Experience (All Options)
+## User Experience (All Options)
 
-### What Researchers Will See
+**Same interface regardless of deployment:**
 
-**Regardless of deployment option, users will have the same simple interface:**
+1. Open browser → Navigate to URL
+2. Dashboard with sidebar navigation
+3. Features: Data refresh, predefined queries, 21+ visualizations, CSV/Excel export, table explorer, SQL sandbox
+4. Workflow: `Select Analysis → Apply Filters → View Results → Export`
 
-1. **Access:** Open web browser, navigate to URL
-2. **Dashboard:** Clean interface with sidebar navigation
-3. **Core Features:**
-   - 🔄 **Data Refresh:** Click "Refresh All Data" button to update from Knesset API
-   - 🔍 **Predefined Queries:** Select from dropdown, apply filters, view results
-   - 📊 **Visualizations:** 21+ charts (query analytics, bills, agendas, networks)
-   - 📥 **Export:** Download results as CSV or Excel (one click)
-   - 💻 **Table Explorer:** Browse raw data tables with filters
-   - 🛠️ **SQL Sandbox:** Advanced users can run custom queries (optional)
-
-4. **Typical Workflow:**
-   ```
-   Open URL → Select Analysis Type → Apply Filters → View Results/Charts → Export Data
-   ```
-
-**No Python, no command line, no technical skills required.**
+**No Python, no command line, no technical skills required**
 
 ---
 
-## 🚦 Next Steps
+## Next Steps
 
-### To Move Forward with Option 1 (Recommended):
+### Option 1 (Recommended):
+1. Confirm budget ($0 public / $20 private)
+2. Setup (30 min): Create GCS bucket, configure credentials, deploy, test
+3. Onboarding: User guide, 30-min training, share URL
+4. **Timeline**: Week 1 setup, Week 2 onboarding, Week 3 production
 
-1. **Decision:** Confirm budget allocation ($0 for public, $20/month for private)
-
-2. **Technical Setup (30 minutes):**
-   - [ ] Create Google Cloud Storage bucket (free tier covers our needs)
-   - [ ] Configure GCS credentials
-   - [ ] Deploy to Streamlit Cloud
-   - [ ] Test deployment
-
-3. **User Onboarding:**
-   - [ ] Create simple user guide (non-technical)
-   - [ ] Conduct 30-minute training session
-   - [ ] Share access URL with research team
-
-4. **Timeline:**
-   - **Week 1:** Technical setup and testing
-   - **Week 2:** User onboarding and training
-   - **Week 3:** Production use begins
-
-### To Move Forward with Option 2 (Institutional Server):
-
-1. **Decision:** Confirm IT support availability and budget
-
-2. **Planning (Week 1):**
-   - [ ] Meet with IT department
-   - [ ] Define server requirements
-   - [ ] Schedule provisioning
-
-3. **Implementation (Weeks 2-3):**
-   - [ ] Server setup and configuration
-   - [ ] Application installation
-   - [ ] Security hardening and testing
-
-4. **Deployment (Week 4):**
-   - [ ] User training
-   - [ ] Production rollout
-   - [ ] Monitoring setup
+### Option 2 (Institutional Server):
+1. Confirm IT support and budget
+2. Week 1: Meet IT, define requirements, schedule provisioning
+3. Weeks 2-3: Server setup, installation, security testing
+4. Week 4: Training, rollout, monitoring
 
 ---
 
-## 📞 Questions to Discuss with Management
+## Questions for Management
 
-1. **Privacy:** Is parliamentary data considered sensitive? (Affects public vs private deployment)
-2. **Budget:** What is the acceptable annual cost? ($0 - $500 - $5,000+)
-3. **Timeline:** How quickly do we need this available? (30 minutes vs 3-5 days)
-4. **Support:** Do we have IT resources for ongoing maintenance? (Affects self-hosted vs cloud)
-5. **Access:** Will researchers need remote/off-campus access? (VPN vs web access)
-6. **Scale:** How many researchers will use this? (5, 20, 100+)
-7. **Integration:** Need to integrate with institutional systems? (LDAP, SSO, etc.)
-
----
-
-## 📚 Additional Resources
-
-- **Platform Documentation:** `/README.md` - Complete technical documentation
-- **GitHub Repository:** `https://github.com/AT020993/knesset_refactor`
-- **CI/CD Status:** Automated testing with 60%+ code coverage
-- **Data Source:** Official Israeli Knesset OData API
-- **License:** MIT (open source, free to use)
+1. Privacy: Is data sensitive? (Public vs private deployment)
+2. Budget: Acceptable annual cost? ($0 - $500 - $5,000+)
+3. Timeline: How quickly needed? (30 minutes vs 3-5 days)
+4. Support: IT resources available? (Self-hosted vs cloud)
+5. Access: Remote access required? (VPN vs web)
+6. Scale: Number of users? (5, 20, 100+)
+7. Integration: Need institutional systems? (LDAP, SSO)
 
 ---
 
-## ✅ Summary & Recommendation
+## Summary
 
-**Recommended Path:** Start with **Option 1 (Streamlit Community Cloud)** at $0-20/month for a 3-month pilot.
+**Recommendation**: Start with **Option 1 (Streamlit Community Cloud)** at $0-20/month for 3-month pilot
 
-**Why:**
-- ⚡ Fastest time to value (30 minutes vs weeks)
-- 💰 Lowest financial risk ($0-60 total pilot cost)
-- 🎯 Validates actual usage before major investment
-- 🔄 Easy to migrate to other options if needed
-- 👥 Immediate access for distributed research team
+**Why**: Fastest time to value (30 min), lowest risk ($0-60 pilot cost), validates usage, easy migration, immediate access
 
-**After 3 months:** Evaluate based on real usage and upgrade to Option 2 (institutional server) or Option 3 (Teams) if privacy or performance becomes a concern.
+**After 3 months**: Evaluate and upgrade to Option 2 (server) or Option 3 (teams) if needed
 
-**This approach minimizes risk while maximizing learning.**
-
----
-
-**Document prepared by:** Technical Team
-**For questions or clarifications, please contact:** [Your contact information]
+**This minimizes risk while maximizing learning**
 
 ---
 

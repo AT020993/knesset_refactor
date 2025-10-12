@@ -227,137 +227,6 @@ class DistributionCharts(BaseChart):
             st.error(f"Could not generate agenda status chart: {e}")
             return None
 
-    def plot_bill_status_distribution(
-        self,
-        knesset_filter: Optional[List[int]] = None,
-        faction_filter: Optional[List[str]] = None,
-        **kwargs,
-    ) -> Optional[go.Figure]:
-        """Generate bill status distribution chart by faction with legislative stage categorization."""
-        if not self.check_database_exists():
-            return None
-
-        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
-
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
-                if not self.check_tables_exist(con, ["KNS_Bill", "KNS_Status", "KNS_BillInitiator", "KNS_PersonToPosition", "KNS_Faction"]):
-                    return None
-
-                # Get bill status distribution by faction
-                query = f"""
-                    WITH BillFaction AS (
-                        SELECT DISTINCT
-                            b.BillID,
-                            b.StatusID,
-                            b.KnessetNum,
-                            (SELECT f.Name
-                             FROM KNS_BillInitiator bi
-                             JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
-                             JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
-                             WHERE bi.BillID = b.BillID
-                                 AND bi.Ordinal = 1
-                                 AND ptp.KnessetNum = b.KnessetNum
-                             ORDER BY ptp.StartDate DESC
-                             LIMIT 1) as FactionName
-                        FROM KNS_Bill b
-                        WHERE b.KnessetNum IS NOT NULL
-                            AND {filters["knesset_condition"]}
-                            AND {filters["bill_origin_condition"]}
-                    )
-                    SELECT
-                        COALESCE(bf.FactionName, 'Independent') as Faction,
-                        CASE
-                            WHEN bf.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                            WHEN bf.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                            ELSE 'הופסק/לא פעיל'
-                        END AS Stage,
-                        COUNT(bf.BillID) AS Count
-                    FROM BillFaction bf
-                    WHERE bf.FactionName IS NOT NULL
-                    GROUP BY COALESCE(bf.FactionName, 'Independent'), Stage
-                    ORDER BY SUM(COUNT(bf.BillID)) OVER (PARTITION BY COALESCE(bf.FactionName, 'Independent')) DESC, Faction, Stage
-                """
-
-                df = safe_execute_query(con, query, self.logger)
-
-                if df.empty:
-                    st.info(
-                        f"No bill status data found for '{filters['knesset_title']}'."
-                    )
-                    return None
-
-                # Define colors for each stage
-                colors = {
-                    'הופסק/לא פעיל': '#CD5C5C',               # Indian Red - stopped
-                    'קריאה ראשונה': '#4682B4',                # Steel Blue - in progress
-                    'התקבלה בקריאה שלישית': '#2E8B57'       # Sea Green - success
-                }
-
-                # Order for stacking
-                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-
-                # Create stacked bar chart
-                fig = go.Figure()
-
-                # Get unique factions ordered by total bills
-                faction_totals = df.groupby('Faction')['Count'].sum().sort_values(ascending=False)
-                factions = faction_totals.index.tolist()
-
-                # Add a trace for each stage
-                for stage in stage_order:
-                    stage_data = df[df['Stage'] == stage].set_index('Faction')
-                    counts = [stage_data.loc[faction, 'Count'] if faction in stage_data.index else 0
-                             for faction in factions]
-
-                    fig.add_trace(go.Bar(
-                        name=stage,
-                        x=factions,
-                        y=counts,
-                        marker_color=colors[stage],
-                        text=counts,
-                        textposition='inside',
-                        textfont=dict(color='white', size=12),
-                        hovertemplate='<b>%{x}</b><br>' +
-                                      f'{stage}: %{{y}}<br>' +
-                                      '<extra></extra>'
-                    ))
-
-                fig.update_layout(
-                    barmode='stack',
-                    title=f"<b>Bill Status Distribution by Faction<br>{filters['knesset_title']}</b>",
-                    title_x=0.5,
-                    xaxis_title="Faction",
-                    yaxis_title="Number of Bills",
-                    font_size=12,
-                    height=max(600, len(factions) * 40),
-                    showlegend=True,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left",
-                        x=1.02,
-                        title="Legislative Stage"
-                    ),
-                    xaxis=dict(
-                        tickangle=-45,
-                        automargin=True
-                    ),
-                    margin=dict(b=150, l=80, r=200, t=100)
-                )
-
-                return fig
-
-        except Exception as e:
-            self.logger.error(
-                f"Error generating bill status distribution chart: {e}", exc_info=True
-            )
-            st.error(f"Could not generate bill status chart: {e}")
-            return None
-
     def plot_query_status_by_faction(
         self,
         knesset_filter: Optional[List[int]] = None,
@@ -594,7 +463,7 @@ class DistributionCharts(BaseChart):
 
                 # Sort subtypes by total count
                 subtype_totals = df.groupby('SubType')['Count'].sum().sort_values(ascending=False)
-                subtype_order = subtype_totals.index.tolist()
+                subtypes = subtype_totals.index.tolist()
 
                 # Define stage order and colors
                 stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
@@ -604,33 +473,34 @@ class DistributionCharts(BaseChart):
                     'התקבלה בקריאה שלישית': '#00CC96'  # Green
                 }
 
-                fig = px.bar(
-                    df,
-                    x="SubType",
-                    y="Count",
-                    color="Stage",
-                    title=f"<b>Bill SubType Distribution by Status for {filters['knesset_title']}</b>",
-                    labels={
-                        "SubType": "Bill SubType",
-                        "Count": "Number of Bills",
-                        "Stage": "Bill Status"
-                    },
-                    category_orders={
-                        "SubType": subtype_order,
-                        "Stage": stage_order
-                    },
-                    color_discrete_map=stage_colors,
-                    barmode='stack'
-                )
+                # Create figure with manual traces for proper stacking
+                fig = go.Figure()
 
-                fig.update_traces(
-                    hovertemplate="<b>SubType:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
-                )
+                # Add a trace for each stage
+                for stage in stage_order:
+                    stage_data = df[df['Stage'] == stage].set_index('SubType')
+                    counts = [stage_data.loc[subtype, 'Count'] if subtype in stage_data.index else 0
+                             for subtype in subtypes]
+
+                    fig.add_trace(go.Bar(
+                        name=stage,
+                        x=subtypes,
+                        y=counts,
+                        marker_color=stage_colors[stage],
+                        text=counts,
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{x}</b><br>' +
+                                      f'{stage}: %{{y}}<br>' +
+                                      '<extra></extra>'
+                    ))
 
                 fig.update_layout(
+                    barmode='stack',
+                    title=f"<b>Bill SubType Distribution by Status for {filters['knesset_title']}</b>",
+                    title_x=0.5,
                     xaxis_title="Bill SubType",
                     yaxis_title="Number of Bills",
-                    title_x=0.5,
                     xaxis_tickangle=-45,
                     showlegend=True,
                     legend_title_text='Bill Status',
@@ -642,7 +512,11 @@ class DistributionCharts(BaseChart):
                         x=1
                     ),
                     height=800,
-                    margin=dict(t=180)
+                    margin=dict(t=180),
+                    font_size=12,
+                    xaxis=dict(automargin=True),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white"
                 )
 
                 return fig
@@ -662,7 +536,6 @@ class DistributionCharts(BaseChart):
             "query_status_distribution": self.plot_query_status_distribution,
             "query_status_by_faction": self.plot_query_status_by_faction,
             "agenda_status_distribution": self.plot_agenda_status_distribution,
-            "bill_status_distribution": self.plot_bill_status_distribution,
             "bill_subtype_distribution": self.plot_bill_subtype_distribution,
         }
 

@@ -71,10 +71,6 @@ class ChartService:
         return self.create_chart("comparison", "agendas_by_coalition_status", **kwargs)
 
     # Bill chart methods
-    def plot_bill_status_distribution(self, **kwargs) -> Optional[go.Figure]:
-        """Legacy method for bill status distribution."""
-        return self.create_chart("distribution", "bill_status_distribution", **kwargs)
-
     def plot_bills_by_time_period(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for bills by time period."""
         return self.create_chart("time_series", "bills_by_time", **kwargs)
@@ -94,10 +90,6 @@ class ChartService:
     def plot_top_bill_initiators(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for top bill initiators."""
         return self.create_chart("comparison", "top_bill_initiators", **kwargs)
-
-    def plot_bill_initiators_by_faction(self, **kwargs) -> Optional[go.Figure]:
-        """Legacy method for bill initiators by faction."""
-        return self.create_chart("comparison", "bill_initiators_by_faction", **kwargs)
 
     # Network chart methods
     def plot_mk_collaboration_network(self, **kwargs) -> Optional[go.Figure]:

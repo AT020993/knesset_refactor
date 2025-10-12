@@ -65,7 +65,6 @@ class ChartFactory:
                 "query_status_distribution",
                 "query_status_by_faction",
                 "agenda_status_distribution",
-                "bill_status_distribution",
                 "bill_subtype_distribution",
             ],
             "comparison": [
@@ -77,7 +76,6 @@ class ChartFactory:
                 "bills_per_faction",
                 "bills_by_coalition_status",
                 "top_bill_initiators",
-                "bill_initiators_by_faction",
             ],
             "network": [
                 "mk_collaboration_network",

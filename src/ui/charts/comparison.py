@@ -621,6 +621,7 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND b.KnessetNum = f_fallback.KnessetNum
                 WHERE b.KnessetNum = ?
+                    AND bi.Ordinal = 1  -- Count only main/primary initiators (not supporting members)
                     AND COALESCE(p2p.FactionName, f_fallback.Name) IS NOT NULL
                 """
 
@@ -674,33 +675,32 @@ class ComparisonCharts(BaseChart):
                 faction_totals = df.groupby('FactionName')['BillCount'].sum().sort_values(ascending=False)
                 faction_order = faction_totals.index.tolist()
 
-                fig = px.bar(
-                    df,
-                    x="FactionName",
-                    y="BillCount",
-                    color="Stage",
-                    title=f"<b>Bills per Initiating Faction by Status (Knesset {single_knesset_num})</b>",
-                    labels={
-                        "FactionName": "Faction",
-                        "BillCount": "Number of Bills",
-                        "Stage": "Bill Status"
-                    },
-                    category_orders={
-                        "FactionName": faction_order,
-                        "Stage": stage_order
-                    },
-                    color_discrete_map=stage_colors,
-                    barmode='stack'
-                )
+                # Create figure with manual traces for proper stacking
+                fig = go.Figure()
 
-                fig.update_traces(
-                    hovertemplate="<b>Faction:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
-                )
+                # Add a trace for each stage
+                for stage in stage_order:
+                    stage_data = df[df['Stage'] == stage].set_index('FactionName')
+                    counts = [stage_data.loc[faction, 'BillCount'] if faction in stage_data.index else 0
+                             for faction in faction_order]
+
+                    fig.add_trace(go.Bar(
+                        name=stage,
+                        x=faction_order,
+                        y=counts,
+                        marker_color=stage_colors[stage],
+                        text=counts,
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{x}</b><br>' + f'{stage}: %{{y}}<br>' + '<extra></extra>'
+                    ))
 
                 fig.update_layout(
+                    barmode='stack',
+                    title=f"<b>Bills per Initiating Faction by Status (Knesset {single_knesset_num})</b><br><sub>Main initiators only</sub>",
+                    title_x=0.5,
                     xaxis_title="Initiating Faction",
                     yaxis_title="Number of Bills",
-                    title_x=0.5,
                     xaxis_tickangle=-45,
                     showlegend=True,
                     legend_title_text='Bill Status',
@@ -712,7 +712,11 @@ class ComparisonCharts(BaseChart):
                         x=1
                     ),
                     height=800,
-                    margin=dict(t=180)
+                    margin=dict(t=180),
+                    font_size=12,
+                    xaxis=dict(automargin=True),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white"
                 )
 
                 return fig
@@ -854,32 +858,36 @@ class ComparisonCharts(BaseChart):
                     'התקבלה בקריאה שלישית': '#00CC96'  # Green
                 }
 
-                fig = px.bar(
-                    df,
-                    x="CoalitionStatus",
-                    y="BillCount",
-                    color="Stage",
-                    title=f"<b>Bills by Coalition Status and Bill Stage (Knesset {single_knesset_num})</b>",
-                    labels={
-                        "CoalitionStatus": "Coalition Status",
-                        "BillCount": "Number of Bills",
-                        "Stage": "Bill Status"
-                    },
-                    category_orders={
-                        "Stage": stage_order
-                    },
-                    color_discrete_map=stage_colors,
-                    barmode='stack'
-                )
+                # Sort coalition statuses by total bill count
+                coalition_totals = df.groupby('CoalitionStatus')['BillCount'].sum().sort_values(ascending=False)
+                coalition_order = coalition_totals.index.tolist()
 
-                fig.update_traces(
-                    hovertemplate="<b>Coalition:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
-                )
+                # Create figure with manual traces for proper stacking
+                fig = go.Figure()
+
+                # Add a trace for each stage
+                for stage in stage_order:
+                    stage_data = df[df['Stage'] == stage].set_index('CoalitionStatus')
+                    counts = [stage_data.loc[coalition, 'BillCount'] if coalition in stage_data.index else 0
+                             for coalition in coalition_order]
+
+                    fig.add_trace(go.Bar(
+                        name=stage,
+                        x=coalition_order,
+                        y=counts,
+                        marker_color=stage_colors[stage],
+                        text=counts,
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{x}</b><br>' + f'{stage}: %{{y}}<br>' + '<extra></extra>'
+                    ))
 
                 fig.update_layout(
+                    barmode='stack',
+                    title=f"<b>Bills by Coalition Status and Bill Stage (Knesset {single_knesset_num})</b>",
+                    title_x=0.5,
                     xaxis_title="Coalition Status",
                     yaxis_title="Number of Bills",
-                    title_x=0.5,
                     showlegend=True,
                     legend_title_text='Bill Status',
                     legend=dict(
@@ -888,7 +896,13 @@ class ComparisonCharts(BaseChart):
                         y=1.02,
                         xanchor="right",
                         x=1
-                    )
+                    ),
+                    height=800,
+                    margin=dict(t=180),
+                    font_size=12,
+                    xaxis=dict(automargin=True),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white"
                 )
 
                 return fig
@@ -1125,33 +1139,32 @@ class ComparisonCharts(BaseChart):
                     'התקבלה בקריאה שלישית': '#00CC96'  # Green
                 }
 
-                fig = px.bar(
-                    df,
-                    x="MKName",
-                    y="BillCount",
-                    color="Stage",
-                    title=f"<b>Top 10 Bill Initiators by Status ({knesset_title})</b>",
-                    labels={
-                        "MKName": "Knesset Member",
-                        "BillCount": "Number of Bills",
-                        "Stage": "Bill Status"
-                    },
-                    category_orders={
-                        "MKName": mk_order,
-                        "Stage": stage_order
-                    },
-                    color_discrete_map=stage_colors,
-                    barmode='stack'
-                )
+                # Create figure with manual traces for proper stacking
+                fig = go.Figure()
 
-                fig.update_traces(
-                    hovertemplate="<b>MK:</b> %{x}<br><b>Status:</b> %{fullData.name}<br><b>Bills:</b> %{y}<extra></extra>"
-                )
+                # Add a trace for each stage
+                for stage in stage_order:
+                    stage_data = df[df['Stage'] == stage].set_index('MKName')
+                    counts = [stage_data.loc[mk, 'BillCount'] if mk in stage_data.index else 0
+                             for mk in mk_order]
+
+                    fig.add_trace(go.Bar(
+                        name=stage,
+                        x=mk_order,
+                        y=counts,
+                        marker_color=stage_colors[stage],
+                        text=counts,
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{x}</b><br>' + f'{stage}: %{{y}}<br>' + '<extra></extra>'
+                    ))
 
                 fig.update_layout(
+                    barmode='stack',
+                    title=f"<b>Top 10 Bill Initiators by Status ({knesset_title})</b>",
+                    title_x=0.5,
                     xaxis_title="Knesset Member",
                     yaxis_title="Number of Bills",
-                    title_x=0.5,
                     xaxis_tickangle=-45,
                     showlegend=True,
                     legend_title_text='Bill Status',
@@ -1163,7 +1176,11 @@ class ComparisonCharts(BaseChart):
                         x=1
                     ),
                     height=800,
-                    margin=dict(t=180)
+                    margin=dict(t=180),
+                    font_size=12,
+                    xaxis=dict(automargin=True),
+                    yaxis=dict(gridcolor="lightgray"),
+                    plot_bgcolor="white"
                 )
 
                 return fig
@@ -1175,290 +1192,6 @@ class ComparisonCharts(BaseChart):
                 exc_info=True,
             )
             st.error(f"Could not generate 'Top Bill Initiators' plot: {e}")
-            return None
-
-    def plot_bill_initiators_by_faction(
-        self,
-        knesset_filter: Optional[List[int]] = None,
-        faction_filter: Optional[List[str]] = None,
-        **kwargs,
-    ) -> Optional[go.Figure]:
-        """Generate chart showing count of MKs who were main bill initiators by faction."""
-        if not self.check_database_exists():
-            return None
-
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as con:
-                required_tables = [
-                    "KNS_Bill",
-                    "KNS_BillInitiator", 
-                    "KNS_Person",
-                    "KNS_PersonToPosition",
-                    "KNS_Faction",
-                ]
-                if not self.check_tables_exist(con, required_tables):
-                    return None
-
-                params: List[Any] = []
-                
-                # Build base query - structure depends on Knesset selection
-                if knesset_filter and len(knesset_filter) == 1:
-                    # Single Knesset - simpler query without KnessetNum in SELECT
-                    query = """
-                    WITH BillFirstSubmission AS (
-                        -- Get the earliest activity date for each bill (true submission date)
-                        SELECT
-                            B.BillID,
-                            MIN(earliest_date) as FirstSubmissionDate
-                        FROM KNS_Bill B
-                        LEFT JOIN (
-                            -- Initiator assignment dates
-                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                            UNION ALL
-                            -- Committee session dates
-                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                            UNION ALL
-                            -- Plenum session dates
-                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                            UNION ALL
-                            -- Publication dates
-                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                        ) all_dates ON B.BillID = all_dates.BillID
-                        WHERE all_dates.earliest_date IS NOT NULL
-                        GROUP BY B.BillID
-                    ),
-                    PersonFactions AS (
-                        -- Match each bill to the best faction based on date, prioritizing non-NULL FactionIDs
-                        SELECT
-                            bi.PersonID,
-                            b.BillID,
-                            ptp.FactionID,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY b.BillID, bi.PersonID
-                                ORDER BY CASE WHEN ptp.FactionID IS NULL THEN 1 ELSE 0 END,
-                                         ptp.StartDate DESC
-                            ) as rn
-                        FROM KNS_Bill b
-                        LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
-                        JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
-                        LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
-                            AND b.KnessetNum = ptp.KnessetNum
-                            AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
-                                BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
-                                AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
-                        WHERE b.KnessetNum = ?
-                            AND bi.Ordinal = 1
-                            AND bi.PersonID IS NOT NULL
-                    )
-                    SELECT
-                        COALESCE(f.Name, 'Data Unavailable') AS FactionName,
-                        COUNT(DISTINCT p.PersonID) AS MKCount
-                    FROM KNS_Bill b
-                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
-                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN PersonFactions pf ON b.BillID = pf.BillID
-                        AND bi.PersonID = pf.PersonID
-                        AND pf.rn = 1
-                    LEFT JOIN KNS_Faction f ON pf.FactionID = f.FactionID
-                    WHERE bi.Ordinal = 1
-                        AND bi.PersonID IS NOT NULL
-                        AND b.KnessetNum = ?
-                    """
-                    params.append(knesset_filter[0])  # First ? in PersonFactions CTE
-                    params.append(knesset_filter[0])  # Second ? in main SELECT
-                    knesset_title = f"Knesset {knesset_filter[0]}"
-
-                    # Add bill origin filter using build_filters method
-                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
-                    query += f" AND {temp_filters['bill_origin_condition']}"
-
-                    # Add faction filter for single Knesset
-                    if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
-                        if valid_ids:
-                            placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND pf.FactionID IN ({placeholders})"
-                            params.extend(valid_ids)
-
-                    query += """
-                    GROUP BY f.Name
-                    ORDER BY MKCount DESC;
-                    """
-                    
-                else:
-                    # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
-                    query = """
-                    WITH BillFirstSubmission AS (
-                        -- Get the earliest activity date for each bill (true submission date)
-                        SELECT
-                            B.BillID,
-                            MIN(earliest_date) as FirstSubmissionDate
-                        FROM KNS_Bill B
-                        LEFT JOIN (
-                            -- Initiator assignment dates
-                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                            UNION ALL
-                            -- Committee session dates
-                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                            UNION ALL
-                            -- Plenum session dates
-                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                            UNION ALL
-                            -- Publication dates
-                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                        ) all_dates ON B.BillID = all_dates.BillID
-                        WHERE all_dates.earliest_date IS NOT NULL
-                        GROUP BY B.BillID
-                    ),
-                    PersonFactions AS (
-                        -- Match each bill to the best faction based on date, prioritizing non-NULL FactionIDs
-                        SELECT
-                            bi.PersonID,
-                            b.BillID,
-                            b.KnessetNum,
-                            ptp.FactionID,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY b.BillID, bi.PersonID
-                                ORDER BY CASE WHEN ptp.FactionID IS NULL THEN 1 ELSE 0 END,
-                                         ptp.StartDate DESC
-                            ) as rn
-                        FROM KNS_Bill b
-                        LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
-                        JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
-                        LEFT JOIN KNS_PersonToPosition ptp ON bi.PersonID = ptp.PersonID
-                            AND b.KnessetNum = ptp.KnessetNum
-                            AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
-                                BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
-                                AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
-                        WHERE bi.Ordinal = 1
-                            AND bi.PersonID IS NOT NULL
-                    )
-                    SELECT
-                        COALESCE(f.Name, 'Data Unavailable') AS FactionName,
-                        COUNT(DISTINCT CONCAT(p.PersonID, '-', b.KnessetNum)) AS MKCount,
-                        b.KnessetNum
-                    FROM KNS_Bill b
-                    JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
-                    JOIN KNS_Person p ON bi.PersonID = p.PersonID
-                    LEFT JOIN PersonFactions pf ON b.BillID = pf.BillID
-                        AND bi.PersonID = pf.PersonID
-                        AND pf.rn = 1
-                    LEFT JOIN KNS_Faction f ON pf.FactionID = f.FactionID
-                    WHERE bi.Ordinal = 1
-                        AND bi.PersonID IS NOT NULL
-                    """
-                    
-                    # Add Knesset filter for multiple Knessets
-                    if knesset_filter:
-                        knesset_placeholders = ", ".join("?" for _ in knesset_filter)
-                        query += f" AND b.KnessetNum IN ({knesset_placeholders})"
-                        params.extend(knesset_filter)
-                        knesset_title = f"Knessets: {', '.join(map(str, knesset_filter))}"
-                    else:
-                        knesset_title = "All Knessets"
-                    
-                    # Add bill origin filter using build_filters method
-                    temp_filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
-                    query += f" AND {temp_filters['bill_origin_condition']}"
-
-                    # Add faction filter for multiple Knessets
-                    if faction_filter:
-                        valid_ids = [
-                            str(fid) for fid in faction_filter if str(fid).isdigit()
-                        ]
-                        if valid_ids:
-                            placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND pf.FactionID IN ({placeholders})"
-                            params.extend(valid_ids)
-
-                    query += """
-                    GROUP BY f.Name, b.KnessetNum
-                    ORDER BY MKCount DESC;
-                    """
-
-                self.logger.debug(
-                    "Executing SQL for plot_bill_initiators_by_faction: %s",
-                    query,
-                )
-                df = safe_execute_query(con, query, self.logger, params=params)
-
-                if df.empty:
-                    st.info(
-                        f"No bill initiator data found for {knesset_title} with the current filters."
-                    )
-                    return None
-
-                df["MKCount"] = pd.to_numeric(
-                    df["MKCount"], errors="coerce"
-                ).fillna(0)
-
-                # For multiple Knessets, aggregate by faction
-                if not (knesset_filter and len(knesset_filter) == 1):
-                    df = df.groupby(["FactionName"]).agg({
-                        "MKCount": "sum"
-                    }).reset_index().sort_values("MKCount", ascending=False)
-                else:
-                    # For single Knesset, ensure proper sorting
-                    df = df.sort_values("MKCount", ascending=False)
-
-                # Create bar chart
-                fig = go.Figure()
-                
-                fig.add_trace(
-                    go.Bar(
-                        x=df["FactionName"],
-                        y=df["MKCount"],
-                        name="MK Count",
-                        marker=dict(
-                            color=self.config.KNESSET_COLOR_SEQUENCE[0], 
-                            line=dict(color="black", width=1)
-                        ),
-                        text=df["MKCount"],
-                        textposition="outside",
-                        hovertemplate="<b>%{x}</b><br>MKs with Bills: %{y}<extra></extra>",
-                    )
-                )
-
-                # Update layout
-                fig.update_layout(
-                    title=f"<b>Bill Main Initiators by Faction ({knesset_title})</b>",
-                    xaxis_title="<b>Faction</b>",
-                    yaxis_title="<b>Number of MKs Who Initiated Bills</b>",
-                    showlegend=False,
-                    height=800,
-                    margin=dict(t=180, b=150, l=80, r=50),
-                    font=dict(size=12),
-                    title_font=dict(size=16),
-                    xaxis=dict(
-                        tickangle=-45,
-                        categoryorder="array",
-                        categoryarray=df["FactionName"].tolist(),
-                    ),
-                    yaxis=dict(gridcolor="lightgray"),
-                    plot_bgcolor="white",
-                )
-
-                return fig
-
-        except Exception as e:
-            self.logger.error(f"Error in plot_bill_initiators_by_faction: {e}", exc_info=True)
-            st.error(f"Could not generate 'Bill Initiators by Faction' plot: {e}")
             return None
 
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
@@ -1473,7 +1206,6 @@ class ComparisonCharts(BaseChart):
             "bills_per_faction": self.plot_bills_per_faction,
             "bills_by_coalition_status": self.plot_bills_by_coalition_status,
             "top_bill_initiators": self.plot_top_bill_initiators,
-            "bill_initiators_by_faction": self.plot_bill_initiators_by_faction,
         }
 
         method = chart_methods.get(chart_type)
