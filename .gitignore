@@ -55,6 +55,10 @@ gcp-*.json
 *~
 *.sublime-*
 
+# Claude Code AI Assistant files
+.claude/
+CLAUDE.md
+
 # Personal/Local scripts
 start-knesset.sh
 launch_knesset.py
