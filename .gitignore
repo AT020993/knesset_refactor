@@ -1,30 +1,42 @@
 # Data directory (database files, parquet files, etc.)
 /data/
+*.duckdb
+*.parquet
 
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
 
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 .venv/
 venv/
+env/
+*.egg-info/
+dist/
+build/
 
 # Logging
 logs/
+*.log
 
 # Testing
 .coverage
 htmlcov/
 coverage.xml
 .pytest_cache/
+test-results/
+playwright-report/
+playwright/.cache/
 
 # Type checking
 .mypy_cache/
-
-# Development
-*.pyc
-__pycache__/
+.pytype/
+.dmypy.json
 
 # Secrets and Credentials
 .streamlit/secrets.toml
@@ -32,6 +44,8 @@ __pycache__/
 *-key.json
 service-account.json
 gcp-*.json
+*.env
+.env.*
 
 # IDE
 .vscode/
@@ -39,3 +53,13 @@ gcp-*.json
 *.swp
 *.swo
 *~
+*.sublime-*
+
+# Personal/Local scripts
+start-knesset.sh
+launch_knesset.py
+researcher_launcher*.py
+setup_for_researcher.py
+
+# Duplicate/Generated files
+faction_coalition_mapping.csv
