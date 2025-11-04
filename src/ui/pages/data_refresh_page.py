@@ -130,6 +130,18 @@ class DataRefreshPageRenderer:
         with st.expander("Show Executed SQL", expanded=False):
             st.code(last_sql if last_sql else "No SQL executed yet.", language="sql")
 
+    def _apply_knesset_filter_callback(self):
+        """Callback function to apply the Knesset filter."""
+        # Update the actual filter based on temp selection
+        if st.session_state.temp_knesset_filter == "All Knessetes":
+            st.session_state.ms_knesset_filter = []
+        else:
+            knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
+            st.session_state.ms_knesset_filter = [knesset_num]
+
+        # Mark that we need to re-run the query
+        st.session_state.needs_query_rerun = True
+
     def _render_local_knesset_filter(self, results_df: pd.DataFrame) -> None:
         """Render local Knesset filter widget for query results."""
         # Get the query type from the executed query name
@@ -176,18 +188,13 @@ class DataRefreshPageRenderer:
             st.session_state.temp_knesset_filter = selected_filter
 
         with col2:
-            # Apply filter button
-            if st.button("🔄 Apply Filter", key="apply_knesset_filter_btn", use_container_width=True):
-                # Update the actual filter and trigger re-run
-                if st.session_state.temp_knesset_filter == "All Knessetes":
-                    st.session_state.ms_knesset_filter = []
-                else:
-                    knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
-                    st.session_state.ms_knesset_filter = [knesset_num]
-
-                # Mark that we need to re-run the query
-                st.session_state.needs_query_rerun = True
-                st.rerun()
+            # Apply filter button with callback
+            st.button(
+                "🔄 Apply Filter",
+                key="apply_knesset_filter_btn",
+                on_click=self._apply_knesset_filter_callback,
+                use_container_width=True
+            )
 
         with col3:
             # Show count of current results
