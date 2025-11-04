@@ -111,20 +111,32 @@ class DataRefreshPageRenderer:
     def _render_local_knesset_filter(self, results_df: pd.DataFrame) -> None:
         """Render local Knesset filter widget for query results."""
         available_knessetes = sorted(results_df['KnessetNum'].unique().tolist(), reverse=True)
-        
+
+        # Initialize the filter state if not already set
+        if "local_knesset_filter" not in st.session_state:
+            st.session_state.local_knesset_filter = "All Knessetes"
+
         # Create a container for the filter
         st.markdown("**Additional Filtering:**")
         col1, col2 = st.columns([3, 1])
-        
+
         with col1:
-            # Knesset filter selectbox
+            # Knesset filter selectbox with stable default
+            knesset_options = ["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes]
+            # Get current value, ensuring it's valid for current options
+            current_value = st.session_state.get("local_knesset_filter", "All Knessetes")
+            if current_value not in knesset_options:
+                current_value = "All Knessetes"
+                st.session_state.local_knesset_filter = current_value
+
             st.selectbox(
                 "Filter by Knesset Number (leave empty for all):",
-                options=["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes],
+                options=knesset_options,
+                index=knesset_options.index(current_value),
                 key="local_knesset_filter",
                 help="Filter the results by specific Knesset number. This is in addition to the sidebar filters."
             )
-        
+
         with col2:
             # Show count of available records per Knesset
             if st.session_state.get("local_knesset_filter", "All Knessetes") != "All Knessetes":
