@@ -44,6 +44,7 @@ playwright/.cache/
 *-key.json
 service-account.json
 gcp-*.json
+iucc-international-dimensions-*.json
 *.env
 .env.*
 

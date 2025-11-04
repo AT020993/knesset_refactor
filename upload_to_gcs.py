@@ -17,7 +17,7 @@ from google.cloud import storage
 import sys
 
 # CONFIGURATION - UPDATE THIS WITH YOUR BUCKET NAME
-BUCKET_NAME = "knesset-data-yourname-2025"  # Change this to your bucket name
+BUCKET_NAME = "knesset_bucket"  # iucc-international-dimensions project
 
 def upload_data_to_gcs():
     """Upload all local data files to Google Cloud Storage."""
