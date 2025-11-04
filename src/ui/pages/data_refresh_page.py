@@ -117,6 +117,10 @@ class DataRefreshPageRenderer:
             knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
             st.session_state.ms_knesset_filter = [knesset_num]
 
+        # Reset pagination when filter changes
+        st.session_state.query_page_number = 1
+        st.session_state.query_page_offset = 0
+
         # Re-execute the query immediately with updated filter
         query_name = SessionStateManager.get_executed_query_name()
         if query_name:
@@ -189,6 +193,72 @@ class DataRefreshPageRenderer:
         with col3:
             # Show count of current results
             st.metric("Rows", len(results_df))
+
+        # Add pagination controls
+        self._render_pagination_controls(results_df)
+
+    def _render_pagination_controls(self, results_df: pd.DataFrame) -> None:
+        """Render pagination controls for navigating through query results."""
+        # Initialize page number if not set
+        if "query_page_number" not in st.session_state:
+            st.session_state.query_page_number = 1
+
+        st.markdown("---")
+        st.markdown("**Navigate Results:**")
+
+        # Calculate pagination info
+        current_page = st.session_state.query_page_number
+        rows_per_page = 1000
+        start_row = (current_page - 1) * rows_per_page + 1
+        end_row = start_row + len(results_df) - 1
+
+        # Show page info
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+
+        with col1:
+            st.info(f"📄 Showing rows {start_row:,}-{end_row:,} (Page {current_page})")
+
+        with col2:
+            # Previous page button
+            if st.button("◀ Previous", key="prev_page_btn", disabled=(current_page == 1), use_container_width=True):
+                st.session_state.query_page_number = max(1, current_page - 1)
+                st.session_state.query_page_offset = (st.session_state.query_page_number - 1) * 1000
+                self._rerun_query_with_pagination()
+                st.rerun()
+
+        with col3:
+            # Next page button
+            has_more = len(results_df) == rows_per_page  # If we got full 1000 rows, there might be more
+            if st.button("Next ▶", key="next_page_btn", disabled=not has_more, use_container_width=True):
+                st.session_state.query_page_number = current_page + 1
+                st.session_state.query_page_offset = (st.session_state.query_page_number - 1) * 1000
+                self._rerun_query_with_pagination()
+                st.rerun()
+
+        with col4:
+            # Reset to first page button
+            if current_page > 1:
+                if st.button("⏮ First Page", key="first_page_btn", use_container_width=True):
+                    st.session_state.query_page_number = 1
+                    st.session_state.query_page_offset = 0
+                    self._rerun_query_with_pagination()
+                    st.rerun()
+
+    def _rerun_query_with_pagination(self):
+        """Re-execute the current query with updated pagination offset."""
+        query_name = SessionStateManager.get_executed_query_name()
+        if query_name:
+            from ui.sidebar_components import _handle_run_query_button_click
+            from ui.queries.predefined_queries import PREDEFINED_QUERIES
+
+            _handle_run_query_button_click(
+                exports_dict=PREDEFINED_QUERIES,
+                db_path=self.db_path,
+                connect_func=lambda read_only=True: ui_utils.connect_db(self.db_path, read_only, self.logger),
+                ui_logger=self.logger,
+                format_exc_func=ui_utils.format_exception_for_ui,
+                faction_display_map=st.session_state.get("faction_display_map", {})
+            )
 
     def _get_query_type_from_name(self, query_name: str) -> str:
         """

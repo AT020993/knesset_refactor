@@ -114,6 +114,11 @@ def _handle_run_query_button_click(
     # Access the session state key directly (no 'sb_' prefix)
     if st.session_state.get('selected_query_name') and db_path.exists():
         try:
+            # Reset pagination to first page unless explicitly navigating pages
+            if not st.session_state.get("query_page_offset", 0):
+                st.session_state.query_page_number = 1
+                st.session_state.query_page_offset = 0
+
             query_info = exports_dict[st.session_state.selected_query_name]
             base_sql = query_info["sql"]
             knesset_filter_col = query_info.get("knesset_filter_column")
@@ -121,7 +126,7 @@ def _handle_run_query_button_click(
             modified_sql = base_sql.strip().rstrip(";")
             applied_filters_info = []
             where_conditions = []
-            
+
             # Apply filters if specified
             ui_logger.debug(f"Applying filters - Knesset: {st.session_state.get('ms_knesset_filter', [])}, Faction: {st.session_state.get('ms_faction_filter', [])}")
 
@@ -221,11 +226,23 @@ def _handle_run_query_button_click(
                 else:
                     modified_sql = f"{prefix}{filter_string_to_add}".strip()
 
+            # Add OFFSET for pagination if needed
+            page_offset = st.session_state.get("query_page_offset", 0)
+            if page_offset > 0:
+                # Find LIMIT clause and add OFFSET before it
+                limit_match = re.search(r"\bLIMIT\s+\d+", modified_sql, re.IGNORECASE)
+                if limit_match:
+                    limit_pos = limit_match.start()
+                    prefix = modified_sql[:limit_pos].strip()
+                    suffix = modified_sql[limit_pos:].strip()
+                    modified_sql = f"{prefix} OFFSET {page_offset} {suffix}".strip()
+                    ui_logger.info(f"Added pagination OFFSET {page_offset}")
+
             if applied_filters_info:
                 ui_logger.info(f"Applied filters: {', '.join(applied_filters_info)}")
             else:
                 ui_logger.info("No filters applied")
-                
+
             ui_logger.info(
                 f"Executing predefined query: {st.session_state.selected_query_name}"
             )
