@@ -145,9 +145,9 @@ class DataRefreshPageRenderer:
 
         # Create a container for the filter
         st.markdown("**Filter Results by Knesset:**")
-        st.info("💡 Changing this filter will re-run the query with up to 1,000 rows from the selected Knesset.", icon="ℹ️")
+        st.info("💡 Select a Knesset and click 'Apply Filter' to re-run the query with up to 1,000 rows from the selected Knesset.", icon="ℹ️")
 
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns([3, 1, 1])
 
         with col1:
             # Determine current filter from ms_knesset_filter (the actual query filter)
@@ -157,38 +157,41 @@ class DataRefreshPageRenderer:
             else:
                 current_value = "All Knessetes"
 
-            # Knesset filter selectbox
-            knesset_options = ["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes]
+            # Initialize temp filter state
+            if "temp_knesset_filter" not in st.session_state:
+                st.session_state.temp_knesset_filter = current_value
 
-            # Get index for current value
-            try:
-                default_index = knesset_options.index(current_value)
-            except ValueError:
-                default_index = 0
+            # Knesset filter selectbox (not bound to widget state)
+            knesset_options = ["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes]
 
             selected_filter = st.selectbox(
                 "Select Knesset:",
                 options=knesset_options,
-                index=default_index,
+                index=knesset_options.index(st.session_state.temp_knesset_filter) if st.session_state.temp_knesset_filter in knesset_options else 0,
                 key="local_knesset_filter_widget",
-                help="Select a Knesset to re-run the query with filtered results."
+                help="Select a Knesset and click 'Apply Filter' to re-run the query."
             )
 
-            # If filter changed, update ms_knesset_filter and mark for re-run
-            if selected_filter != current_value:
-                if selected_filter == "All Knessetes":
+            # Update temp state
+            st.session_state.temp_knesset_filter = selected_filter
+
+        with col2:
+            # Apply filter button
+            if st.button("🔄 Apply Filter", key="apply_knesset_filter_btn", use_container_width=True):
+                # Update the actual filter and trigger re-run
+                if st.session_state.temp_knesset_filter == "All Knessetes":
                     st.session_state.ms_knesset_filter = []
                 else:
-                    knesset_num = int(selected_filter.replace("Knesset ", ""))
+                    knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
                     st.session_state.ms_knesset_filter = [knesset_num]
 
                 # Mark that we need to re-run the query
                 st.session_state.needs_query_rerun = True
                 st.rerun()
 
-        with col2:
+        with col3:
             # Show count of current results
-            st.metric("Rows Returned", len(results_df))
+            st.metric("Rows", len(results_df))
 
     def _get_query_type_from_name(self, query_name: str) -> str:
         """
