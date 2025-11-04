@@ -467,6 +467,8 @@ def display_sidebar(
         else 0,
         key="sb_selected_query_name",
     )
+    st.sidebar.info("ℹ️ Results limited to 1,000 rows for performance", icon="💡")
+
     if st.sidebar.button(
         "▶️ Run Selected Query",
         disabled=(not st.session_state.selected_query_name),
@@ -494,6 +496,8 @@ def display_sidebar(
         else 0,
         key="sb_selected_table_explorer",
     )
+    st.sidebar.info("ℹ️ Table preview limited to 1,000 rows", icon="💡")
+
     if st.sidebar.button(
         "🔍 Explore Selected Table",
         disabled=(not st.session_state.selected_table_for_explorer),

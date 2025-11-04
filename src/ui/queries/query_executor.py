@@ -97,7 +97,7 @@ class QueryExecutor:
                 # Remove LIMIT from order clause if present
                 order_parts = order_clause.rsplit("LIMIT", 1)
                 order_clause = order_parts[0].rstrip()
-                limit_clause = "LIMIT " + order_parts[1].strip() if len(order_parts) > 1 else "LIMIT 10000"
+                limit_clause = "LIMIT " + order_parts[1].strip() if len(order_parts) > 1 else "LIMIT 1000"
                 
                 where_clause = " WHERE " + " AND ".join(where_conditions)
                 final_sql = main_query + where_clause + " " + order_clause + " " + limit_clause
@@ -222,9 +222,9 @@ class QueryExecutor:
             
             # Construct final query
             if where_conditions:
-                final_query = base_query + " WHERE " + " AND ".join(where_conditions) + " LIMIT 5000"
+                final_query = base_query + " WHERE " + " AND ".join(where_conditions) + " LIMIT 1000"
             else:
-                final_query = base_query + " LIMIT 5000"
+                final_query = base_query + " LIMIT 1000"
             
             # Execute query
             if safe_execute_func:
