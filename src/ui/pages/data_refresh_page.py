@@ -142,9 +142,9 @@ class DataRefreshPageRenderer:
             if st.session_state.get("local_knesset_filter", "All Knessetes") != "All Knessetes":
                 selected_knesset = int(st.session_state["local_knesset_filter"].replace("Knesset ", ""))
                 count = len(results_df[results_df['KnessetNum'] == selected_knesset])
-                st.metric("Filtered Rows", count, key="local_filter_metric_filtered")
+                st.metric("Filtered Rows", count)
             else:
-                st.metric("Total Rows", len(results_df), key="local_filter_metric_total")
+                st.metric("Total Rows", len(results_df))
 
     def _apply_local_knesset_filter(self, results_df: pd.DataFrame) -> pd.DataFrame:
         """Apply local Knesset filter to the results dataframe."""
