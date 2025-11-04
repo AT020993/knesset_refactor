@@ -45,6 +45,7 @@ playwright/.cache/
 service-account.json
 gcp-*.json
 iucc-international-dimensions-*.json
+streamlit_secrets_formatted.txt
 *.env
 .env.*
 
