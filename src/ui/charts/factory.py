@@ -31,7 +31,7 @@ class ChartFactory:
         return self._generators
 
     @st.cache_resource(show_spinner=False)
-    def _create_generators_cached(_db_path: str):
+    def _create_generators_cached(_self, _db_path: str):
         """Create cached chart generators to avoid redundant instantiation."""
         db_path = Path(_db_path)
         logger = logging.getLogger("knesset.ui.charts.factory")
