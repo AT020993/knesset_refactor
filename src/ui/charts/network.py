@@ -1657,8 +1657,10 @@ class NetworkCharts(BaseChart):
             hovertemplate='%{customdata}<extra></extra>',
             customdata=hover_text,
             colorbar=dict(
-                title="Collaboration Count",
-                titleside="right",
+                title=dict(
+                    text="Collaboration Count",
+                    side="right"
+                ),
                 thickness=15,
                 len=0.8
             ),
@@ -1831,8 +1833,10 @@ class NetworkCharts(BaseChart):
                 hovertemplate='%{customdata}<extra></extra>',
                 customdata=hover_text,
                 colorbar=dict(
-                    title="Collaboration Count",
-                    titleside="right",
+                    title=dict(
+                        text="Collaboration Count",
+                        side="right"
+                    ),
                     thickness=15,
                     len=0.8,
                     x=1.02,
@@ -1862,8 +1866,10 @@ class NetworkCharts(BaseChart):
                 hovertemplate='%{customdata}<extra></extra>',
                 customdata=hover_text,
                 colorbar=dict(
-                    title="Solo Bills Count",
-                    titleside="right", 
+                    title=dict(
+                        text="Solo Bills Count",
+                        side="right"
+                    ),
                     thickness=15,
                     len=0.8,
                     x=1.12,
