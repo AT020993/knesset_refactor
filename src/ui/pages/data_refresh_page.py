@@ -41,9 +41,31 @@ class DataRefreshPageRenderer:
 
     def render_query_results_section(self) -> None:
         """Render the predefined query results section."""
+        # Check if we need to re-run the query due to filter change
+        if st.session_state.get("needs_query_rerun", False):
+            # Clear the flag
+            st.session_state.needs_query_rerun = False
+
+            # Re-execute the last query with updated filters
+            query_name = SessionStateManager.get_executed_query_name()
+            if query_name:
+                self.logger.info(f"Re-running query '{query_name}' with updated Knesset filter")
+                # Trigger button click simulation by importing and calling the handler
+                from ui.sidebar_components import _handle_run_query_button_click
+                from ui.queries.predefined_queries import PREDEFINED_QUERIES
+
+                _handle_run_query_button_click(
+                    exports_dict=PREDEFINED_QUERIES,
+                    db_path=self.db_path,
+                    connect_func=lambda read_only=True: ui_utils.connect_db(self.db_path, read_only, self.logger),
+                    ui_logger=self.logger,
+                    format_exc_func=ui_utils.format_exception_for_ui,
+                    faction_display_map=st.session_state.get("faction_display_map", {})
+                )
+
         st.divider()
         st.header("📄 Predefined Query Results")
-        
+
         if SessionStateManager.get_show_query_results() and SessionStateManager.get_executed_query_name():
             self._render_query_results_display()
         else:
@@ -67,10 +89,10 @@ class DataRefreshPageRenderer:
         # Add local Knesset filter for query results
         if not results_df.empty and 'KnessetNum' in results_df.columns:
             self._render_local_knesset_filter(results_df)
-        
-        # Apply local filter if selected
-        display_df = self._apply_local_knesset_filter(results_df)
-        
+
+        # Use results directly (filtering is now done in SQL query)
+        display_df = results_df
+
         if not display_df.empty:
             # Display results with formatted dates
             formatted_df = ui_utils.format_dataframe_dates(display_df, _logger_obj=self.logger)
@@ -121,39 +143,52 @@ class DataRefreshPageRenderer:
             _logger_obj=self.logger
         )
 
-        # Initialize the filter state if not already set
-        if "local_knesset_filter" not in st.session_state:
-            st.session_state.local_knesset_filter = "All Knessetes"
-
         # Create a container for the filter
-        st.markdown("**Additional Filtering:**")
+        st.markdown("**Filter Results by Knesset:**")
+        st.info("💡 Changing this filter will re-run the query with up to 1,000 rows from the selected Knesset.", icon="ℹ️")
+
         col1, col2 = st.columns([3, 1])
 
         with col1:
-            # Knesset filter selectbox with stable default
-            knesset_options = ["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes]
-            # Get current value, ensuring it's valid for current options
-            current_value = st.session_state.get("local_knesset_filter", "All Knessetes")
-            if current_value not in knesset_options:
+            # Determine current filter from ms_knesset_filter (the actual query filter)
+            current_ms_filter = st.session_state.get("ms_knesset_filter", [])
+            if current_ms_filter and len(current_ms_filter) == 1:
+                current_value = f"Knesset {current_ms_filter[0]}"
+            else:
                 current_value = "All Knessetes"
-                st.session_state.local_knesset_filter = current_value
 
-            st.selectbox(
-                "Filter by Knesset Number (leave empty for all):",
+            # Knesset filter selectbox
+            knesset_options = ["All Knessetes"] + [f"Knesset {k}" for k in available_knessetes]
+
+            # Get index for current value
+            try:
+                default_index = knesset_options.index(current_value)
+            except ValueError:
+                default_index = 0
+
+            selected_filter = st.selectbox(
+                "Select Knesset:",
                 options=knesset_options,
-                index=knesset_options.index(current_value),
-                key="local_knesset_filter",
-                help="Filter the results by specific Knesset number. This is in addition to the sidebar filters."
+                index=default_index,
+                key="local_knesset_filter_widget",
+                help="Select a Knesset to re-run the query with filtered results."
             )
 
+            # If filter changed, update ms_knesset_filter and mark for re-run
+            if selected_filter != current_value:
+                if selected_filter == "All Knessetes":
+                    st.session_state.ms_knesset_filter = []
+                else:
+                    knesset_num = int(selected_filter.replace("Knesset ", ""))
+                    st.session_state.ms_knesset_filter = [knesset_num]
+
+                # Mark that we need to re-run the query
+                st.session_state.needs_query_rerun = True
+                st.rerun()
+
         with col2:
-            # Show count of available records per Knesset
-            if st.session_state.get("local_knesset_filter", "All Knessetes") != "All Knessetes":
-                selected_knesset = int(st.session_state["local_knesset_filter"].replace("Knesset ", ""))
-                count = len(results_df[results_df['KnessetNum'] == selected_knesset])
-                st.metric("Filtered Rows", count)
-            else:
-                st.metric("Total Rows", len(results_df))
+            # Show count of current results
+            st.metric("Rows Returned", len(results_df))
 
     def _get_query_type_from_name(self, query_name: str) -> str:
         """
@@ -175,24 +210,6 @@ class DataRefreshPageRenderer:
             return "agendas"
         else:
             return "queries"
-
-    def _apply_local_knesset_filter(self, results_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply local Knesset filter to the results dataframe."""
-        if results_df.empty or 'KnessetNum' not in results_df.columns:
-            return results_df
-            
-        local_filter = st.session_state.get("local_knesset_filter", "All Knessetes")
-        
-        if local_filter and local_filter != "All Knessetes":
-            try:
-                selected_knesset = int(local_filter.replace("Knesset ", ""))
-                filtered_df = results_df[results_df['KnessetNum'] == selected_knesset].copy()
-                return filtered_df
-            except (ValueError, AttributeError):
-                # If parsing fails, return original dataframe
-                return results_df
-        
-        return results_df
 
     def render_table_explorer_section(self) -> None:
         """Render the table explorer results section."""
