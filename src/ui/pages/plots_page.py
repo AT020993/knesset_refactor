@@ -110,7 +110,8 @@ class PlotsPageRenderer:
         if selected_topic_widget != current_selected_topic:
             SessionStateManager.reset_plot_state(keep_topic=False)
             SessionStateManager.set_plot_selection(selected_topic_widget, "")
-            st.rerun()
+            # NOTE: Streamlit automatically handles the rerun when widget state changes
+            # Do NOT call st.rerun() here - it causes infinite loops
 
         return selected_topic_widget
 
@@ -156,7 +157,8 @@ class PlotsPageRenderer:
             SessionStateManager.set_plot_selection(
                 selected_topic, selected_chart_widget
             )
-            st.rerun()
+            # NOTE: Streamlit automatically handles the rerun when widget state changes
+            # Do NOT call st.rerun() here - it causes infinite loops
 
         return selected_chart_widget
 
@@ -264,7 +266,8 @@ class PlotsPageRenderer:
         # Update session state if selection changed
         if selected_knesset_val != current_selection:
             SessionStateManager.set_plot_knesset_selection(selected_knesset_val)
-            st.rerun()
+            # NOTE: Streamlit automatically handles the rerun when widget state changes
+            # Do NOT call st.rerun() here - it causes infinite loops
 
     def _render_single_knesset_plot_options(
         self,
@@ -305,7 +308,8 @@ class PlotsPageRenderer:
         # Update session state if selection changed
         if selected_knesset_val != current_selection:
             SessionStateManager.set_plot_knesset_selection(selected_knesset_val)
-            st.rerun()
+            # NOTE: Streamlit automatically handles the rerun when widget state changes
+            # Do NOT call st.rerun() here - it causes infinite loops
 
     def _render_date_filter_options(self, selected_chart: str) -> None:
         """Render date filter options for specific plots."""

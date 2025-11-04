@@ -111,7 +111,8 @@ def _handle_run_query_button_click(
     faction_display_map: dict,
 ):
     """Handles the logic for the 'Run Selected Query' button click."""
-    if st.session_state.selected_query_name and db_path.exists():
+    # Access the session state key directly (no 'sb_' prefix)
+    if st.session_state.get('selected_query_name') and db_path.exists():
         try:
             query_info = exports_dict[st.session_state.selected_query_name]
             base_sql = query_info["sql"]
@@ -274,7 +275,8 @@ def _handle_explore_table_button_click(
     faction_display_map: dict,
 ):
     """Handles the logic for the 'Explore Selected Table' button click."""
-    if st.session_state.selected_table_for_explorer and db_path.exists():
+    # Access the session state key directly (no 'sb_' prefix)
+    if st.session_state.get('selected_table_for_explorer') and db_path.exists():
         table_to_explore = st.session_state.selected_table_for_explorer
         try:
             all_table_cols, _, _ = get_table_columns_func(table_to_explore)
@@ -459,13 +461,19 @@ def display_sidebar(
     st.sidebar.divider()
     st.sidebar.header("🔎 Predefined Queries")
     query_names_options = [""] + list(exports_arg.keys())
-    st.session_state.selected_query_name = st.sidebar.selectbox(
+
+    # Get current value safely (must happen before widget creation)
+    current_query = st.session_state.get("selected_query_name", "")
+    default_index = 0
+    if current_query and current_query in query_names_options:
+        default_index = query_names_options.index(current_query)
+
+    # Selectbox automatically manages session state via key - DO NOT manually assign
+    st.sidebar.selectbox(
         "Select a predefined query:",
         options=query_names_options,
-        index=query_names_options.index(st.session_state.selected_query_name)
-        if st.session_state.selected_query_name in query_names_options
-        else 0,
-        key="sb_selected_query_name",
+        index=default_index,
+        key="selected_query_name",  # Changed from "sb_selected_query_name" to direct state key
     )
     st.sidebar.info("ℹ️ Results limited to 1,000 rows for performance", icon="💡")
 
@@ -486,15 +494,19 @@ def display_sidebar(
     st.sidebar.divider()
     st.sidebar.header("🔬 Interactive Table Explorer")
     db_tables_list_for_explorer = [""] + get_db_table_list_func_arg()
-    st.session_state.selected_table_for_explorer = st.sidebar.selectbox(
+
+    # Get current value safely (must happen before widget creation)
+    current_table = st.session_state.get("selected_table_for_explorer", "")
+    default_table_index = 0
+    if current_table and current_table in db_tables_list_for_explorer:
+        default_table_index = db_tables_list_for_explorer.index(current_table)
+
+    # Selectbox automatically manages session state via key - DO NOT manually assign
+    st.sidebar.selectbox(
         "Select a table to explore:",
         options=db_tables_list_for_explorer,
-        index=db_tables_list_for_explorer.index(
-            st.session_state.selected_table_for_explorer
-        )
-        if st.session_state.selected_table_for_explorer in db_tables_list_for_explorer
-        else 0,
-        key="sb_selected_table_explorer",
+        index=default_table_index,
+        key="selected_table_for_explorer",  # Changed from "sb_selected_table_explorer" to direct state key
     )
     st.sidebar.info("ℹ️ Table preview limited to 1,000 rows", icon="💡")
 
