@@ -61,16 +61,22 @@ class BaseChart(ABC):
 
     def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[pd.DataFrame]:
         """Execute a query safely with optional parameters and return the result."""
+        return self._execute_query_cached(query, str(params) if params else None)
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def _execute_query_cached(_self, query: str, params_str: Optional[str]) -> Optional[pd.DataFrame]:
+        """Cached query execution to avoid redundant database queries."""
         try:
+            params = eval(params_str) if params_str else None
             with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
+                _self.db_path, read_only=True, logger_obj=_self.logger
             ) as con:
                 if params:
                     # DuckDB uses ? placeholders, so we need to convert $param_N to ?
                     # and provide values in correct order
                     processed_query = query
                     param_values = []
-                    
+
                     # Sort parameters by their number to maintain order
                     sorted_params = []
                     for param_name, value in params.items():
@@ -82,19 +88,19 @@ class BaseChart(ABC):
                                 sorted_params.append((999999, param_name, value))  # Put non-numbered at end
                         else:
                             sorted_params.append((999999, param_name, value))
-                    
+
                     sorted_params.sort(key=lambda x: x[0])
-                    
+
                     # Replace $param_name with ? in correct order
                     for _, param_name, value in sorted_params:
                         processed_query = processed_query.replace(f'${param_name}', '?', 1)
                         param_values.append(value)
-                    
-                    return safe_execute_query(con, processed_query, self.logger, param_values)
+
+                    return safe_execute_query(con, processed_query, _self.logger, param_values)
                 else:
-                    return safe_execute_query(con, query, self.logger)
+                    return safe_execute_query(con, query, _self.logger)
         except Exception as e:
-            self.logger.error(f"Error executing query: {e}", exc_info=True)
+            _self.logger.error(f"Error executing query: {e}", exc_info=True)
             st.error(f"Error executing query: {e}")
             return None
 

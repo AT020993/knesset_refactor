@@ -95,11 +95,28 @@ class TimeSeriesCharts(BaseChart):
                 
                 self.logger.debug(f"Executing time series query: {query}")
                 df = safe_execute_query(con, query, self.logger)
-                
+
                 if df.empty:
                     st.info(f"No query data found for '{filters['knesset_title']}' to visualize 'Queries by {x_axis_label}' with the current filters.")
                     return None
-                
+
+                # Data aggregation optimization for large datasets
+                # If we have too many time periods, aggregate automatically
+                max_time_periods = 100
+                if len(df['TimePeriod'].unique()) > max_time_periods:
+                    self.logger.info(f"Large dataset detected ({len(df)} rows), optimizing aggregation")
+                    # For large datasets, ensure we're using yearly aggregation
+                    if aggregation_level == "Monthly":
+                        st.info(f"Dataset too large for monthly view. Automatically switching to yearly aggregation for better performance.")
+                        # Re-aggregate to yearly in memory
+                        df['Year'] = df['TimePeriod'].str[:4]
+                        if "KnessetNum" in df.columns:
+                            df = df.groupby(['Year', 'KnessetNum'], as_index=False)['QueryCount'].sum()
+                            df.rename(columns={'Year': 'TimePeriod'}, inplace=True)
+                        else:
+                            df = df.groupby('Year', as_index=False)['QueryCount'].sum()
+                            df.rename(columns={'Year': 'TimePeriod'}, inplace=True)
+
                 # Prepare data for plotting
                 if "KnessetNum" in df.columns:
                     df["KnessetNum"] = df["KnessetNum"].astype(str)

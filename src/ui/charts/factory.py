@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import plotly.graph_objects as go
+import streamlit as st
 
 from .comparison import ComparisonCharts
 from .distribution import DistributionCharts
@@ -19,12 +20,27 @@ class ChartFactory:
         self.db_path = db_path
         self.logger = logger_obj
 
-        # Initialize chart generators
-        self._generators = {
-            "time_series": TimeSeriesCharts(db_path, logger_obj),
-            "distribution": DistributionCharts(db_path, logger_obj),
-            "comparison": ComparisonCharts(db_path, logger_obj),
-            "network": NetworkCharts(db_path, logger_obj),
+        # Initialize chart generators lazily with caching
+        self._generators = None
+
+    @property
+    def generators(self):
+        """Lazy-load chart generators with caching."""
+        if self._generators is None:
+            self._generators = self._create_generators_cached(str(self.db_path))
+        return self._generators
+
+    @st.cache_resource(show_spinner=False)
+    def _create_generators_cached(_db_path: str):
+        """Create cached chart generators to avoid redundant instantiation."""
+        db_path = Path(_db_path)
+        logger = logging.getLogger("knesset.ui.charts.factory")
+
+        return {
+            "time_series": TimeSeriesCharts(db_path, logger),
+            "distribution": DistributionCharts(db_path, logger),
+            "comparison": ComparisonCharts(db_path, logger),
+            "network": NetworkCharts(db_path, logger),
         }
 
     def create_chart(
@@ -41,7 +57,7 @@ class ChartFactory:
         Returns:
             Plotly figure or None if error
         """
-        generator = self._generators.get(chart_category)
+        generator = self.generators.get(chart_category)
         if not generator:
             self.logger.warning(f"Unknown chart category: {chart_category}")
             return None

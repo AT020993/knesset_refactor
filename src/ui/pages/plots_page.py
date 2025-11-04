@@ -496,81 +496,114 @@ class PlotsPageRenderer:
         )
         st.session_state.plot_bill_origin_filter = selected_bill_origin
 
-    def _populate_filter_options(self) -> None:
-        """Populate available filter options from the database."""
-        if not self.db_path.exists():
-            return
-            
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _fetch_filter_options_cached(_db_path: str) -> Dict[str, List[str]]:
+        """Cached filter options fetching to avoid repeated database queries."""
+        from backend.connection_manager import get_db_connection, safe_execute_query
+
+        filter_options = {}
+        db_path = Path(_db_path)
+
+        if not db_path.exists():
+            return filter_options
+
         try:
-            from backend.connection_manager import get_db_connection, safe_execute_query
-            
-            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+            logger = logging.getLogger("knesset.ui.plots_page")
+            with get_db_connection(db_path, read_only=True, logger_obj=logger) as con:
                 # Query types
                 query_types_query = "SELECT DISTINCT TypeDesc FROM KNS_Query WHERE TypeDesc IS NOT NULL ORDER BY TypeDesc"
-                query_types_df = safe_execute_query(con, query_types_query, self.logger)
+                query_types_df = safe_execute_query(con, query_types_query, logger)
                 if not query_types_df.empty:
-                    st.session_state.available_query_types = query_types_df['TypeDesc'].tolist()
-                
-                # Query statuses - join with KNS_Status table
+                    filter_options['query_types'] = query_types_df['TypeDesc'].tolist()
+
+                # Query statuses
                 query_status_query = """
-                    SELECT DISTINCT s."Desc" as StatusDesc 
-                    FROM KNS_Query q 
-                    JOIN KNS_Status s ON q.StatusID = s.StatusID 
-                    WHERE s."Desc" IS NOT NULL 
+                    SELECT DISTINCT s."Desc" as StatusDesc
+                    FROM KNS_Query q
+                    JOIN KNS_Status s ON q.StatusID = s.StatusID
+                    WHERE s."Desc" IS NOT NULL
                     ORDER BY s."Desc"
                 """
-                query_status_df = safe_execute_query(con, query_status_query, self.logger)
+                query_status_df = safe_execute_query(con, query_status_query, logger)
                 if not query_status_df.empty:
-                    st.session_state.available_query_statuses = query_status_df['StatusDesc'].tolist()
-                
-                # Agenda session types - use SubTypeDesc instead of SessionType
+                    filter_options['query_statuses'] = query_status_df['StatusDesc'].tolist()
+
+                # Agenda session types
                 try:
                     session_types_query = "SELECT DISTINCT SubTypeDesc FROM KNS_Agenda WHERE SubTypeDesc IS NOT NULL ORDER BY SubTypeDesc"
-                    session_types_df = safe_execute_query(con, session_types_query, self.logger)
+                    session_types_df = safe_execute_query(con, session_types_query, logger)
                     if not session_types_df.empty:
-                        st.session_state.available_session_types = session_types_df['SubTypeDesc'].tolist()
+                        filter_options['session_types'] = session_types_df['SubTypeDesc'].tolist()
                 except:
-                    pass  # Table might not exist or column might be different
-                
-                # Agenda statuses - join with KNS_Status table
+                    pass
+
+                # Agenda statuses
                 try:
                     agenda_status_query = """
-                        SELECT DISTINCT s."Desc" as StatusDesc 
-                        FROM KNS_Agenda a 
-                        JOIN KNS_Status s ON a.StatusID = s.StatusID 
-                        WHERE s."Desc" IS NOT NULL 
+                        SELECT DISTINCT s."Desc" as StatusDesc
+                        FROM KNS_Agenda a
+                        JOIN KNS_Status s ON a.StatusID = s.StatusID
+                        WHERE s."Desc" IS NOT NULL
                         ORDER BY s."Desc"
                     """
-                    agenda_status_df = safe_execute_query(con, agenda_status_query, self.logger)
+                    agenda_status_df = safe_execute_query(con, agenda_status_query, logger)
                     if not agenda_status_df.empty:
-                        st.session_state.available_agenda_statuses = agenda_status_df['StatusDesc'].tolist()
+                        filter_options['agenda_statuses'] = agenda_status_df['StatusDesc'].tolist()
                 except:
                     pass
-                
-                # Bill types - use SubTypeDesc instead of BillTypeDesc
+
+                # Bill types
                 try:
                     bill_types_query = "SELECT DISTINCT SubTypeDesc FROM KNS_Bill WHERE SubTypeDesc IS NOT NULL ORDER BY SubTypeDesc"
-                    bill_types_df = safe_execute_query(con, bill_types_query, self.logger)
+                    bill_types_df = safe_execute_query(con, bill_types_query, logger)
                     if not bill_types_df.empty:
-                        st.session_state.available_bill_types = bill_types_df['SubTypeDesc'].tolist()
+                        filter_options['bill_types'] = bill_types_df['SubTypeDesc'].tolist()
                 except:
                     pass
-                
-                # Bill statuses - join with KNS_Status table
+
+                # Bill statuses
                 try:
                     bill_status_query = """
-                        SELECT DISTINCT s."Desc" as StatusDesc 
-                        FROM KNS_Bill b 
-                        JOIN KNS_Status s ON b.StatusID = s.StatusID 
-                        WHERE s."Desc" IS NOT NULL 
+                        SELECT DISTINCT s."Desc" as StatusDesc
+                        FROM KNS_Bill b
+                        JOIN KNS_Status s ON b.StatusID = s.StatusID
+                        WHERE s."Desc" IS NOT NULL
                         ORDER BY s."Desc"
                     """
-                    bill_status_df = safe_execute_query(con, bill_status_query, self.logger)
+                    bill_status_df = safe_execute_query(con, bill_status_query, logger)
                     if not bill_status_df.empty:
-                        st.session_state.available_bill_statuses = bill_status_df['StatusDesc'].tolist()
+                        filter_options['bill_statuses'] = bill_status_df['StatusDesc'].tolist()
                 except:
                     pass
-                    
+
+        except Exception as e:
+            logger.error(f"Error fetching filter options: {e}", exc_info=True)
+
+        return filter_options
+
+    def _populate_filter_options(self) -> None:
+        """Populate available filter options from the database using cache."""
+        if not self.db_path.exists():
+            return
+
+        try:
+            # Use cached function to avoid repeated queries
+            filter_options = self._fetch_filter_options_cached(str(self.db_path))
+
+            # Populate session state from cached results
+            if 'query_types' in filter_options:
+                st.session_state.available_query_types = filter_options['query_types']
+            if 'query_statuses' in filter_options:
+                st.session_state.available_query_statuses = filter_options['query_statuses']
+            if 'session_types' in filter_options:
+                st.session_state.available_session_types = filter_options['session_types']
+            if 'agenda_statuses' in filter_options:
+                st.session_state.available_agenda_statuses = filter_options['agenda_statuses']
+            if 'bill_types' in filter_options:
+                st.session_state.available_bill_types = filter_options['bill_types']
+            if 'bill_statuses' in filter_options:
+                st.session_state.available_bill_statuses = filter_options['bill_statuses']
+
         except Exception as e:
             self.logger.error(f"Error populating filter options: {e}", exc_info=True)
 
@@ -614,12 +647,38 @@ class PlotsPageRenderer:
             final_knesset_filter, faction_display_map, connect_func, selected_chart
         )
 
-        # Generate and display plot
-        with st.spinner(f"Generating '{selected_chart}'..."):
+        # Generate and display plot with optimized spinner messaging
+        spinner_messages = {
+            "Queries by Time Period": "Loading query data and generating time series...",
+            "Agendas by Time Period": "Loading agenda data and generating time series...",
+            "Bills by Time Period": "Loading bill data and generating time series...",
+            "MK Collaboration Network": "Analyzing collaboration patterns (this may take a moment)...",
+            "Faction Collaboration Network": "Computing faction relationships...",
+            "Faction Collaboration Matrix": "Building collaboration matrix...",
+        }
+        spinner_msg = spinner_messages.get(selected_chart, f"Generating '{selected_chart}'...")
+
+        with st.spinner(spinner_msg):
             try:
                 figure = plot_function(**plot_args)
                 if figure:
-                    st.plotly_chart(figure, use_container_width=True)
+                    # Use container_width and config to optimize rendering
+                    st.plotly_chart(
+                        figure,
+                        use_container_width=True,
+                        config={
+                            'displayModeBar': True,
+                            'displaylogo': False,
+                            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                            'toImageButtonOptions': {
+                                'format': 'png',
+                                'filename': f'knesset_{selected_chart.replace(" ", "_")}',
+                                'height': 800,
+                                'width': 1400,
+                                'scale': 2
+                            }
+                        }
+                    )
                     SessionStateManager.set_plot_figure(figure)
             except Exception as e:
                 self.logger.error(
