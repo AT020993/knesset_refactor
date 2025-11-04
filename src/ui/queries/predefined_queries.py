@@ -97,7 +97,7 @@ LEFT JOIN MinisterLookup ml ON Q.GovMinistryID = ml.GovMinistryID AND ml.rn = 1
 LEFT JOIN KNS_Person min_p ON ml.PersonID = min_p.PersonID
 
 ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
-LIMIT 50000;
+LIMIT 1000;
         """,
         "knesset_filter_column": "Q.KnessetNum",
         "faction_filter_column": "f.FactionID",
@@ -157,7 +157,7 @@ LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND A.KnessetNum = ufs.KnessetNum
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC
-LIMIT 50000;
+LIMIT 1000;
         """,
         "knesset_filter_column": "A.KnessetNum",
         "faction_filter_column": "f.FactionID",
@@ -482,7 +482,7 @@ GROUP BY
     bd.DocumentCount, bd.DocumentLinks, bfs.FirstSubmissionDate
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
-LIMIT 50000;
+LIMIT 1000;
         """,
         "knesset_filter_column": "B.KnessetNum",
         "faction_filter_column": "NULL", # Bills don't have direct faction association

@@ -194,15 +194,15 @@ def format_dataframe_dates(df: pd.DataFrame, _logger_obj: logging.Logger | None 
     """Formats date columns in a dataframe to show only the date part (YYYY-MM-DD)."""
     if df.empty:
         return df
-    
+
     formatted_df = df.copy()
-    
+
     for col in df.columns:
         if df[col].dtype == 'object':
             sample_values = df[col].dropna().head(5)
             if sample_values.empty:
                 continue
-                
+
             is_date_column = False
             for value in sample_values:
                 if isinstance(value, str) and 'T' in value:
@@ -212,13 +212,59 @@ def format_dataframe_dates(df: pd.DataFrame, _logger_obj: logging.Logger | None 
                         break
                     except (ValueError, TypeError):
                         continue
-            
+
             if is_date_column:
                 try:
                     formatted_df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
                     if _logger_obj: _logger_obj.debug(f"Formatted date column: {col}")
                 except Exception as e:
                     if _logger_obj: _logger_obj.warning(f"Could not format date column {col}: {e}")
-    
+
     return formatted_df
+
+
+@st.cache_data(ttl=3600)
+def get_available_knessetes_for_query(db_path: Path, query_type: str, _logger_obj: logging.Logger | None = None) -> list[int]:
+    """
+    Fetches all available Knesset numbers for a specific query type.
+
+    This is used to populate filter dropdowns with ALL available Knessetes,
+    not just those in the limited query results.
+
+    Args:
+        db_path: Path to the database
+        query_type: Type of query ("queries", "agendas", or "bills")
+        _logger_obj: Optional logger instance
+
+    Returns:
+        List of available Knesset numbers in descending order
+    """
+    if _logger_obj: _logger_obj.debug(f"Fetching available Knessetes for query type: {query_type}")
+    if not db_path.exists():
+        if _logger_obj: _logger_obj.warning("Database file not found. Returning empty Knesset list.")
+        return []
+
+    try:
+        # Map query type to table name
+        table_map = {
+            "queries": "KNS_Query",
+            "agendas": "KNS_Agenda",
+            "bills": "KNS_Bill"
+        }
+
+        table_name = table_map.get(query_type.lower())
+        if not table_name:
+            if _logger_obj: _logger_obj.warning(f"Unknown query type: {query_type}")
+            return []
+
+        with get_db_connection(db_path, read_only=True, logger_obj=_logger_obj) as con:
+            query = f"SELECT DISTINCT KnessetNum FROM {table_name} WHERE KnessetNum IS NOT NULL ORDER BY KnessetNum DESC;"
+            knesset_df = safe_execute_query(con, query, _logger_obj)
+            knesset_list = knesset_df['KnessetNum'].tolist() if not knesset_df.empty else []
+
+            if _logger_obj: _logger_obj.debug(f"Found {len(knesset_list)} Knessetes for {query_type}")
+            return knesset_list
+    except Exception as e:
+        if _logger_obj: _logger_obj.error(f"Error fetching Knessetes for {query_type}: {e}", exc_info=True)
+        return []
 

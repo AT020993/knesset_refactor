@@ -110,7 +110,16 @@ class DataRefreshPageRenderer:
 
     def _render_local_knesset_filter(self, results_df: pd.DataFrame) -> None:
         """Render local Knesset filter widget for query results."""
-        available_knessetes = sorted(results_df['KnessetNum'].unique().tolist(), reverse=True)
+        # Get the query type from the executed query name
+        query_name = SessionStateManager.get_executed_query_name()
+        query_type = self._get_query_type_from_name(query_name)
+
+        # Get ALL available Knessetes from the database (not just from limited results)
+        available_knessetes = ui_utils.get_available_knessetes_for_query(
+            self.db_path,
+            query_type,
+            _logger_obj=self.logger
+        )
 
         # Initialize the filter state if not already set
         if "local_knesset_filter" not in st.session_state:
@@ -145,6 +154,27 @@ class DataRefreshPageRenderer:
                 st.metric("Filtered Rows", count)
             else:
                 st.metric("Total Rows", len(results_df))
+
+    def _get_query_type_from_name(self, query_name: str) -> str:
+        """
+        Determine the query type (queries, agendas, bills) from the query name.
+
+        Args:
+            query_name: Name of the predefined query
+
+        Returns:
+            Query type string ("queries", "agendas", or "bills")
+        """
+        if not query_name:
+            return "queries"
+
+        query_name_lower = query_name.lower()
+        if "bill" in query_name_lower:
+            return "bills"
+        elif "agenda" in query_name_lower:
+            return "agendas"
+        else:
+            return "queries"
 
     def _apply_local_knesset_filter(self, results_df: pd.DataFrame) -> pd.DataFrame:
         """Apply local Knesset filter to the results dataframe."""
