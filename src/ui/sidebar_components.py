@@ -157,18 +157,16 @@ def _handle_run_query_button_click(
 
             if where_conditions:
                 combined_where_clause = " AND ".join(where_conditions)
-                # Improved WHERE clause detection - check for WHERE anywhere in the query
-                has_where_clause = re.search(r"\bWHERE\b", modified_sql, re.IGNORECASE)
-                keyword_to_use = "AND" if has_where_clause else "WHERE"
-                filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
-                
+
                 # Find insertion point before GROUP BY, ORDER BY, etc.
                 # For CTE-based queries, we need to find the main query's clauses, not CTE clauses
                 insertion_point = len(modified_sql)
                 found_clause = None
-                
+
                 # First, try to find the main SELECT statement (after CTEs)
                 main_select_match = None
+                main_query_start = 0  # Start position of the main query
+
                 if "WITH " in modified_sql.upper():
                     # For CTE queries, find the main SELECT after the CTE definitions
                     # Look for SELECT that's not inside parentheses or CTE definitions
@@ -180,21 +178,29 @@ def _handle_run_query_button_click(
                         if matches:
                             # Take the last match (main SELECT)
                             main_select_match = matches[-1]
+                            main_query_start = main_select_match.end()
                             break
+
+                # FIX: Check for WHERE clause ONLY in the main query portion, not in CTEs
+                # This prevents false positives from WHERE clauses inside CTE definitions
+                main_query_portion = modified_sql[main_query_start:]
+                has_where_clause = re.search(r"\bWHERE\b", main_query_portion, re.IGNORECASE)
+                keyword_to_use = "AND" if has_where_clause else "WHERE"
+                filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
                 
                 # Define clauses to look for after the main SELECT
                 clauses_keywords_to_find = [
                     r"\bGROUP\s+BY\b",
-                    r"\bHAVING\b", 
+                    r"\bHAVING\b",
                     r"\bWINDOW\b",
                     r"\bORDER\s+BY\b",
                     r"\bLIMIT\b",
                     r"\bOFFSET\b",
                     r"\bFETCH\b",
                 ]
-                
-                # Search for clauses starting from main SELECT position
-                search_start = main_select_match.end() if main_select_match else 0
+
+                # Search for clauses starting from main query start position
+                search_start = main_query_start
                 
                 for pattern_str in clauses_keywords_to_find:
                     # Search from the main SELECT position onward
