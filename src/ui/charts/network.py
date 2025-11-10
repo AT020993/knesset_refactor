@@ -753,8 +753,103 @@ class NetworkCharts(BaseChart):
                     x = center_x + distance * math.cos(member_angle)
                     y = center_y + distance * math.sin(member_angle)
                     positions[person_id] = (x, y)
-        
+
         return positions
+
+    def _create_weighted_mk_layout(self, nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
+        """Create weighted force-directed layout for MK network where collaboration count determines distance.
+
+        More collaborations = stronger attractive force = closer distance between MKs.
+        Similar to faction network layout but optimized for larger number of nodes (MKs).
+        """
+        import random
+
+        # Initialize random positions
+        positions = {}
+        for _, node in nodes_df.iterrows():
+            person_id = node['PersonID']
+            positions[person_id] = [
+                random.uniform(-50, 50),
+                random.uniform(-50, 50)
+            ]
+
+        # Create weighted adjacency dict (collaboration count as weight)
+        edge_weights = {}
+        for _, edge in edges_df.iterrows():
+            main_id = edge['MainInitiatorID']
+            supp_id = edge['SupporterID']
+            collab_count = edge['CollaborationCount']
+
+            # Bidirectional edges with weights
+            if main_id in positions and supp_id in positions:
+                key = tuple(sorted([main_id, supp_id]))
+                if key not in edge_weights:
+                    edge_weights[key] = 0
+                edge_weights[key] += collab_count
+
+        # Force-directed algorithm parameters
+        # Adjusted for MK networks (more nodes than faction networks)
+        iterations = 200
+        k = 80  # Optimal distance between unconnected nodes
+        dt = 0.15  # Time step
+
+        for iteration in range(iterations):
+            # Calculate forces
+            forces = {}
+            for person_id in positions:
+                forces[person_id] = [0.0, 0.0]
+
+            # Repulsive forces (all nodes repel each other)
+            person_ids = list(positions.keys())
+            for i, id1 in enumerate(person_ids):
+                for id2 in person_ids[i+1:]:
+                    dx = positions[id1][0] - positions[id2][0]
+                    dy = positions[id1][1] - positions[id2][1]
+                    distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+
+                    # Repulsive force magnitude - INCREASED by 1.5x
+                    force_mag = (k * k * 1.5) / distance
+
+                    # Apply forces
+                    fx = force_mag * dx / distance
+                    fy = force_mag * dy / distance
+
+                    forces[id1][0] += fx
+                    forces[id1][1] += fy
+                    forces[id2][0] -= fx
+                    forces[id2][1] -= fy
+
+            # Attractive forces (connected nodes attract proportional to collaboration count)
+            for (id1, id2), weight in edge_weights.items():
+                dx = positions[id2][0] - positions[id1][0]
+                dy = positions[id2][1] - positions[id1][1]
+                distance = max(np.sqrt(dx*dx + dy*dy), 0.1)
+
+                # Attractive force magnitude - WEIGHTED by collaboration count
+                # More collaborations = stronger attraction = closer together
+                force_mag = (distance * distance / k) * (0.5 + np.log1p(weight) * 0.3)
+
+                # Apply forces
+                fx = force_mag * dx / distance
+                fy = force_mag * dy / distance
+
+                forces[id1][0] += fx
+                forces[id1][1] += fy
+                forces[id2][0] -= fx
+                forces[id2][1] -= fy
+
+            # Update positions with cooling factor
+            cooling = 1.0 - (iteration / iterations) * 0.5  # Gradual cooling
+            for person_id in positions:
+                # Limit force magnitude to prevent instability
+                force_magnitude = np.sqrt(forces[person_id][0]**2 + forces[person_id][1]**2)
+                if force_magnitude > 0:
+                    max_displacement = min(force_magnitude * dt * cooling, 12)
+                    positions[person_id][0] += (forces[person_id][0] / force_magnitude) * max_displacement
+                    positions[person_id][1] += (forces[person_id][1] / force_magnitude) * max_displacement
+
+        # Convert to tuple format for compatibility
+        return {person_id: tuple(pos) for person_id, pos in positions.items()}
 
     def _generate_force_directed_layout_factions(self, factions_df: pd.DataFrame, edges_df: pd.DataFrame) -> dict:
         """Generate force-directed layout positions for faction network nodes."""
@@ -1004,8 +1099,8 @@ class NetworkCharts(BaseChart):
                              showarrow=False, font=dict(size=16))
             return fig
         
-        # Generate improved network layout with better spacing
-        node_positions = self._create_better_network_layout(all_nodes, df)
+        # Generate weighted force-directed layout (collaboration strength determines distance)
+        node_positions = self._create_weighted_mk_layout(all_nodes, df)
         
         # Prepare faction colors with extended palette
         unique_factions = all_nodes['Faction'].unique()
@@ -1106,11 +1201,11 @@ class NetworkCharts(BaseChart):
                 continue
         
         fig.update_layout(
-            title=f"<b>🔗 MK Collaboration Network - Enhanced Layout<br>{title_suffix}</b>",
+            title=f"<b>🔗 MK Collaboration Network<br>{title_suffix}</b><br><sub>Distance between MKs reflects collaboration strength (closer = more collaborations)</sub>",
             title_x=0.5,
             showlegend=True,
             hovermode='closest',
-            margin=dict(b=40, l=40, r=40, t=80),
+            margin=dict(b=40, l=40, r=40, t=120),
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-150, 150]),
             height=900,
