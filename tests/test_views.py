@@ -3,8 +3,8 @@ import pytest
 import duckdb
 import pandas as pd
 
-# import the EXPORTS dict from your Streamlit UI module
-from ui.data_refresh import EXPORTS  # this now works because conftest.py prepends src/
+# Import predefined queries from the new location
+from ui.queries.predefined_queries import get_query_info
 
 
 @pytest.fixture
@@ -37,7 +37,8 @@ def prepare_dummy_query_table(conn):
 
 def test_basic_query_export_columns(conn):
     prepare_dummy_query_table(conn)
-    sql = EXPORTS["Queries – basic"]
+    query_info = get_query_info("Queries – basic")
+    sql = query_info.get("query", "")
     result = conn.execute(sql).df()
 
     expected = [
@@ -61,6 +62,7 @@ def test_basic_query_export_columns(conn):
 
 def test_basic_query_export_fails_when_missing_table(conn):
     # drop the table (or simply don't prepare it) to force an error
-    sql = EXPORTS["Queries – basic"]
+    query_info = get_query_info("Queries – basic")
+    sql = query_info.get("query", "")
     with pytest.raises(Exception):
         conn.execute(sql).df()

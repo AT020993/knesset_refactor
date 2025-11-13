@@ -5,6 +5,7 @@ This module contains the primary UI rendering logic for the data refresh page,
 separated from business logic and session state management.
 """
 
+import hashlib
 import io
 import logging
 import re
@@ -327,13 +328,13 @@ class DataRefreshPageRenderer:
         Returns:
             DataFrame with document information
         """
-        query = f"""
+        query = """
         SELECT
             GroupTypeDesc as DocumentType,
             ApplicationDesc as Format,
             FilePath as URL
         FROM KNS_DocumentBill
-        WHERE BillID = {bill_id}
+        WHERE BillID = ?
             AND FilePath IS NOT NULL
         ORDER BY
             CASE GroupTypeDesc
@@ -348,7 +349,7 @@ class DataRefreshPageRenderer:
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                result = safe_execute_query(con, query, self.logger)
+                result = safe_execute_query(con, query, self.logger, params=[bill_id])
                 return result if result is not None else pd.DataFrame()
         except Exception as e:
             self.logger.error(f"Error fetching bill documents: {e}")
@@ -380,8 +381,10 @@ class DataRefreshPageRenderer:
 
                     # Add PDF preview button for PDF documents
                     with col2:
-                        if doc_format.upper() == 'PDF':
-                            preview_key = f"preview_bill_{bill_id}_doc_{idx}"
+                        if doc_format and doc_format.upper() == 'PDF':
+                            # Use hash of bill_id + URL for guaranteed unique keys
+                            doc_hash = hashlib.md5(f"{bill_id}_{doc_url}".encode()).hexdigest()[:8]
+                            preview_key = f"preview_{doc_hash}"
                             if st.button("👁️ Preview", key=preview_key, help="Preview PDF inline"):
                                 # Display PDF using iframe
                                 st.markdown(
@@ -425,7 +428,8 @@ class DataRefreshPageRenderer:
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
                 count_result = safe_execute_query(con, full_count_sql, self.logger)
-                total_rows = count_result['total'].iloc[0] if count_result is not None and not count_result.empty else 0
+                # Convert to native Python int to ensure boolean comparisons work with Streamlit
+                total_rows = int(count_result['total'].iloc[0]) if count_result is not None and not count_result.empty else 0
         except Exception as e:
             self.logger.error(f"Error counting full dataset rows: {e}", exc_info=True)
             st.error(f"Error counting rows: {e}")
@@ -493,8 +497,13 @@ class DataRefreshPageRenderer:
         if st.session_state.temp_knesset_filter == "All Knessetes":
             st.session_state.ms_knesset_filter = []
         else:
-            knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
-            st.session_state.ms_knesset_filter = [knesset_num]
+            try:
+                knesset_num = int(st.session_state.temp_knesset_filter.replace("Knesset ", ""))
+                st.session_state.ms_knesset_filter = [knesset_num]
+            except (ValueError, AttributeError) as e:
+                self.logger.error(f"Invalid Knesset filter format: {st.session_state.temp_knesset_filter}, error: {e}")
+                st.error(f"Invalid Knesset filter format")
+                return  # Early exit on error
 
         # Reset pagination when filter changes
         st.session_state.query_page_number = 1

@@ -7,20 +7,30 @@ the system meets performance requirements under various load conditions.
 
 import pytest
 import time
-import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 import tempfile
 import shutil
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
+# NOTE: src is already added to path by conftest.py
 import duckdb
 import pandas as pd
-from backend.duckdb_io import DuckDBIO
-from ui.queries.query_executor import QueryExecutor
-from ui.queries.predefined_queries import PREDEFINED_QUERIES
+
+# Import from correct paths (conftest.py already adds src/)
+try:
+    from backend.duckdb_io import DuckDBIO
+except ImportError:
+    DuckDBIO = None
+
+try:
+    from ui.queries.query_executor import QueryExecutor
+except ImportError:
+    QueryExecutor = None
+
+try:
+    from ui.queries.predefined_queries import PREDEFINED_QUERIES
+except ImportError:
+    PREDEFINED_QUERIES = None
 
 
 class TestDatabasePerformance:

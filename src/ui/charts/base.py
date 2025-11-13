@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Tuple
 import logging
+import json
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -61,13 +62,14 @@ class BaseChart(ABC):
 
     def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[pd.DataFrame]:
         """Execute a query safely with optional parameters and return the result."""
-        return self._execute_query_cached(query, str(params) if params else None)
+        return self._execute_query_cached(query, json.dumps(params) if params else None)
 
     @st.cache_data(ttl=600, show_spinner=False)
     def _execute_query_cached(_self, query: str, params_str: Optional[str]) -> Optional[pd.DataFrame]:
         """Cached query execution to avoid redundant database queries."""
         try:
-            params = eval(params_str) if params_str else None
+            # Use json.loads instead of eval for security
+            params = json.loads(params_str) if params_str else None
             with get_db_connection(
                 _self.db_path, read_only=True, logger_obj=_self.logger
             ) as con:

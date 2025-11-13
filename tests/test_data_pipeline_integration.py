@@ -34,15 +34,15 @@ class TestEndToEndPipeline:
             "value": [
                 {
                     "PersonID": 1,
-                    "FirstName": "ÙĞÙè",
-                    "LastName": "ÜäÙÓ",
+                    "FirstName": "×™×•×¡×™",
+                    "LastName": "×›×”×Ÿ",
                     "KnessetNum": 25,
                     "DateJoined": "2021-01-01T00:00:00"
                 },
                 {
                     "PersonID": 2,
-                    "FirstName": "ÑàÙŞÙß",
-                    "LastName": "àêàÙÔÕ",
+                    "FirstName": "×“×•×“",
+                    "LastName": "×œ×•×™",
                     "KnessetNum": 25,
                     "DateJoined": "1988-01-01T00:00:00"
                 }
@@ -72,8 +72,8 @@ class TestEndToEndPipeline:
             # Verify data integrity
             result = repo.execute_query("SELECT * FROM KNS_Person ORDER BY PersonID")
             assert len(result) == 2
-            assert result.iloc[0]["FirstName"] == "ÙĞÙè"
-            assert result.iloc[1]["LastName"] == "àêàÙÔÕ"
+            assert result.iloc[0]["FirstName"] == "×™×•×¡×™"
+            assert result.iloc[1]["LastName"] == "×œ×•×™"
     
     @pytest.mark.asyncio
     async def test_multiple_tables_pipeline(self, tmp_path):
@@ -84,14 +84,14 @@ class TestEndToEndPipeline:
         mock_responses = {
             "KNS_Faction": {
                 "value": [
-                    {"FactionID": 1, "Name": "Ùé âêÙÓ", "KnessetNum": 25},
-                    {"FactionID": 2, "Name": "ÜÙÛÕÓ", "KnessetNum": 25}
+                    {"FactionID": 1, "Name": "×”×œ×™×›×•×“", "KnessetNum": 25},
+                    {"FactionID": 2, "Name": "×™×© ×¢×ª×™×“", "KnessetNum": 25}
                 ]
             },
             "KNS_Status": {
                 "value": [
-                    {"StatusID": 1, "Desc": "äâÙÜ"},
-                    {"StatusID": 2, "Desc": "ÜĞ äâÙÜ"}
+                    {"StatusID": 1, "Desc": "×¤×¢×™×œ"},
+                    {"StatusID": 2, "Desc": "×œ× ×¤×¢×™×œ"}
                 ]
             }
         }

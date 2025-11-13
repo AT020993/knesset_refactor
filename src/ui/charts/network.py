@@ -1712,10 +1712,10 @@ class NetworkCharts(BaseChart):
                 if i == j:  # Diagonal - same faction
                     hover_row.append(f"<b>Same Faction</b><br>{main_faction}")
                 else:
-                    collab_count = pivot_data.iloc[i, j]
+                    collab_count = int(pivot_data.iloc[i, j])
                     main_status = faction_status.get(main_faction, 'Unknown')
                     supp_status = faction_status.get(supp_faction, 'Unknown')
-                    
+
                     if collab_count > 0:
                         hover_row.append(
                             f"<b>{main_faction}</b> → <b>{supp_faction}</b><br>"
@@ -1861,9 +1861,9 @@ class NetworkCharts(BaseChart):
             for j in range(n_factions):
                 faction1 = sorted_factions[i]
                 faction2 = sorted_factions[j]
-                value = matrix_data[i, j]
+                value = int(matrix_data[i, j])
                 data_type = matrix_type[i, j]
-                
+
                 if i == j:  # Diagonal - solo bills
                     if show_solo_bills and value > 0:
                         hover_row.append(
@@ -1908,9 +1908,9 @@ class NetworkCharts(BaseChart):
         np.fill_diagonal(solo_matrix, np.diag(matrix_data))
         
         fig = go.Figure()
-        
+
         # Add collaboration heatmap (off-diagonal)
-        if collab_matrix.max() > 0:
+        if float(collab_matrix.max()) > 0:
             fig.add_trace(go.Heatmap(
                 z=collab_matrix,
                 x=sorted_factions,
@@ -1943,7 +1943,7 @@ class NetworkCharts(BaseChart):
             ))
         
         # Add solo bills heatmap (diagonal only)
-        if show_solo_bills and solo_matrix.max() > 0:
+        if show_solo_bills and float(solo_matrix.max()) > 0:
             fig.add_trace(go.Heatmap(
                 z=solo_matrix,
                 x=sorted_factions,

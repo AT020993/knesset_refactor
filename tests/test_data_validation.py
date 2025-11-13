@@ -332,9 +332,9 @@ class TestValidationEdgeCases:
     
     def test_unicode_validation(self):
         """Test validation with unicode characters."""
-        unicode_text = "âÑèÙê 'D91(J) -‡ =%"
+        unicode_text = "×©×œ×•× ×¢×•×œ× 'D91(J) -â‚¬ =%"
         df = pd.DataFrame({'unicode': [unicode_text]})
-        
+
         assert df['unicode'].iloc[0] == unicode_text
         assert len(df['unicode'].iloc[0]) == len(unicode_text)
     

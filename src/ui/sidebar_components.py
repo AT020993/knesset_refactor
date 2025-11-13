@@ -188,68 +188,84 @@ def _handle_run_query_button_click(
             if where_conditions:
                 combined_where_clause = " AND ".join(where_conditions)
 
-                # Find insertion point before GROUP BY, ORDER BY, etc.
-                # For CTE-based queries, we need to find the main query's clauses, not CTE clauses
-                insertion_point = len(modified_sql)
-                found_clause = None
+                try:
+                    # Find insertion point before GROUP BY, ORDER BY, etc.
+                    # For CTE-based queries, we need to find the main query's clauses, not CTE clauses
+                    insertion_point = len(modified_sql)
+                    found_clause = None
 
-                # First, try to find the main SELECT statement (after CTEs)
-                main_select_match = None
-                main_query_start = 0  # Start position of the main query
+                    # First, try to find the main SELECT statement (after CTEs)
+                    main_select_match = None
+                    main_query_start = 0  # Start position of the main query
 
-                if "WITH " in modified_sql.upper():
-                    # For CTE queries, find the main SELECT after the CTE definitions
-                    # Look for SELECT that's not inside parentheses or CTE definitions
-                    cte_end_patterns = [
-                        r"\)\s*SELECT\b",  # End of CTE followed by main SELECT
+                    if "WITH " in modified_sql.upper():
+                        # For CTE queries, find the main SELECT after the CTE definitions
+                        # Look for SELECT that's not inside parentheses or CTE definitions
+                        cte_end_patterns = [
+                            r"\)\s*SELECT\b",  # End of CTE followed by main SELECT
+                        ]
+                        for pattern in cte_end_patterns:
+                            matches = list(re.finditer(pattern, modified_sql, re.IGNORECASE))
+                            if matches:
+                                # Take the last match (main SELECT)
+                                main_select_match = matches[-1]
+                                main_query_start = main_select_match.end()
+                                break
+
+                    # Validate that we found a valid query start position
+                    if main_query_start < 0 or main_query_start >= len(modified_sql):
+                        raise ValueError(f"Invalid main query start position: {main_query_start}")
+
+                    # FIX: Check for WHERE clause ONLY in the main query portion, not in CTEs
+                    # This prevents false positives from WHERE clauses inside CTE definitions
+                    main_query_portion = modified_sql[main_query_start:]
+                    has_where_clause = re.search(r"\bWHERE\b", main_query_portion, re.IGNORECASE)
+                    keyword_to_use = "AND" if has_where_clause else "WHERE"
+                    filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
+
+                    # Define clauses to look for after the main SELECT
+                    clauses_keywords_to_find = [
+                        r"\bGROUP\s+BY\b",
+                        r"\bHAVING\b",
+                        r"\bWINDOW\b",
+                        r"\bORDER\s+BY\b",
+                        r"\bLIMIT\b",
+                        r"\bOFFSET\b",
+                        r"\bFETCH\b",
                     ]
-                    for pattern in cte_end_patterns:
-                        matches = list(re.finditer(pattern, modified_sql, re.IGNORECASE))
+
+                    # Search for clauses starting from main query start position
+                    search_start = main_query_start
+
+                    for pattern_str in clauses_keywords_to_find:
+                        # Search from the main SELECT position onward
+                        matches = list(re.finditer(pattern_str, modified_sql[search_start:], re.IGNORECASE))
                         if matches:
-                            # Take the last match (main SELECT)
-                            main_select_match = matches[-1]
-                            main_query_start = main_select_match.end()
-                            break
+                            # Adjust position relative to full string
+                            match_pos = search_start + matches[0].start()
+                            if match_pos < insertion_point:
+                                insertion_point = match_pos
+                                found_clause = pattern_str
 
-                # FIX: Check for WHERE clause ONLY in the main query portion, not in CTEs
-                # This prevents false positives from WHERE clauses inside CTE definitions
-                main_query_portion = modified_sql[main_query_start:]
-                has_where_clause = re.search(r"\bWHERE\b", main_query_portion, re.IGNORECASE)
-                keyword_to_use = "AND" if has_where_clause else "WHERE"
-                filter_string_to_add = f" {keyword_to_use} {combined_where_clause}"
-                
-                # Define clauses to look for after the main SELECT
-                clauses_keywords_to_find = [
-                    r"\bGROUP\s+BY\b",
-                    r"\bHAVING\b",
-                    r"\bWINDOW\b",
-                    r"\bORDER\s+BY\b",
-                    r"\bLIMIT\b",
-                    r"\bOFFSET\b",
-                    r"\bFETCH\b",
-                ]
+                    # Validate insertion point
+                    if insertion_point < main_query_start or insertion_point > len(modified_sql):
+                        raise ValueError(f"Invalid insertion point: {insertion_point}")
 
-                # Search for clauses starting from main query start position
-                search_start = main_query_start
-                
-                for pattern_str in clauses_keywords_to_find:
-                    # Search from the main SELECT position onward
-                    matches = list(re.finditer(pattern_str, modified_sql[search_start:], re.IGNORECASE))
-                    if matches:
-                        # Adjust position relative to full string
-                        match_pos = search_start + matches[0].start()
-                        if match_pos < insertion_point:
-                            insertion_point = match_pos
-                            found_clause = pattern_str
-                
-                # Insert filter before the first found clause
-                prefix = modified_sql[:insertion_point].strip()
-                suffix = modified_sql[insertion_point:].strip()
-                
-                if suffix:
-                    modified_sql = f"{prefix}{filter_string_to_add} {suffix}".strip()
-                else:
-                    modified_sql = f"{prefix}{filter_string_to_add}".strip()
+                    # Insert filter before the first found clause
+                    prefix = modified_sql[:insertion_point].strip()
+                    suffix = modified_sql[insertion_point:].strip()
+
+                    if suffix:
+                        modified_sql = f"{prefix}{filter_string_to_add} {suffix}".strip()
+                    else:
+                        modified_sql = f"{prefix}{filter_string_to_add}".strip()
+
+                except (ValueError, IndexError, AttributeError) as e:
+                    # If regex manipulation fails, log error and continue with unmodified query
+                    # This prevents the app from crashing due to unexpected SQL formats
+                    print(f"Warning: Failed to apply filters via regex manipulation: {e}")
+                    print(f"Continuing with unmodified query. Filters may not be applied correctly.")
+                    # modified_sql remains unchanged, filters won't be applied but query won't crash
 
             # Add OFFSET for pagination if needed
             page_offset = st.session_state.get("query_page_offset", 0)

@@ -436,7 +436,7 @@ class PlotsPageRenderer:
                     "Min. Collaborations",
                     min_value=1,
                     max_value=20,
-                    value=st.session_state.get('plot_min_collaborations', 3),
+                    value=int(st.session_state.get('plot_min_collaborations', 3)),
                     key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
                     help="Minimum number of collaborative bills to show faction-to-faction relationship"
                 )
@@ -446,7 +446,7 @@ class PlotsPageRenderer:
                 # Show solo bills toggle
                 show_solo_bills = st.checkbox(
                     "Show Solo Bills",
-                    value=st.session_state.get('plot_show_solo_bills', True),
+                    value=bool(st.session_state.get('plot_show_solo_bills', True)),
                     key=f"show_solo_bills_{selected_chart.replace(' ', '_')}",
                     help="Display solo bills (bills with only 1 initiator) on the diagonal"
                 )
@@ -458,7 +458,7 @@ class PlotsPageRenderer:
                     "Min. Total Bills",
                     min_value=1,
                     max_value=50,
-                    value=st.session_state.get('plot_min_total_bills', 1),
+                    value=int(st.session_state.get('plot_min_total_bills', 1)),
                     key=f"min_total_bills_{selected_chart.replace(' ', '_')}",
                     help="Minimum total bills for a faction to be included in matrix"
                 )
@@ -474,7 +474,7 @@ class PlotsPageRenderer:
                     "Min. Collaborations",
                     min_value=1,
                     max_value=20,
-                    value=st.session_state.get('plot_min_collaborations', 3 if "Matrix" in selected_chart else 5),
+                    value=int(st.session_state.get('plot_min_collaborations', 3 if "Matrix" in selected_chart else 5)),
                     key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
                     help="Minimum number of collaborative bills to display relationship"
                 )

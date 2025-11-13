@@ -7,18 +7,18 @@ import plotly.graph_objects as go
 import pytest
 from duckdb import DuckDBPyConnection  # For type hinting mock connection
 
-# Import functions to be tested - UPDATED IMPORTS
-from src.ui.plot_generators import (  # UPDATED from plot_agendas_by_year; UPDATED from plot_queries_by_year; Assuming these were placeholder names or older versions,; I'll comment them out if they are not actual functions in the latest plot_generators.py.; If they are actual and distinct, they should be tested.; plot_bills_by_status,; plot_bill_initiators_type,; plot_committee_meetings_by_year, # Likely also needs rename if pattern followed; plot_committee_meetings_by_type,; plot_factions_by_knesset,; plot_members_by_gender,; plot_members_by_age_group,; Keep other existing, correctly named plot functions from your actual plot_generators.py
+# Import functions to be tested - CORRECTED IMPORTS
+from src.ui.plot_generators import (
     check_tables_exist,
     plot_agenda_classifications_pie,
     plot_agenda_status_distribution,
     plot_agendas_by_time_period,
-    plot_queries_by_coalition_and_answer_status,
-    plot_queries_by_ministry_and_status,
     plot_queries_by_time_period,
     plot_queries_per_faction_in_knesset,
     plot_query_status_by_faction,
     plot_query_types_distribution,
+    plot_agendas_per_faction,
+    plot_agendas_by_coalition_status,
 )
 
 # Mock streamlit globally for all tests in this file

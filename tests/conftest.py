@@ -15,14 +15,17 @@ os.environ["STREAMLIT_CACHE_DISABLED"] = "1"
 
 
 # Patch Streamlit caching BEFORE any imports that use it
-def passthrough_decorator(func=None, **kwargs):
-    """A decorator that does nothing but return the original function."""
-    if func is None:
+def passthrough_decorator(func=None, *args, **kwargs):
+    """A decorator that does nothing but return the original function.
 
+    Accepts any arguments (ttl, show_spinner, etc.) but ignores them.
+    """
+    if func is None:
+        # Called as @st.cache_data(ttl=300)
         def wrapper(fn):
             return fn
-
         return wrapper
+    # Called as @st.cache_data without parentheses
     return func
 
 
