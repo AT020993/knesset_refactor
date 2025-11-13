@@ -303,7 +303,7 @@ class DataRefreshPageRenderer:
         with st.expander("📚 Bills with Multiple Documents (Top 10)", expanded=False):
             st.caption("Bills with 5+ documents - click links to access documents")
 
-            for _, row in multi_doc_bills.iterrows():
+            for bill_row_idx, (_, row) in enumerate(multi_doc_bills.iterrows()):
                 bill_name = row.get('BillName', 'Unknown Bill')
                 bill_id = row.get('BillID')
                 doc_count = row.get('BillDocumentCount', 0)
@@ -314,7 +314,8 @@ class DataRefreshPageRenderer:
                 docs_df = self._get_bill_documents(bill_id)
 
                 if not docs_df.empty:
-                    self._render_document_list(docs_df, bill_id)
+                    # Pass row index to ensure unique key context across multi-document view iterations
+                    self._render_document_list(docs_df, bill_id, bill_row_idx)
 
                 st.divider()
 
@@ -356,19 +357,24 @@ class DataRefreshPageRenderer:
             return pd.DataFrame()
 
     @staticmethod
-    def _render_document_list(docs_df: pd.DataFrame, bill_id: int) -> None:
+    def _render_document_list(
+        docs_df: pd.DataFrame,
+        bill_id: int,
+        bill_row_idx: int = 0
+    ) -> None:
         """
         Render organized list of documents by type with PDF preview capability.
 
         Args:
             docs_df: DataFrame with document information
             bill_id: Bill ID for unique key generation
+            bill_row_idx: Row index in the parent multi-document view for key uniqueness
         """
         # Group by document type
         for doc_type, group in docs_df.groupby('DocumentType', sort=False):
             st.markdown(f"**{doc_type}** ({len(group)} files)")
 
-            for idx, doc in group.iterrows():
+            for doc_group_idx, (idx, doc) in enumerate(group.iterrows()):
                 doc_format = doc.get('Format', 'Unknown')
                 doc_url = doc.get('URL', '')
 
@@ -382,9 +388,13 @@ class DataRefreshPageRenderer:
                     # Add PDF preview button for PDF documents
                     with col2:
                         if doc_format and doc_format.upper() == 'PDF':
-                            # Use hash of bill_id + URL for guaranteed unique keys
-                            doc_hash = hashlib.md5(f"{bill_id}_{doc_url}".encode()).hexdigest()[:8]
-                            preview_key = f"preview_{doc_hash}"
+                            # Create fully unique key with multiple context layers:
+                            # 1. bill_id: uniqueness across bills
+                            # 2. bill_row_idx: uniqueness across multi-document view rows
+                            # 3. doc_group_idx: uniqueness across documents within a bill
+                            # 4. URL hash: fallback uniqueness for identical documents
+                            url_hash = hashlib.md5(doc_url.encode()).hexdigest()[:8]
+                            preview_key = f"preview_{bill_id}_{bill_row_idx}_{doc_group_idx}_{url_hash}"
                             if st.button("👁️ Preview", key=preview_key, help="Preview PDF inline"):
                                 # Display PDF using iframe
                                 st.markdown(
