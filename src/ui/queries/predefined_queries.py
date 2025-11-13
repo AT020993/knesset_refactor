@@ -250,10 +250,61 @@ BillPlenumSessions AS (
     GROUP BY psi.ItemID
 ),
 BillDocuments AS (
-    SELECT 
+    -- Prioritize documents by importance and recency
+    SELECT
         db.BillID,
         COUNT(*) as DocumentCount,
+
+        -- Primary document (most important single link) - Published Law
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'חוק - פרסום ברשומות' AND db.ApplicationDesc = 'PDF' THEN db.FilePath
+        END) AS PrimaryDoc_PublishedLaw_PDF,
+
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'חוק - פרסום ברשומות' AND db.ApplicationDesc != 'PDF' THEN db.FilePath
+        END) AS PrimaryDoc_PublishedLaw_Other,
+
+        -- First reading document (most common access point)
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'הצעת חוק לקריאה הראשונה' AND db.ApplicationDesc = 'PDF' THEN db.FilePath
+        END) AS FirstReading_Doc_PDF,
+
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'הצעת חוק לקריאה הראשונה' AND db.ApplicationDesc != 'PDF' THEN db.FilePath
+        END) AS FirstReading_Doc_Other,
+
+        -- Second/Third reading (final version before law)
+        MAX(CASE
+            WHEN db.GroupTypeDesc LIKE 'הצעת חוק לקריאה השנייה והשלישית%' AND db.ApplicationDesc = 'PDF' THEN db.FilePath
+        END) AS SecondThirdReading_Doc_PDF,
+
+        MAX(CASE
+            WHEN db.GroupTypeDesc LIKE 'הצעת חוק לקריאה השנייה והשלישית%' AND db.ApplicationDesc != 'PDF' THEN db.FilePath
+        END) AS SecondThirdReading_Doc_Other,
+
+        -- Early discussion (original proposal)
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'הצעת חוק לדיון מוקדם' AND db.ApplicationDesc = 'PDF' THEN db.FilePath
+        END) AS EarlyDiscussion_Doc_PDF,
+
+        MAX(CASE
+            WHEN db.GroupTypeDesc = 'הצעת חוק לדיון מוקדם' AND db.ApplicationDesc != 'PDF' THEN db.FilePath
+        END) AS EarlyDiscussion_Doc_Other,
+
+        -- Count by category for user info
+        COUNT(CASE WHEN db.GroupTypeDesc = 'חוק - פרסום ברשומות' THEN 1 END) AS PublishedLawCount,
+        COUNT(CASE WHEN db.GroupTypeDesc = 'הצעת חוק לקריאה הראשונה' THEN 1 END) AS FirstReadingCount,
+        COUNT(CASE WHEN db.GroupTypeDesc LIKE 'הצעת חוק לקריאה השנייה והשלישית%' THEN 1 END) AS SecondThirdCount,
+        COUNT(CASE WHEN db.GroupTypeDesc = 'הצעת חוק לדיון מוקדם' THEN 1 END) AS EarlyDiscussionCount,
+        COUNT(CASE WHEN db.GroupTypeDesc NOT IN (
+            'חוק - פרסום ברשומות',
+            'הצעת חוק לקריאה הראשונה',
+            'הצעת חוק לדיון מוקדם'
+        ) AND db.GroupTypeDesc NOT LIKE 'הצעת חוק לקריאה השנייה והשלישית%' THEN 1 END) AS OtherDocCount,
+
+        -- Keep legacy concatenated format for backward compatibility (exports)
         GROUP_CONCAT(DISTINCT db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath, ' | ') as DocumentLinks
+
     FROM KNS_DocumentBill db
     WHERE db.FilePath IS NOT NULL
     GROUP BY db.BillID
@@ -438,12 +489,59 @@ SELECT
     
     -- Document information
     COALESCE(bd.DocumentCount, 0) AS BillDocumentCount,
-    CASE 
-        WHEN LENGTH(bd.DocumentLinks) > 500 THEN 
+
+    -- Primary document URL (prioritized: Published Law > First Reading > 2nd/3rd Reading > Early Discussion)
+    COALESCE(
+        bd.PrimaryDoc_PublishedLaw_PDF,
+        bd.PrimaryDoc_PublishedLaw_Other,
+        bd.FirstReading_Doc_PDF,
+        bd.FirstReading_Doc_Other,
+        bd.SecondThirdReading_Doc_PDF,
+        bd.SecondThirdReading_Doc_Other,
+        bd.EarlyDiscussion_Doc_PDF,
+        bd.EarlyDiscussion_Doc_Other
+    ) AS BillPrimaryDocumentURL,
+
+    -- Document type label for primary doc
+    CASE
+        WHEN bd.PrimaryDoc_PublishedLaw_PDF IS NOT NULL OR bd.PrimaryDoc_PublishedLaw_Other IS NOT NULL THEN 'Published Law'
+        WHEN bd.FirstReading_Doc_PDF IS NOT NULL OR bd.FirstReading_Doc_Other IS NOT NULL THEN 'First Reading'
+        WHEN bd.SecondThirdReading_Doc_PDF IS NOT NULL OR bd.SecondThirdReading_Doc_Other IS NOT NULL THEN '2nd/3rd Reading'
+        WHEN bd.EarlyDiscussion_Doc_PDF IS NOT NULL OR bd.EarlyDiscussion_Doc_Other IS NOT NULL THEN 'Early Discussion'
+        ELSE NULL
+    END AS BillPrimaryDocumentType,
+
+    -- Format (PDF preferred, otherwise other formats)
+    CASE
+        WHEN bd.PrimaryDoc_PublishedLaw_PDF IS NOT NULL THEN 'PDF'
+        WHEN bd.PrimaryDoc_PublishedLaw_Other IS NOT NULL THEN 'DOC'
+        WHEN bd.FirstReading_Doc_PDF IS NOT NULL THEN 'PDF'
+        WHEN bd.FirstReading_Doc_Other IS NOT NULL THEN 'DOC'
+        WHEN bd.SecondThirdReading_Doc_PDF IS NOT NULL THEN 'PDF'
+        WHEN bd.SecondThirdReading_Doc_Other IS NOT NULL THEN 'DOC'
+        WHEN bd.EarlyDiscussion_Doc_PDF IS NOT NULL THEN 'PDF'
+        WHEN bd.EarlyDiscussion_Doc_Other IS NOT NULL THEN 'DOC'
+        ELSE NULL
+    END AS BillPrimaryDocumentFormat,
+
+    -- Document category counts (for detailed view)
+    COALESCE(bd.PublishedLawCount, 0) AS BillPublishedLawDocCount,
+    COALESCE(bd.FirstReadingCount, 0) AS BillFirstReadingDocCount,
+    COALESCE(bd.SecondThirdCount, 0) AS BillSecondThirdReadingDocCount,
+    COALESCE(bd.EarlyDiscussionCount, 0) AS BillEarlyDiscussionDocCount,
+    COALESCE(bd.OtherDocCount, 0) AS BillOtherDocCount,
+
+    -- Legacy format (for backward compatibility in exports, truncated for display)
+    CASE
+        WHEN LENGTH(bd.DocumentLinks) > 500 THEN
             SUBSTRING(bd.DocumentLinks, 1, 497) || '...'
         ELSE bd.DocumentLinks
     END AS BillDocumentLinks,
-    
+
+    -- Knesset.gov.il website link for bill details
+    'https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid='
+        || CAST(B.BillID AS VARCHAR) AS BillKnessetWebsiteURL,
+
     -- First Bill Submission Date (earliest activity: initiator assignment, committee, plenum, or publication)
     strftime(bfs.FirstSubmissionDate, '%Y-%m-%d') AS FirstBillSubmissionDate
 
@@ -477,9 +575,16 @@ GROUP BY
     B.PublicationDate, B.MagazineNumber, B.PageNumber, B.IsContinuationBill, 
     B.PublicationSeriesID, B.PublicationSeriesDesc, B.PublicationSeriesFirstCall,
     bcs.BillSpecificSessions, bcs.FirstRelevantSession, bcs.LastRelevantSession,
-    bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession, 
+    bps.PlenumSessionCount, bps.FirstPlenumSession, bps.LastPlenumSession,
     bps.AvgPlenumSessionDurationMinutes, bps.PlenumSessionNames, psi.ItemTypeDesc,
-    bd.DocumentCount, bd.DocumentLinks, bfs.FirstSubmissionDate
+    bd.DocumentCount, bd.DocumentLinks,
+    bd.PrimaryDoc_PublishedLaw_PDF, bd.PrimaryDoc_PublishedLaw_Other,
+    bd.FirstReading_Doc_PDF, bd.FirstReading_Doc_Other,
+    bd.SecondThirdReading_Doc_PDF, bd.SecondThirdReading_Doc_Other,
+    bd.EarlyDiscussion_Doc_PDF, bd.EarlyDiscussion_Doc_Other,
+    bd.PublishedLawCount, bd.FirstReadingCount, bd.SecondThirdCount,
+    bd.EarlyDiscussionCount, bd.OtherDocCount,
+    bfs.FirstSubmissionDate
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
 LIMIT 1000;

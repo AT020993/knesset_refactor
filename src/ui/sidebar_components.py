@@ -160,6 +160,31 @@ def _handle_run_query_button_click(
                         f"FactionID IN ({', '.join(map(str, selected_faction_ids))})"
                     )
 
+            # Apply document type filter (for bill queries only)
+            if st.session_state.get('ms_document_type_filter') and 'bill' in st.session_state.selected_query_name.lower():
+                selected_doc_types = st.session_state.ms_document_type_filter
+                doc_type_conditions = []
+
+                for doc_type in selected_doc_types:
+                    if doc_type == "Published Law":
+                        doc_type_conditions.append("BillPublishedLawDocCount > 0")
+                    elif doc_type == "First Reading":
+                        doc_type_conditions.append("BillFirstReadingDocCount > 0")
+                    elif doc_type == "2nd/3rd Reading":
+                        doc_type_conditions.append("BillSecondThirdReadingDocCount > 0")
+                    elif doc_type == "Early Discussion":
+                        doc_type_conditions.append("BillEarlyDiscussionDocCount > 0")
+                    elif doc_type == "Other":
+                        doc_type_conditions.append("BillOtherDocCount > 0")
+
+                if doc_type_conditions:
+                    # Use OR to match any of the selected document types
+                    combined_doc_filter = f"({' OR '.join(doc_type_conditions)})"
+                    where_conditions.append(combined_doc_filter)
+                    applied_filters_info.append(
+                        f"Document Types: {', '.join(selected_doc_types)}"
+                    )
+
             if where_conditions:
                 combined_where_clause = " AND ".join(where_conditions)
 
@@ -565,4 +590,18 @@ def display_sidebar(
         options=list(faction_display_map_arg.keys()),  # Use the passed map
         help="Select factions. The Knesset number in parentheses provides context.",
         key="ms_faction_filter",  # This becomes the session state variable name
+    )
+
+    # Document type filter (applies to bill queries only)
+    st.sidebar.multiselect(
+        "Bill Document Type(s):",
+        options=[
+            "Published Law",
+            "First Reading",
+            "2nd/3rd Reading",
+            "Early Discussion",
+            "Other"
+        ],
+        help="Filter bills by document type availability (applies to Bills query only)",
+        key="ms_document_type_filter",
     )
