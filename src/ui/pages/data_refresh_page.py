@@ -313,7 +313,7 @@ class DataRefreshPageRenderer:
                 docs_df = self._get_bill_documents(bill_id)
 
                 if not docs_df.empty:
-                    self._render_document_list(docs_df)
+                    self._render_document_list(docs_df, bill_id)
 
                 st.divider()
 
@@ -355,12 +355,13 @@ class DataRefreshPageRenderer:
             return pd.DataFrame()
 
     @staticmethod
-    def _render_document_list(docs_df: pd.DataFrame) -> None:
+    def _render_document_list(docs_df: pd.DataFrame, bill_id: int) -> None:
         """
         Render organized list of documents by type with PDF preview capability.
 
         Args:
             docs_df: DataFrame with document information
+            bill_id: Bill ID for unique key generation
         """
         # Group by document type
         for doc_type, group in docs_df.groupby('DocumentType', sort=False):
@@ -380,7 +381,7 @@ class DataRefreshPageRenderer:
                     # Add PDF preview button for PDF documents
                     with col2:
                         if doc_format.upper() == 'PDF':
-                            preview_key = f"preview_{hash(doc_url)}"
+                            preview_key = f"preview_bill_{bill_id}_doc_{idx}"
                             if st.button("👁️ Preview", key=preview_key, help="Preview PDF inline"):
                                 # Display PDF using iframe
                                 st.markdown(
