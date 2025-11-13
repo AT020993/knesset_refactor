@@ -49,6 +49,10 @@ class ChartService:
         """Legacy method for query status by faction."""
         return self.chart_factory.plot_query_status_by_faction(**kwargs)
 
+    def plot_queries_by_ministry(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for queries by ministry."""
+        return self.create_chart("comparison", "queries_by_ministry", **kwargs)
+
     # Agenda chart methods
     def plot_agendas_by_time_period(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for agendas by time period."""

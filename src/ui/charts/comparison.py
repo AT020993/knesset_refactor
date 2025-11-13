@@ -337,10 +337,164 @@ class ComparisonCharts(BaseChart):
             st.error(f"Could not generate 'Agendas by Coalition Status' plot: {e}")
             return None
 
-    def plot_queries_by_ministry(self, **kwargs) -> Optional[go.Figure]:
-        """Generate queries by ministry chart."""
-        # TODO: Implement from original plot_generators.py
-        pass
+    def plot_queries_by_ministry(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """
+        Generate queries by ministry and status chart.
+
+        Shows query distribution and reply percentage by ministry for a specific Knesset.
+        Requires a single Knesset to be selected.
+        """
+        if not self.check_database_exists():
+            return None
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Query Performance by Ministry' plot."
+            )
+            self.logger.info(
+                "plot_queries_by_ministry requires a single Knesset filter."
+            )
+            return None
+
+        single_knesset_num = knesset_filter[0]
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = ["KNS_Query", "KNS_GovMinistry", "KNS_Status"]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                # Build answer status categorization
+                answer_status_case_sql = """
+                    CASE
+                        WHEN s.Desc LIKE '%נענתה%' AND s.Desc NOT LIKE '%לא נענתה%' THEN 'Answered'
+                        WHEN s.Desc LIKE '%לא נענתה%' THEN 'Not Answered'
+                        WHEN s.Desc LIKE '%הועברה%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%בטיפול%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%נדחתה%' THEN 'Not Answered'
+                        WHEN s.Desc LIKE '%הוסרה%' THEN 'Other/In Progress'
+                        ELSE 'Unknown'
+                    END AS AnswerStatus
+                """
+
+                sql_query = f"""
+                WITH MinistryQueryStats AS (
+                    SELECT
+                        q.GovMinistryID,
+                        m.Name AS MinistryName,
+                        {answer_status_case_sql},
+                        COUNT(q.QueryID) AS QueryCount
+                    FROM KNS_Query q
+                    JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+                    JOIN KNS_Status s ON q.StatusID = s.StatusID
+                    WHERE q.KnessetNum = {single_knesset_num} AND q.GovMinistryID IS NOT NULL
+                    GROUP BY q.GovMinistryID, m.Name, AnswerStatus
+                )
+                SELECT
+                    MinistryName,
+                    AnswerStatus,
+                    QueryCount,
+                    SUM(QueryCount) OVER (PARTITION BY MinistryName) AS TotalQueriesForMinistry,
+                    SUM(CASE WHEN AnswerStatus = 'Answered' THEN QueryCount ELSE 0 END) OVER (PARTITION BY MinistryName) AS AnsweredQueriesForMinistry
+                FROM MinistryQueryStats
+                ORDER BY TotalQueriesForMinistry DESC, MinistryName,
+                    CASE AnswerStatus
+                        WHEN 'Answered' THEN 1
+                        WHEN 'Not Answered' THEN 2
+                        WHEN 'Other/In Progress' THEN 3
+                        ELSE 4
+                    END
+                """
+
+                self.logger.debug(
+                    f"Executing SQL for plot_queries_by_ministry (Knesset {single_knesset_num}): {sql_query}"
+                )
+                result = safe_execute_query(con, sql_query, self.logger)
+
+                if result is None or result.empty:
+                    st.info(
+                        f"No query data found for ministries in Knesset {single_knesset_num}."
+                    )
+                    return None
+
+                df = result.copy()
+
+                # Convert to numeric and calculate percentages
+                df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors="coerce").fillna(0)
+                df["TotalQueriesForMinistry"] = pd.to_numeric(
+                    df["TotalQueriesForMinistry"], errors="coerce"
+                ).fillna(0)
+                df["AnsweredQueriesForMinistry"] = pd.to_numeric(
+                    df["AnsweredQueriesForMinistry"], errors="coerce"
+                ).fillna(0)
+
+                df["ReplyPercentage"] = (
+                    (df["AnsweredQueriesForMinistry"] / df["TotalQueriesForMinistry"].replace(0, pd.NA)) * 100
+                ).round(1)
+                df["ReplyPercentageText"] = df["ReplyPercentage"].apply(
+                    lambda x: f"{x}% replied" if pd.notna(x) else "N/A replied"
+                )
+
+                # Get ministry order for consistent sorting
+                df_annotations = df.drop_duplicates(subset=["MinistryName"]).sort_values(
+                    by="TotalQueriesForMinistry", ascending=False
+                )
+
+                # Import color config
+                from config.charts import ChartConfig
+
+                fig = px.bar(
+                    df,
+                    x="MinistryName",
+                    y="QueryCount",
+                    color="AnswerStatus",
+                    title=f"<b>Query Distribution and Reply Rate by Ministry (Knesset {single_knesset_num})</b>",
+                    labels={
+                        "MinistryName": "Ministry",
+                        "QueryCount": "Number of Queries",
+                        "AnswerStatus": "Query Outcome",
+                    },
+                    color_discrete_map=ChartConfig.ANSWER_STATUS_COLORS,
+                    category_orders={
+                        "AnswerStatus": ["Answered", "Not Answered", "Other/In Progress", "Unknown"],
+                        "MinistryName": df_annotations["MinistryName"].tolist(),
+                    },
+                )
+
+                fig.update_traces(
+                    customdata=df[["TotalQueriesForMinistry", "ReplyPercentage"]],
+                    hovertemplate="<b>Ministry:</b> %{x}<br>"
+                    + "<b>Status:</b> %{fullData.name}<br>"
+                    + "<b>Count (this status):</b> %{y}<br>"
+                    + "<b>Total Queries (Ministry):</b> %{customdata[0]}<br>"
+                    + "<b>Reply Rate (Ministry):</b> %{customdata[1]:.1f}%<extra></extra>",
+                )
+
+                fig.update_layout(
+                    xaxis_title="Ministry",
+                    yaxis_title="Number of Queries",
+                    legend_title_text="Query Outcome",
+                    title_x=0.5,
+                    xaxis_tickangle=-45,
+                    height=800,
+                    margin=dict(t=180),
+                )
+
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                f"Error generating 'plot_queries_by_ministry': {e}", exc_info=True
+            )
+            st.error(f"Could not generate 'Query Performance by Ministry' plot: {e}")
+            return None
 
     def plot_query_status_by_faction(
         self,

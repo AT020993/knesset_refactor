@@ -104,6 +104,17 @@ def plot_query_status_by_faction(
     return chart_service.plot_query_status_by_faction(**kwargs)
 
 
+def plot_queries_by_ministry(
+    db_path: Path,
+    connect_func: Callable,  # Ignored in new implementation
+    logger_obj: logging.Logger,
+    **kwargs,
+) -> Optional[Any]:
+    """Legacy wrapper for queries by ministry chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_queries_by_ministry(**kwargs)
+
+
 # Add more legacy function wrappers as needed
 
 
@@ -212,6 +223,7 @@ def get_available_plots():
             "Query Types Distribution": plot_query_types_distribution,
             "Queries per Faction": plot_queries_per_faction_in_knesset,
             "Query Status Description with Faction Breakdown (Single Knesset)": plot_query_status_by_faction,
+            "Query Performance by Ministry (Single Knesset)": plot_queries_by_ministry,
         },
         "Agenda Analytics": {
             "Agendas by Time Period": plot_agendas_by_time_period,
