@@ -722,7 +722,7 @@ class NetworkCharts(BaseChart):
         # Group by faction for initial positioning
         faction_groups = {}
         for _, node in nodes_df.iterrows():
-            faction = node['Faction']
+            faction = node['FactionName']
             if faction not in faction_groups:
                 faction_groups[faction] = []
             faction_groups[faction].append(node['PersonID'])
@@ -1123,9 +1123,14 @@ class NetworkCharts(BaseChart):
         edge_info = []
         
         for _, edge in df.iterrows():
-            source_pos = node_positions[edge['MainInitiatorID']]
-            target_pos = node_positions[edge['SupporterID']]
-            
+            main_id = edge['MainInitiatorID']
+            supp_id = edge['SupporterID']
+            # Skip edges where either node is missing from positions (defensive check)
+            if main_id not in node_positions or supp_id not in node_positions:
+                continue
+            source_pos = node_positions[main_id]
+            target_pos = node_positions[supp_id]
+
             edge_x.extend([source_pos[0], target_pos[0], None])
             edge_y.extend([source_pos[1], target_pos[1], None])
             edge_info.append(f"{edge['CollaborationCount']} collaborations")
@@ -1294,9 +1299,14 @@ class NetworkCharts(BaseChart):
         edge_y = []
         
         for _, edge in df.iterrows():
-            source_pos = node_positions[edge['MainFactionID']]
-            target_pos = node_positions[edge['SupporterFactionID']]
-            
+            main_id = edge['MainFactionID']
+            supp_id = edge['SupporterFactionID']
+            # Skip edges where either node is missing from positions (defensive check)
+            if main_id not in node_positions or supp_id not in node_positions:
+                continue
+            source_pos = node_positions[main_id]
+            target_pos = node_positions[supp_id]
+
             edge_x.extend([source_pos[0], target_pos[0], None])
             edge_y.extend([source_pos[1], target_pos[1], None])
         

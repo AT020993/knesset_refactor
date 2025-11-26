@@ -54,7 +54,8 @@ class TestAPIErrorHandling:
     
     def test_unknown_error_categorization(self):
         """Test unknown errors are properly categorized."""
-        error = ValueError("Some unexpected error")
+        # Use an error type that isn't specifically handled (not network, timeout, client, server, or data)
+        error = RuntimeError("Some unexpected error")
         category = categorize_error(error)
         assert category == ErrorCategory.UNKNOWN
 

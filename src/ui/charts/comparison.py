@@ -135,6 +135,28 @@ class ComparisonCharts(BaseChart):
                 if not self.check_tables_exist(con, required_tables):
                     return None
 
+                # First, get total agenda counts by classification to show inclusive proposals note
+                classification_query = """
+                SELECT
+                    ClassificationDesc,
+                    COUNT(*) as count
+                FROM KNS_Agenda
+                WHERE KnessetNum = ?
+                GROUP BY ClassificationDesc
+                """
+                classification_df = safe_execute_query(
+                    con, classification_query, self.logger, params=[single_knesset_num]
+                )
+
+                inclusive_count = 0
+                independent_count = 0
+                if not classification_df.empty:
+                    for _, row in classification_df.iterrows():
+                        if row["ClassificationDesc"] == "כוללת":
+                            inclusive_count = int(row["count"])
+                        elif row["ClassificationDesc"] == "עצמאית":
+                            independent_count = int(row["count"])
+
                 date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
 
                 query = f"""
@@ -188,12 +210,24 @@ class ComparisonCharts(BaseChart):
                     df["AgendaCount"], errors="coerce"
                 ).fillna(0)
 
+                # Build title with inclusive proposals note
+                total_agendas = inclusive_count + independent_count
+                if inclusive_count > 0:
+                    inclusive_pct = round(inclusive_count * 100.0 / total_agendas, 1) if total_agendas > 0 else 0
+                    title = (
+                        f"<b>Agendas per Initiating Faction (Knesset {single_knesset_num})</b><br>"
+                        f"<sub>Showing {independent_count} independent proposals only. "
+                        f"{inclusive_count} inclusive/unified proposals ({inclusive_pct}%) have no single initiator.</sub>"
+                    )
+                else:
+                    title = f"<b>Agendas per Initiating Faction (Knesset {single_knesset_num})</b>"
+
                 fig = px.bar(
                     df,
                     x="FactionName",
                     y="AgendaCount",
                     color="FactionName",
-                    title=f"<b>Agendas per Initiating Faction (Knesset {single_knesset_num})</b>",
+                    title=title,
                     labels={
                         "FactionName": "Faction",
                         "AgendaCount": "Number of Agenda Items",
@@ -213,6 +247,8 @@ class ComparisonCharts(BaseChart):
                     title_x=0.5,
                     xaxis_tickangle=-45,
                     showlegend=False,
+                    height=800,
+                    margin=dict(t=180),
                 )
 
                 return fig
@@ -261,11 +297,34 @@ class ComparisonCharts(BaseChart):
                 if not self.check_tables_exist(con, required_tables):
                     return None
 
+                # First, get total agenda counts by classification to show inclusive proposals note
+                classification_query = """
+                SELECT
+                    ClassificationDesc,
+                    COUNT(*) as count
+                FROM KNS_Agenda
+                WHERE KnessetNum = ?
+                GROUP BY ClassificationDesc
+                """
+                classification_df = safe_execute_query(
+                    con, classification_query, self.logger, params=[single_knesset_num]
+                )
+
+                inclusive_count = 0
+                independent_count = 0
+                if not classification_df.empty:
+                    for _, row in classification_df.iterrows():
+                        if row["ClassificationDesc"] == "כוללת":
+                            inclusive_count = int(row["count"])
+                        elif row["ClassificationDesc"] == "עצמאית":
+                            independent_count = int(row["count"])
+
                 date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
 
+                # Include Unmapped category for factions without coalition status
                 query = f"""
                 SELECT
-                    ufs.CoalitionStatus AS CoalitionStatus,
+                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
                     COUNT(DISTINCT a.AgendaID) AS AgendaCount
                 FROM KNS_Agenda a
                 JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
@@ -277,7 +336,6 @@ class ComparisonCharts(BaseChart):
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
                     AND a.KnessetNum = ufs.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
-                    AND ufs.CoalitionStatus IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -313,17 +371,32 @@ class ComparisonCharts(BaseChart):
                     df["AgendaCount"], errors="coerce"
                 ).fillna(0)
 
+                # Build title with inclusive proposals note
+                total_agendas = inclusive_count + independent_count
+                if inclusive_count > 0:
+                    inclusive_pct = round(inclusive_count * 100.0 / total_agendas, 1) if total_agendas > 0 else 0
+                    title = (
+                        f"<b>Agendas by Initiator Coalition Status (Knesset {single_knesset_num})</b><br>"
+                        f"<sub>Showing {independent_count} independent proposals only. "
+                        f"{inclusive_count} inclusive/unified proposals ({inclusive_pct}%) have no single initiator.</sub>"
+                    )
+                else:
+                    title = f"<b>Agendas by Initiator Coalition Status (Knesset {single_knesset_num})</b>"
+
+                # Add Unmapped to color map
+                coalition_colors = {**self.config.COALITION_OPPOSITION_COLORS, "Unmapped": "#808080"}
+
                 fig = px.pie(
                     df,
                     values="AgendaCount",
                     names="CoalitionStatus",
-                    title=f"<b>Agendas by Initiator Coalition Status (Knesset {single_knesset_num})</b>",
+                    title=title,
                     color="CoalitionStatus",
-                    color_discrete_map=self.config.COALITION_OPPOSITION_COLORS,
+                    color_discrete_map=coalition_colors,
                 )
 
                 fig.update_traces(textposition="inside", textinfo="percent+label")
-                fig.update_layout(title_x=0.5)
+                fig.update_layout(title_x=0.5, height=600, margin=dict(t=120))
 
                 return fig
 
@@ -380,6 +453,7 @@ class ComparisonCharts(BaseChart):
                         WHEN s.Desc LIKE '%בטיפול%' THEN 'Other/In Progress'
                         WHEN s.Desc LIKE '%נדחתה%' THEN 'Not Answered'
                         WHEN s.Desc LIKE '%הוסרה%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%נקבע תאריך%' THEN 'Other/In Progress'
                         ELSE 'Unknown'
                     END AS AnswerStatus
                 """
@@ -468,14 +542,26 @@ class ComparisonCharts(BaseChart):
                     },
                 )
 
-                fig.update_traces(
-                    customdata=df[["TotalQueriesForMinistry", "ReplyPercentage"]],
-                    hovertemplate="<b>Ministry:</b> %{x}<br>"
-                    + "<b>Status:</b> %{fullData.name}<br>"
-                    + "<b>Count (this status):</b> %{y}<br>"
-                    + "<b>Total Queries (Ministry):</b> %{customdata[0]}<br>"
-                    + "<b>Reply Rate (Ministry):</b> %{customdata[1]:.1f}%<extra></extra>",
-                )
+                # Update hover for each trace separately to show reply rate only for Answered
+                for trace in fig.data:
+                    trace_df = df[df["AnswerStatus"] == trace.name]
+                    if trace.name == "Answered":
+                        trace.customdata = trace_df[["TotalQueriesForMinistry", "ReplyPercentage"]].values
+                        trace.hovertemplate = (
+                            "<b>Ministry:</b> %{x}<br>"
+                            + "<b>Status:</b> %{fullData.name}<br>"
+                            + "<b>Answered:</b> %{y}<br>"
+                            + "<b>Total Queries:</b> %{customdata[0]}<br>"
+                            + "<b>Reply Rate:</b> %{customdata[1]:.1f}%<extra></extra>"
+                        )
+                    else:
+                        trace.customdata = trace_df[["TotalQueriesForMinistry"]].values
+                        trace.hovertemplate = (
+                            "<b>Ministry:</b> %{x}<br>"
+                            + "<b>Status:</b> %{fullData.name}<br>"
+                            + "<b>Count:</b> %{y}<br>"
+                            + "<b>Total Queries:</b> %{customdata[0]}<extra></extra>"
+                        )
 
                 fig.update_layout(
                     xaxis_title="Ministry",
@@ -504,13 +590,13 @@ class ComparisonCharts(BaseChart):
         end_date: Optional[str] = None,
         **kwargs,
     ) -> Optional[go.Figure]:
-        """Generate query status description with faction breakdown chart."""
+        """Generate query status by faction as a stacked bar chart (similar to ministry chart)."""
         if not self.check_database_exists():
             return None
 
         if not knesset_filter or len(knesset_filter) != 1:
             st.info(
-                "Please select a single Knesset to view the 'Query Status Description with Faction Breakdown' plot."
+                "Please select a single Knesset to view the 'Query Status by Faction' plot."
             )
             self.logger.info(
                 "plot_query_status_by_faction requires a single Knesset filter."
@@ -546,7 +632,6 @@ class ComparisonCharts(BaseChart):
                 conditions = [
                     "q.KnessetNum = ?",
                     "q.SubmitDate IS NOT NULL",
-                    "p2p.FactionID IS NOT NULL",
                 ]
 
                 if start_date:
@@ -567,35 +652,53 @@ class ComparisonCharts(BaseChart):
 
                 where_clause = " AND ".join(conditions)
 
+                # Use same status categorization as the ministry chart
+                answer_status_case_sql = """
+                    CASE
+                        WHEN s.Desc LIKE '%נענתה%' AND s.Desc NOT LIKE '%לא נענתה%' THEN 'Answered'
+                        WHEN s.Desc LIKE '%לא נענתה%' THEN 'Not Answered'
+                        WHEN s.Desc LIKE '%הועברה%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%בטיפול%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%נדחתה%' THEN 'Not Answered'
+                        WHEN s.Desc LIKE '%הוסרה%' THEN 'Other/In Progress'
+                        WHEN s.Desc LIKE '%נקבע תאריך%' THEN 'Other/In Progress'
+                        ELSE 'Unknown'
+                    END AS AnswerStatus
+                """
+
                 sql_query = f"""
-                WITH QueryStatusFactionInfo AS (
+                WITH FactionQueryStats AS (
                     SELECT
-                        q.QueryID,
-                        COALESCE(s.Desc, 'Unknown Status') AS StatusDescription,
-                        COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
-                        p2p.FactionID
+                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        p2p.FactionID,
+                        {answer_status_case_sql},
+                        COUNT(DISTINCT q.QueryID) AS QueryCount
                     FROM KNS_Query q
                     JOIN KNS_Person p ON q.PersonID = p.PersonID
                     LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
                     LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                         AND q.KnessetNum = p2p.KnessetNum
                         AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
-                    LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID AND q.KnessetNum = p2p.KnessetNum
+                    LEFT JOIN KNS_Faction f ON p2p.FactionID = f.FactionID
                     WHERE {where_clause}
+                        AND f.Name IS NOT NULL
+                    GROUP BY f.Name, p2p.FactionID, AnswerStatus
                 )
                 SELECT
-                    qsfi.StatusDescription,
-                    qsfi.FactionName,
-                    COUNT(DISTINCT qsfi.QueryID) AS QueryCount
-                FROM QueryStatusFactionInfo qsfi
-                WHERE qsfi.FactionName IS NOT NULL
-                GROUP BY
-                    qsfi.StatusDescription,
-                    qsfi.FactionName
-                HAVING QueryCount > 0
-                ORDER BY
-                    qsfi.StatusDescription,
-                    QueryCount DESC;
+                    FactionName,
+                    FactionID,
+                    AnswerStatus,
+                    QueryCount,
+                    SUM(QueryCount) OVER (PARTITION BY FactionName) AS TotalQueriesForFaction,
+                    SUM(CASE WHEN AnswerStatus = 'Answered' THEN QueryCount ELSE 0 END) OVER (PARTITION BY FactionName) AS AnsweredQueriesForFaction
+                FROM FactionQueryStats
+                ORDER BY TotalQueriesForFaction DESC, FactionName,
+                    CASE AnswerStatus
+                        WHEN 'Answered' THEN 1
+                        WHEN 'Not Answered' THEN 2
+                        WHEN 'Other/In Progress' THEN 3
+                        ELSE 4
+                    END
                 """
 
                 date_filter_info = ""
@@ -608,9 +711,9 @@ class ComparisonCharts(BaseChart):
                     sql_query,
                 )
 
-                df = safe_execute_query(con, sql_query, self.logger, params=params)
+                result = safe_execute_query(con, sql_query, self.logger, params=params)
 
-                if df.empty:
+                if result is None or result.empty:
                     st.info(
                         f"No query data for Knesset {single_knesset_num} to visualize 'Query Status by Faction' with the current filters."
                     )
@@ -620,39 +723,31 @@ class ComparisonCharts(BaseChart):
                     )
                     return None
 
-                df["QueryCount"] = pd.to_numeric(
-                    df["QueryCount"], errors="coerce"
+                df = result.copy()
+
+                # Convert to numeric and calculate percentages
+                df["QueryCount"] = pd.to_numeric(df["QueryCount"], errors="coerce").fillna(0)
+                df["TotalQueriesForFaction"] = pd.to_numeric(
+                    df["TotalQueriesForFaction"], errors="coerce"
                 ).fillna(0)
-                df["StatusDescription"] = df["StatusDescription"].fillna(
-                    "Unknown Status"
+                df["AnsweredQueriesForFaction"] = pd.to_numeric(
+                    df["AnsweredQueriesForFaction"], errors="coerce"
+                ).fillna(0)
+
+                df["ReplyPercentage"] = (
+                    (df["AnsweredQueriesForFaction"] / df["TotalQueriesForFaction"].replace(0, pd.NA)) * 100
+                ).round(1)
+
+                # Get faction order for consistent sorting (by total queries)
+                df_annotations = df.drop_duplicates(subset=["FactionName"]).sort_values(
+                    by="TotalQueriesForFaction", ascending=False
                 )
 
-                ids = []
-                labels = []
-                parents = []
-                values = []
+                # Import color config
+                from config.charts import ChartConfig
 
-                status_totals = (
-                    df.groupby("StatusDescription")["QueryCount"].sum().reset_index()
-                )
-                for _, row in status_totals.iterrows():
-                    status = row["StatusDescription"]
-                    ids.append(status)
-                    labels.append(f"{status}<br>({row['QueryCount']} queries)")
-                    parents.append("")
-                    values.append(row["QueryCount"])
-
-                for _, row in df.iterrows():
-                    status = row["StatusDescription"]
-                    faction = row["FactionName"]
-                    count = row["QueryCount"]
-                    faction_id = f"{status} - {faction}"
-                    ids.append(faction_id)
-                    labels.append(f"{faction}<br>({count} queries)")
-                    parents.append(status)
-                    values.append(count)
-
-                title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}</b>"
+                # Build title with optional date range
+                title = f"<b>Query Status by Faction (Knesset {single_knesset_num})</b>"
                 if start_date or end_date:
                     if start_date and end_date:
                         date_range_text = f" ({start_date} to {end_date})"
@@ -660,25 +755,55 @@ class ComparisonCharts(BaseChart):
                         date_range_text = f" (from {start_date})"
                     else:
                         date_range_text = f" (until {end_date})"
-                    title = f"<b>Query Status with Faction Breakdown for Knesset {single_knesset_num}{date_range_text}</b>"
+                    title = f"<b>Query Status by Faction (Knesset {single_knesset_num}){date_range_text}</b>"
 
-                fig = go.Figure(
-                    go.Sunburst(
-                        ids=ids,
-                        labels=labels,
-                        parents=parents,
-                        values=values,
-                        branchvalues="total",
-                        hovertemplate="<b>%{label}</b><br>Queries: %{value}<br>Percentage: %{percentParent}<extra></extra>",
-                        maxdepth=2,
-                    )
+                fig = px.bar(
+                    df,
+                    x="FactionName",
+                    y="QueryCount",
+                    color="AnswerStatus",
+                    title=title,
+                    labels={
+                        "FactionName": "Faction",
+                        "QueryCount": "Number of Queries",
+                        "AnswerStatus": "Query Status",
+                    },
+                    color_discrete_map=ChartConfig.ANSWER_STATUS_COLORS,
+                    category_orders={
+                        "AnswerStatus": ["Answered", "Not Answered", "Other/In Progress", "Unknown"],
+                        "FactionName": df_annotations["FactionName"].tolist(),
+                    },
                 )
 
+                # Update hover for each trace separately to show reply rate only for Answered
+                for trace in fig.data:
+                    trace_df = df[df["AnswerStatus"] == trace.name]
+                    if trace.name == "Answered":
+                        trace.customdata = trace_df[["TotalQueriesForFaction", "ReplyPercentage"]].values
+                        trace.hovertemplate = (
+                            "<b>Faction:</b> %{x}<br>"
+                            + "<b>Status:</b> %{fullData.name}<br>"
+                            + "<b>Answered:</b> %{y}<br>"
+                            + "<b>Total Queries:</b> %{customdata[0]}<br>"
+                            + "<b>Reply Rate:</b> %{customdata[1]:.1f}%<extra></extra>"
+                        )
+                    else:
+                        trace.customdata = trace_df[["TotalQueriesForFaction"]].values
+                        trace.hovertemplate = (
+                            "<b>Faction:</b> %{x}<br>"
+                            + "<b>Status:</b> %{fullData.name}<br>"
+                            + "<b>Count:</b> %{y}<br>"
+                            + "<b>Total Queries:</b> %{customdata[0]}<extra></extra>"
+                        )
+
                 fig.update_layout(
-                    title=title,
+                    xaxis_title="Faction",
+                    yaxis_title="Number of Queries",
+                    legend_title_text="Query Status",
                     title_x=0.5,
-                    font_size=12,
-                    margin=dict(t=50, l=0, r=0, b=0),
+                    xaxis_tickangle=-45,
+                    height=800,
+                    margin=dict(t=180),
                 )
 
                 return fig
@@ -1167,7 +1292,7 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND pf.FactionID IN ({placeholders})"
+                            query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
 
                     query += """
@@ -1251,7 +1376,7 @@ class ComparisonCharts(BaseChart):
                         ]
                         if valid_ids:
                             placeholders = ", ".join("?" for _ in valid_ids)
-                            query += f" AND pf.FactionID IN ({placeholders})"
+                            query += f" AND ptp.FactionID IN ({placeholders})"
                             params.extend(valid_ids)
 
                     query += """
