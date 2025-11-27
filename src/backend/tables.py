@@ -130,7 +130,15 @@ class KnessetTables:
         description="General Israeli legislation",
         primary_key="LawID"
     )
-    
+
+    # Document tables
+    DOCUMENT_AGENDA = TableMetadata(
+        name="KNS_DocumentAgenda",
+        description="Documents attached to agenda items",
+        primary_key="DocumentAgendaID",
+        dependencies=["KNS_Agenda"]
+    )
+
     # User-defined tables
     USER_FACTION_COALITION_STATUS = TableMetadata(
         name="UserFactionCoalitionStatus",
@@ -144,7 +152,8 @@ class KnessetTables:
         return [
             cls.PERSON, cls.FACTION, cls.PERSON_TO_POSITION, cls.GOV_MINISTRY,
             cls.STATUS, cls.QUERY, cls.AGENDA, cls.COMMITTEE, cls.COMMITTEE_SESSION,
-            cls.PLENUM_SESSION, cls.KNESSET_DATES, cls.BILL, cls.BILL_INITIATOR, cls.LAW, cls.ISRAEL_LAW
+            cls.PLENUM_SESSION, cls.KNESSET_DATES, cls.BILL, cls.BILL_INITIATOR, cls.LAW, cls.ISRAEL_LAW,
+            cls.DOCUMENT_AGENDA
         ]
     
     @classmethod

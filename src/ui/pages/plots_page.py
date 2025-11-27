@@ -680,6 +680,12 @@ class PlotsPageRenderer:
                         }
                     )
                     SessionStateManager.set_plot_figure(figure)
+
+                    # Add explanation for network charts (MK and Faction collaboration networks)
+                    if "Network" in selected_chart and "Matrix" not in selected_chart:
+                        from ui.charts.network import NetworkCharts
+                        with st.expander("📐 How Distance is Calculated in This Chart", expanded=False):
+                            st.markdown(NetworkCharts.get_layout_explanation())
             except Exception as e:
                 self.logger.error(
                     f"Error displaying plot '{selected_chart}': {e}", exc_info=True

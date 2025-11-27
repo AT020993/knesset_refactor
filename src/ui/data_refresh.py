@@ -141,6 +141,9 @@ data_refresh_renderer.render_page_header()
 data_refresh_renderer.render_query_results_section()
 data_refresh_renderer.render_table_explorer_section()
 
+# Faction export section
+data_refresh_renderer.render_faction_export_section()
+
 # Render plots/visualizations section
 try:
     plots_renderer.render_plots_section(

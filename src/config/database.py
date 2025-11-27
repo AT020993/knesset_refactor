@@ -33,7 +33,8 @@ class DatabaseConfig:
         "KNS_PlmSessionItem",
         "KNS_Vote",
         "KNS_DocumentCommitteeSession",
-        "KNS_DocumentPlenumSession"
+        "KNS_DocumentPlenumSession",
+        "KNS_DocumentAgenda"
     ]
     
     # Tables requiring cursor-based paging: (table_name, (primary_key, chunk_size))

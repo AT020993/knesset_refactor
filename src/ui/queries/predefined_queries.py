@@ -109,20 +109,38 @@ LIMIT 1000;
     "Agenda Items + Full Details": {
         "sql": """
 WITH StandardFactionLookup AS (
-            SELECT 
+            SELECT
                 ptp.PersonID as PersonID,
                 ptp.KnessetNum as KnessetNum,
                 ptp.FactionID,
                 ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
+                    PARTITION BY ptp.PersonID, ptp.KnessetNum
+                    ORDER BY
                         CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
                         ptp.KnessetNum DESC,
                         ptp.StartDate DESC NULLS LAST
                 ) as rn
             FROM KNS_PersonToPosition ptp
             WHERE ptp.FactionID IS NOT NULL
-        )
+        ),
+-- Agenda Documents CTE (aggregates documents per agenda)
+AgendaDocuments AS (
+    SELECT
+        da.AgendaID,
+        COUNT(*) as DocumentCount,
+        -- Primary document URL (prefer PDF)
+        MAX(CASE WHEN da.ApplicationDesc = 'PDF' THEN da.FilePath END) AS PrimaryDocPDF,
+        MAX(CASE WHEN da.ApplicationDesc != 'PDF' THEN da.FilePath END) AS PrimaryDocOther,
+        MAX(da.GroupTypeDesc) AS PrimaryDocType,
+        -- Document counts by format
+        COUNT(CASE WHEN da.ApplicationDesc = 'PDF' THEN 1 END) AS PDFDocCount,
+        COUNT(CASE WHEN da.ApplicationDesc = 'DOC' OR da.ApplicationDesc = 'DOCX' THEN 1 END) AS WordDocCount,
+        -- All documents as concatenated string
+        GROUP_CONCAT(DISTINCT da.GroupTypeDesc || ' (' || da.ApplicationDesc || ')', ' | ') as DocumentTypes
+    FROM KNS_DocumentAgenda da
+    WHERE da.FilePath IS NOT NULL
+    GROUP BY da.AgendaID
+)
 SELECT
     A.AgendaID,
     A.Number,
@@ -143,18 +161,46 @@ SELECT
     COALESCE(f.Name, 'Unknown') AS InitiatorMKFactionName,
     COALESCE(ufs.CoalitionStatus, 'Unknown') AS InitiatorMKFactionCoalitionStatus,
 
+    -- Main Initiator Display (prominent field showing who proposed the agenda)
+    CASE
+        WHEN A.ClassificationDesc = 'עצמאית' AND P.PersonID IS NOT NULL THEN
+            P.FirstName || ' ' || P.LastName || ' (' || COALESCE(f.Name, 'Unknown Faction') || ')'
+        WHEN A.ClassificationDesc = 'כוללת' THEN
+            'Inclusive Proposal (הצעה כוללת - Multiple MKs)'
+        ELSE
+            COALESCE(P.FirstName || ' ' || P.LastName, 'No Initiator Recorded')
+    END AS MainInitiatorDisplay,
+
+    -- Proposal Type in English
+    CASE
+        WHEN A.ClassificationDesc = 'עצמאית' THEN 'Independent'
+        WHEN A.ClassificationDesc = 'כוללת' THEN 'Inclusive'
+        ELSE A.ClassificationDesc
+    END AS ProposalTypeEN,
+
+    -- Document fields
+    COALESCE(ad.DocumentCount, 0) AS AgendaDocumentCount,
+    COALESCE(ad.PrimaryDocPDF, ad.PrimaryDocOther) AS AgendaPrimaryDocumentURL,
+    ad.PrimaryDocType AS AgendaPrimaryDocumentType,
+    ad.PDFDocCount AS AgendaPDFDocCount,
+    ad.WordDocCount AS AgendaWordDocCount,
+    ad.DocumentTypes AS AgendaDocumentTypes,
+    -- Knesset website link for agenda
+    'https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid=' || CAST(A.AgendaID AS VARCHAR) AS AgendaKnessetWebsiteURL,
+
     strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
     strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
 
 FROM KNS_Agenda A
 LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
 LEFT JOIN KNS_Status S ON A.StatusID = S.StatusID
-LEFT JOIN StandardFactionLookup sfl ON A.InitiatorPersonID = sfl.PersonID 
-    AND A.KnessetNum = sfl.KnessetNum 
+LEFT JOIN StandardFactionLookup sfl ON A.InitiatorPersonID = sfl.PersonID
+    AND A.KnessetNum = sfl.KnessetNum
     AND sfl.rn = 1
 LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
-LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID 
+LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND A.KnessetNum = ufs.KnessetNum
+LEFT JOIN AgendaDocuments ad ON A.AgendaID = ad.AgendaID
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC
 LIMIT 1000;
@@ -162,8 +208,8 @@ LIMIT 1000;
         "knesset_filter_column": "A.KnessetNum",
         "faction_filter_column": "f.FactionID",
         "description": (
-            "Comprehensive agenda items data with faction details "
-            "and status information"
+            "Comprehensive agenda items data with faction details, "
+            "status information, and document links"
         ),
     },
     "Bills + Full Details": {

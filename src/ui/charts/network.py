@@ -2013,6 +2013,61 @@ class NetworkCharts(BaseChart):
         
         return fig
 
+    @staticmethod
+    def get_layout_explanation() -> str:
+        """
+        Get a verbal explanation of how distance is calculated in the network charts.
+
+        Returns:
+            Markdown-formatted explanation of the force-directed layout algorithm.
+        """
+        return """
+### How to Read This Network Chart
+
+**Distance = Collaboration Strength**
+
+In this visualization, the distance between nodes (circles) represents how frequently they collaborate:
+- **Closer nodes** = More collaborations between them
+- **Farther nodes** = Fewer or no collaborations
+
+---
+
+### The Algorithm: Weighted Force-Directed Layout
+
+This chart uses a physics-based simulation where nodes behave like charged particles connected by springs:
+
+**1. Repulsive Force (All Nodes Push Apart)**
+- Every node repels every other node, like magnets with the same pole
+- Formula: `F = (80² × 1.5) / distance`
+- This prevents all nodes from collapsing into a single point
+
+**2. Attractive Force (Collaborators Pull Together)**
+- Nodes that collaborate are connected by "springs" that pull them closer
+- The more collaborations, the stronger the pull
+- Formula: `F = (distance² / 80) × (0.5 + ln(1 + collaborations) × 0.3)`
+- The logarithmic scaling (`ln(1 + collaborations)`) ensures that very high collaboration counts don't dominate
+
+---
+
+### Algorithm Parameters
+
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| **k** | 80 | Optimal distance between unconnected nodes |
+| **Iterations** | 200 | Number of simulation cycles to reach equilibrium |
+| **Repulsion multiplier** | 1.5× | Increased spacing for better visibility |
+| **Cooling schedule** | 1.0 → 0.5 | Gradual slowdown for stability |
+
+---
+
+### Visual Cues
+
+- **Node Size**: Proportional to total bills initiated (larger = more active legislator/faction)
+- **Node Color**: Indicates faction or coalition status
+- **Cluster Patterns**: Tight groups indicate frequent collaboration partners
+- **Outliers**: Isolated nodes have few cross-party collaborations
+"""
+
     def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
         """Generate the requested network chart."""
         chart_methods = {
