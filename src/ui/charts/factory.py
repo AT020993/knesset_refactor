@@ -79,7 +79,6 @@ class ChartFactory:
                 "query_types_distribution",
                 "agenda_classifications_pie",
                 "query_status_distribution",
-                "query_status_by_faction",
                 "agenda_status_distribution",
                 "bill_subtype_distribution",
             ],
@@ -87,6 +86,7 @@ class ChartFactory:
                 "queries_per_faction",
                 "queries_by_coalition_status",
                 "queries_by_ministry",
+                "query_status_by_faction",
                 "agendas_per_faction",
                 "agendas_by_coalition_status",
                 "bills_per_faction",
@@ -116,7 +116,7 @@ class ChartFactory:
 
     def plot_query_status_by_faction(self, **kwargs) -> Optional[go.Figure]:
         """Legacy compatibility method."""
-        return self.create_chart("distribution", "query_status_by_faction", **kwargs)
+        return self.create_chart("comparison", "query_status_by_faction", **kwargs)
 
     def plot_agendas_per_faction_in_knesset(self, **kwargs) -> Optional[go.Figure]:
         """Legacy compatibility method."""

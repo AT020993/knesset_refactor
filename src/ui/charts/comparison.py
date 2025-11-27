@@ -321,23 +321,8 @@ class ComparisonCharts(BaseChart):
 
                 date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
 
-                # Include Unmapped category for factions without coalition status
-                query = f"""
-                SELECT
-                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
-                    COUNT(DISTINCT a.AgendaID) AS AgendaCount
-                FROM KNS_Agenda a
-                JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
-                LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
-                    AND a.KnessetNum = p2p.KnessetNum
-                    AND CAST({date_column} AS TIMESTAMP)
-                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
-                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
-                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
-                    AND a.KnessetNum = ufs.KnessetNum
-                WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
-                """
-
+                # Build faction filter condition
+                faction_filter_sql = ""
                 params: List[Any] = [single_knesset_num]
                 if faction_filter:
                     valid_ids = [
@@ -345,14 +330,38 @@ class ComparisonCharts(BaseChart):
                     ]
                     if valid_ids:
                         placeholders = ", ".join("?" for _ in valid_ids)
-                        query += f" AND p2p.FactionID IN ({placeholders})"
+                        faction_filter_sql = f" AND p2p.FactionID IN ({placeholders})"
                         params.extend(valid_ids)
 
-                query += """
+                # Use CTE to deduplicate: each agenda gets ONE faction (prefer non-NULL)
+                # This fixes the double-counting issue where a person may have multiple positions
+                query = f"""
+                WITH AgendaWithFaction AS (
+                    SELECT DISTINCT ON (a.AgendaID)
+                        a.AgendaID,
+                        p2p.FactionID
+                    FROM KNS_Agenda a
+                    JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+                    LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+                        AND a.KnessetNum = p2p.KnessetNum
+                        AND CAST({date_column} AS TIMESTAMP)
+                            BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                            AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                    WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
+                        {faction_filter_sql}
+                    ORDER BY a.AgendaID, p2p.FactionID NULLS LAST
+                )
+                SELECT
+                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
+                    COUNT(*) AS AgendaCount
+                FROM AgendaWithFaction awf
+                LEFT JOIN UserFactionCoalitionStatus ufs ON awf.FactionID = ufs.FactionID
+                    AND ufs.KnessetNum = ?
                 GROUP BY CoalitionStatus
                 HAVING AgendaCount > 0
-                ORDER BY AgendaCount DESC;
+                ORDER BY AgendaCount DESC
                 """
+                params.append(single_knesset_num)
 
                 self.logger.debug(
                     "Executing SQL for plot_agendas_by_coalition_status (Knesset %s): %s",
