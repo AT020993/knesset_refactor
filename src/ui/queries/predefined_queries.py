@@ -25,7 +25,7 @@ from utils.committee_resolver import CommitteeResolver, get_committee_name_with_
 
 # Query definitions with their SQL and metadata
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
-    "Queries + Full Details": {
+    "Parliamentary Queries (Full Details)": {
         "sql": """
 WITH StandardFactionLookup AS (
             SELECT 
@@ -106,7 +106,7 @@ LIMIT 1000;
             "ministry information, and responsible ministers"
         ),
     },
-    "Agenda Items + Full Details": {
+    "Agenda Motions (Full Details)": {
         "sql": """
 WITH StandardFactionLookup AS (
             SELECT
@@ -212,7 +212,7 @@ LIMIT 1000;
             "status information, and document links"
         ),
     },
-    "Bills + Full Details": {
+    "Bills & Legislation (Full Details)": {
         "sql": """
 WITH StandardFactionLookup AS (
             SELECT 

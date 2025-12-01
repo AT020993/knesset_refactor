@@ -632,13 +632,15 @@ class PlotsPageRenderer:
         can_generate_plot = selected_chart and (final_knesset_filter is not False)
 
         if not can_generate_plot:
-            requires_single_knesset = (
-                "(Single Knesset)" in selected_chart
-                or selected_chart
-                not in ["Queries by Time Period", "Agenda Items by Time Period"]
-            )
+            # Charts that support "All Knessets" - all others require single selection
+            multi_knesset_charts = [
+                "Queries Over Time", "Queries by Time Period",  # current and legacy names
+                "Agendas Over Time", "Agenda Items by Time Period",
+                "Bills Over Time", "Bills by Time Period",
+            ]
+            requires_single_knesset = selected_chart not in multi_knesset_charts
             if requires_single_knesset:
-                st.info(f"Please select a Knesset for the '{selected_chart}' plot.")
+                st.info(f"ℹ️ Please select a single Knesset for '{selected_chart}'. This chart requires a specific Knesset selection.")
             return
 
         # Build plot arguments
@@ -649,12 +651,17 @@ class PlotsPageRenderer:
 
         # Generate and display plot with optimized spinner messaging
         spinner_messages = {
-            "Queries by Time Period": "Loading query data and generating time series...",
-            "Agendas by Time Period": "Loading agenda data and generating time series...",
-            "Bills by Time Period": "Loading bill data and generating time series...",
-            "MK Collaboration Network": "Analyzing collaboration patterns (this may take a moment)...",
+            "Queries Over Time": "Loading query data and generating time series...",
+            "Queries by Time Period": "Loading query data and generating time series...",  # legacy
+            "Agendas Over Time": "Loading agenda data and generating time series...",
+            "Agendas by Time Period": "Loading agenda data and generating time series...",  # legacy
+            "Bills Over Time": "Loading bill data and generating time series...",
+            "Bills by Time Period": "Loading bill data and generating time series...",  # legacy
+            "Legislator Collaboration Network": "Analyzing collaboration patterns (this may take a moment)...",
+            "MK Collaboration Network": "Analyzing collaboration patterns (this may take a moment)...",  # legacy
             "Faction Collaboration Network": "Computing faction relationships...",
-            "Faction Collaboration Matrix": "Building collaboration matrix...",
+            "Cross-Party Collaboration Matrix": "Building collaboration matrix...",
+            "Faction Collaboration Matrix": "Building collaboration matrix...",  # legacy
         }
         spinner_msg = spinner_messages.get(selected_chart, f"Generating '{selected_chart}'...")
 
@@ -705,10 +712,11 @@ class PlotsPageRenderer:
             Knesset filter list, None for all Knessets, or False if invalid
         """
         current_selection = SessionStateManager.get_plot_main_knesset_selection()
+        # Charts that support "All Knessets" color-coded view
         can_show_all_knessets = selected_chart in [
-            "Queries by Time Period",
-            "Agenda Items by Time Period",
-            "Bills by Time Period",
+            "Queries Over Time", "Queries by Time Period",  # current and legacy
+            "Agendas Over Time", "Agenda Items by Time Period",
+            "Bills Over Time", "Bills by Time Period",
         ]
 
         if current_selection == "All Knessets (Color Coded)" and can_show_all_knessets:

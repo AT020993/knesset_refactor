@@ -145,7 +145,35 @@ class KnessetTables:
         description="User-maintained faction coalition status",
         primary_key="FactionID"
     )
-    
+
+    # Topic classification tables (user-managed, for external topic data)
+    USER_TOPIC_TAXONOMY = TableMetadata(
+        name="UserTopicTaxonomy",
+        description="Topic/subject taxonomy for parliamentary items",
+        primary_key="TopicID"
+    )
+
+    USER_AGENDA_TOPICS = TableMetadata(
+        name="UserAgendaTopics",
+        description="Topic mappings for agenda items",
+        primary_key="AgendaID",
+        dependencies=["KNS_Agenda", "UserTopicTaxonomy"]
+    )
+
+    USER_QUERY_TOPICS = TableMetadata(
+        name="UserQueryTopics",
+        description="Topic mappings for parliamentary queries",
+        primary_key="QueryID",
+        dependencies=["KNS_Query", "UserTopicTaxonomy"]
+    )
+
+    USER_BILL_TOPICS = TableMetadata(
+        name="UserBillTopics",
+        description="Topic mappings for bills",
+        primary_key="BillID",
+        dependencies=["KNS_Bill", "UserTopicTaxonomy"]
+    )
+
     @classmethod
     def get_all_tables(cls) -> List[TableMetadata]:
         """Get all table metadata."""

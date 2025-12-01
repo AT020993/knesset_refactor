@@ -37,6 +37,46 @@ from backend.connection_manager import get_db_connection, safe_execute_query
 # Constants from data_refresh.py that are needed here
 _SELECT_ALL_TABLES_OPTION = "🔄 Select/Deselect All Tables"
 
+# User-friendly display names for database tables
+TABLE_DISPLAY_NAMES = {
+    "KNS_Query": "Parliamentary Queries",
+    "KNS_Bill": "Knesset Bills",
+    "KNS_Agenda": "Motions for the Agenda",
+    "KNS_Person": "Knesset Members",
+    "KNS_Faction": "Political Factions",
+    "KNS_Committee": "Knesset Committees",
+    "KNS_CommitteeSession": "Committee Sessions",
+    "KNS_PlenumSession": "Plenary Sessions",
+    "KNS_GovMinistry": "Government Ministries",
+    "KNS_Status": "Status Codes",
+    "KNS_PersonToPosition": "Member Positions",
+    "KNS_BillInitiator": "Bill Sponsors",
+    "KNS_KnessetDates": "Knesset Dates",
+    "KNS_DocumentBill": "Bill Documents",
+    "KNS_DocumentAgenda": "Agenda Documents",
+    "KNS_BillHistoryInitiator": "Bill History - Initiators",
+    "KNS_BillName": "Bill Names",
+    "KNS_BillSplit": "Bill Splits",
+    "KNS_BillUnion": "Bill Unions",
+    "KNS_CmtSiteCode": "Committee Site Codes",
+    "KNS_ItemType": "Item Types",
+    "KNS_JointCommittee": "Joint Committees",
+    "UserFactionCoalitionStatus": "Faction Coalition Status (User Data)",
+}
+
+# Reverse mapping: display name -> table name
+TABLE_NAME_FROM_DISPLAY = {v: k for k, v in TABLE_DISPLAY_NAMES.items()}
+
+
+def get_table_display_name(table_name: str) -> str:
+    """Get user-friendly display name for a database table."""
+    return TABLE_DISPLAY_NAMES.get(table_name, table_name)
+
+
+def get_table_name_from_display(display_name: str) -> str:
+    """Get actual table name from user-friendly display name."""
+    return TABLE_NAME_FROM_DISPLAY.get(display_name, display_name)
+
 
 def _handle_data_refresh_button_click(
     db_path: Path, ui_logger: logging.Logger, format_exc_func: callable
@@ -170,9 +210,9 @@ def _handle_run_query_button_click(
                         doc_type_conditions.append("BillPublishedLawDocCount > 0")
                     elif doc_type == "First Reading":
                         doc_type_conditions.append("BillFirstReadingDocCount > 0")
-                    elif doc_type == "2nd/3rd Reading":
+                    elif doc_type in ["2nd/3rd Reading", "Second & Third Reading"]:  # Support both names
                         doc_type_conditions.append("BillSecondThirdReadingDocCount > 0")
-                    elif doc_type == "Early Discussion":
+                    elif doc_type in ["Early Discussion", "Early Stage Discussion"]:  # Support both names
                         doc_type_conditions.append("BillEarlyDiscussionDocCount > 0")
                     elif doc_type == "Other":
                         doc_type_conditions.append("BillOtherDocCount > 0")
@@ -505,11 +545,11 @@ def display_sidebar(
     format_exc_func_arg: callable,
 ):
     """Renders all sidebar components."""
-    st.sidebar.header("🔄 Data Refresh Controls")
+    st.sidebar.header("💾 Data Management")
     options_for_multiselect = [_SELECT_ALL_TABLES_OPTION] + TABLES
 
     st.sidebar.multiselect(
-        label="Select tables to refresh/fetch:",
+        label="Select tables to update:",
         options=options_for_multiselect,
         default=st.session_state.get("ms_tables_to_refresh", []),
         key="ms_tables_to_refresh_widget",
@@ -523,7 +563,7 @@ def display_sidebar(
         )
 
     st.sidebar.divider()
-    st.sidebar.header("🔎 Predefined Queries")
+    st.sidebar.header("📊 Query Templates")
     query_names_options = [""] + list(exports_arg.keys())
 
     # Get current value safely (must happen before widget creation)
@@ -534,12 +574,12 @@ def display_sidebar(
 
     # Selectbox automatically manages session state via key - DO NOT manually assign
     st.sidebar.selectbox(
-        "Select a predefined query:",
+        "Choose a template:",
         options=query_names_options,
         index=default_index,
         key="selected_query_name",  # Changed from "sb_selected_query_name" to direct state key
     )
-    st.sidebar.info("ℹ️ Results limited to 1,000 rows for performance", icon="💡")
+    st.sidebar.info("ℹ️ Results limited to 1,000 rows (download for full dataset)", icon="💡")
 
     if st.sidebar.button(
         "▶️ Run Selected Query",
@@ -556,23 +596,36 @@ def display_sidebar(
         )
 
     st.sidebar.divider()
-    st.sidebar.header("🔬 Interactive Table Explorer")
-    db_tables_list_for_explorer = [""] + get_db_table_list_func_arg()
+    st.sidebar.header("📑 Browse Raw Data")
+
+    # Create display name list for the dropdown
+    raw_table_list = get_db_table_list_func_arg()
+    display_name_list = [""] + [get_table_display_name(t) for t in raw_table_list]
+
+    # Build mapping from display name to actual table name
+    display_to_table = {"": ""}
+    for t in raw_table_list:
+        display_to_table[get_table_display_name(t)] = t
 
     # Get current value safely (must happen before widget creation)
     current_table = st.session_state.get("selected_table_for_explorer", "")
+    current_display_name = get_table_display_name(current_table) if current_table else ""
     default_table_index = 0
-    if current_table and current_table in db_tables_list_for_explorer:
-        default_table_index = db_tables_list_for_explorer.index(current_table)
+    if current_display_name and current_display_name in display_name_list:
+        default_table_index = display_name_list.index(current_display_name)
 
-    # Selectbox automatically manages session state via key - DO NOT manually assign
-    st.sidebar.selectbox(
-        "Select a table to explore:",
-        options=db_tables_list_for_explorer,
+    # Selectbox shows user-friendly names
+    selected_display_name = st.sidebar.selectbox(
+        "Choose a table:",
+        options=display_name_list,
         index=default_table_index,
-        key="selected_table_for_explorer",  # Changed from "sb_selected_table_explorer" to direct state key
+        key="selected_table_display_name",
     )
-    st.sidebar.info("ℹ️ Table preview limited to 1,000 rows", icon="💡")
+
+    # Convert display name back to actual table name for processing
+    st.session_state.selected_table_for_explorer = display_to_table.get(selected_display_name, selected_display_name)
+
+    st.sidebar.info("ℹ️ Preview limited to 1,000 rows", icon="💡")
 
     if st.sidebar.button(
         "🔍 Explore Selected Table",
@@ -590,34 +643,34 @@ def display_sidebar(
         )
 
     st.sidebar.divider()
-    st.sidebar.header("📊 Filters (Apply to Queries, Explorer & Plots)")
+    st.sidebar.header("🔍 Global Filters")
     knesset_nums_options_filters, _ = (
         get_filter_options_func_arg()
     )  # We only need knesset_nums_options here
 
     # Create filter widgets - Streamlit automatically stores values in session state using the key
     st.sidebar.multiselect(
-        "Knesset Number(s):",
+        "🏛️ Knesset Session(s):",
         options=knesset_nums_options_filters,  # Use the fetched options
         key="ms_knesset_filter",  # This becomes the session state variable name
     )
     st.sidebar.multiselect(
-        "Faction(s) (by Knesset):",
+        "🏘️ Political Faction(s):",
         options=list(faction_display_map_arg.keys()),  # Use the passed map
-        help="Select factions. The Knesset number in parentheses provides context.",
+        help="Select factions. The Knesset number shows which session they belonged to.",
         key="ms_faction_filter",  # This becomes the session state variable name
     )
 
     # Document type filter (applies to bill queries only)
     st.sidebar.multiselect(
-        "Bill Document Type(s):",
+        "📄 Bill Document Type(s):",
         options=[
             "Published Law",
             "First Reading",
-            "2nd/3rd Reading",
-            "Early Discussion",
+            "Second & Third Reading",
+            "Early Stage Discussion",
             "Other"
         ],
-        help="Filter bills by document type availability (applies to Bills query only)",
+        help="Filter bills by document type (applies to Bills query only)",
         key="ms_document_type_filter",
     )

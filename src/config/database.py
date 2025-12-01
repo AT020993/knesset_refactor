@@ -5,8 +5,17 @@ from typing import Dict, List, Tuple
 
 class DatabaseConfig:
     """Database-specific configuration."""
-    
-    # Table definitions
+
+    # User-defined tables (created and managed by application, not from OData)
+    USER_TABLES = [
+        "UserFactionCoalitionStatus",
+        "UserTopicTaxonomy",
+        "UserAgendaTopics",
+        "UserQueryTopics",
+        "UserBillTopics",
+    ]
+
+    # Table definitions (fetched from Knesset OData API)
     TABLES = [
         "KNS_Person",
         "KNS_Faction",
