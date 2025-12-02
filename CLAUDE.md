@@ -171,7 +171,7 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - **Respects All Filters**: Downloads complete dataset matching Knesset/faction filters (not just 1000 displayed rows)
 - **Row Count Preview**: Shows total row count before download with warning for large datasets (>50k rows)
 - **Both Formats**: CSV (UTF-8-BOM) and Excel export options
-- **Implementation**: `src/ui/pages/data_refresh_page.py` - removes LIMIT/OFFSET clauses while preserving WHERE/JOIN/ORDER BY
+- **Implementation**: `src/ui/renderers/data_refresh_page.py` - removes LIMIT/OFFSET clauses while preserving WHERE/JOIN/ORDER BY
 
 ### Collaboration Networks (2025-11-10)
 - **MK Network Weighted Layout**: Upgraded MK network to use same weighted force-directed algorithm as faction network
@@ -386,8 +386,8 @@ conn.unregister('temp_df')
 **Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
 **SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
 **Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates)
-**Page Rendering**: `src/ui/pages/data_refresh_page.py` (Query results display, document links, Excel exports, faction export, verification, topic section)
-**Plots Page**: `src/ui/pages/plots_page.py` (Chart rendering, network explanation expander)
+**Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, faction export, verification, topic section)
+**Plots Page**: `src/ui/renderers/plots_page.py` (Chart rendering, network explanation expander)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
 **Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)
 **Database Config**: `src/config/database.py` (Table definitions including KNS_DocumentAgenda, USER_TABLES)

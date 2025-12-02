@@ -27,8 +27,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 from utils.logger_setup import setup_logging
 from backend.fetch_table import TABLES
 from ui.state.session_manager import SessionStateManager
-from ui.pages.data_refresh_page import DataRefreshPageRenderer
-from ui.pages.plots_page import PlotsPageRenderer
+from ui.renderers.data_refresh_page import DataRefreshPageRenderer
+from ui.renderers.plots_page import PlotsPageRenderer
 from ui.queries.predefined_queries import PREDEFINED_QUERIES
 import ui.plot_generators as pg
 import ui.sidebar_components as sc

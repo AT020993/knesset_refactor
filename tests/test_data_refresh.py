@@ -129,13 +129,13 @@ class TestPageRenderers:
 
     def test_data_refresh_page_renderer_exists(self, mock_streamlit):
         """Test that DataRefreshPageRenderer exists."""
-        from ui.pages.data_refresh_page import DataRefreshPageRenderer
+        from ui.renderers.data_refresh_page import DataRefreshPageRenderer
 
         assert DataRefreshPageRenderer is not None
 
     def test_plots_page_renderer_exists(self, mock_streamlit):
         """Test that PlotsPageRenderer exists."""
-        from ui.pages.plots_page import PlotsPageRenderer
+        from ui.renderers.plots_page import PlotsPageRenderer
 
         assert PlotsPageRenderer is not None
 
