@@ -127,10 +127,15 @@ class TestCircuitBreaker(unittest.TestCase):
         self.mock_logger.warning.assert_any_call("Circuit breaker is open. Call skipped.")
 
 
-    @patch('src.api.circuit_breaker.time.time')
     @patch('src.api.circuit_breaker.time.sleep', return_value=None)
-    def test_open_to_half_open_and_then_closed(self, mock_sleep, mock_time):
+    @patch('src.api.circuit_breaker.time.time')
+    def test_open_to_half_open_and_then_closed(self, mock_time, mock_sleep):
+        # Start with a consistent time - set BEFORE any operations
+        current_time = 1000.0
+        mock_time.return_value = current_time
+
         # 1. Open the circuit
+        # mock_time is already set to current_time, so record_failure will use 1000.0
         mock_function_fail = MagicMock(side_effect=Exception("Fail"))
         for _ in range(self.failure_threshold):
             with self.assertRaises(Exception):
@@ -140,21 +145,24 @@ class TestCircuitBreaker(unittest.TestCase):
             f"Circuit breaker opened after {self.failure_threshold} failures. State changed to {CircuitBreakerState.OPEN}"
         )
 
-        # 2. Simulate time passing for recovery_timeout
-        # Initial last_failure_time is set. Let's say it's X.
-        # We need mock_time() to return X + self.recovery_timeout
+        # 2. Verify last_failure_time was set correctly
         initial_failure_time = self.cb.last_failure_time
         self.assertIsNotNone(initial_failure_time)
-        mock_time.return_value = initial_failure_time + self.recovery_timeout
+        self.assertEqual(initial_failure_time, current_time)
 
-        # 3. Attempt a call - should go to HALF_OPEN
+        # 3. Advance time past recovery_timeout
+        mock_time.return_value = current_time + self.recovery_timeout + 1
+
+        # 4. Attempt a call - should go to HALF_OPEN
         self.assertTrue(self.cb.can_attempt()) # This transitions to HALF_OPEN
         self.assertEqual(self.cb.state, CircuitBreakerState.HALF_OPEN)
         self.mock_logger.info.assert_any_call(
             f"Circuit breaker transitioning to half-open. State changed from {CircuitBreakerState.OPEN} to {CircuitBreakerState.HALF_OPEN}"
         )
 
-        # 4. Successful call in HALF_OPEN should close the circuit
+        # 5. Successful call in HALF_OPEN should close the circuit
+        # Advance time slightly for the successful call
+        mock_time.return_value = current_time + self.recovery_timeout + 2
         mock_function_success = MagicMock(return_value="Half-open success")
         result = self.cb.execute(mock_function_success) # Uses the same cb instance
 
@@ -165,49 +173,49 @@ class TestCircuitBreaker(unittest.TestCase):
         self.mock_logger.info.assert_any_call(unittest.mock.ANY) # Successful call log
 
 
-    @patch('src.api.circuit_breaker.time.time')
     @patch('src.api.circuit_breaker.time.sleep', return_value=None)
-    def test_open_to_half_open_and_then_back_to_open(self, mock_sleep, mock_time):
+    @patch('src.api.circuit_breaker.time.time')
+    def test_open_to_half_open_and_then_back_to_open(self, mock_time, mock_sleep):
+        # Start with a consistent time - set BEFORE any operations
+        current_time = 1000.0
+        mock_time.return_value = current_time
+
         # 1. Open the circuit
+        # mock_time is already set to current_time, so record_failure will use 1000.0
         mock_function_fail = MagicMock(side_effect=Exception("Fail"))
         for _ in range(self.failure_threshold):
             with self.assertRaises(Exception):
                 self.cb.execute(mock_function_fail)
         self.assertEqual(self.cb.state, CircuitBreakerState.OPEN)
 
-        # 2. Simulate time passing for recovery_timeout
+        # 2. Verify last_failure_time was set correctly
         initial_failure_time = self.cb.last_failure_time
-        mock_time.return_value = initial_failure_time + self.recovery_timeout
+        self.assertEqual(initial_failure_time, current_time)
 
-        # 3. Attempt a call - should go to HALF_OPEN
+        # 3. Advance time past recovery_timeout
+        mock_time.return_value = current_time + self.recovery_timeout + 1
+
+        # 4. Attempt a call - should go to HALF_OPEN
         self.assertTrue(self.cb.can_attempt())
         self.assertEqual(self.cb.state, CircuitBreakerState.HALF_OPEN)
         self.mock_logger.info.assert_any_call(
             f"Circuit breaker transitioning to half-open. State changed from {CircuitBreakerState.OPEN} to {CircuitBreakerState.HALF_OPEN}"
         )
 
-        # 4. Failed call in HALF_OPEN should re-open the circuit
-        # In HALF_OPEN, a single failure (first attempt of execute) should re-open.
-        # The execute method's retry logic will run, but record_failure is called on the first real failure in HALF_OPEN
-        # if the execute method itself fails.
+        # 5. Failed call in HALF_OPEN should re-open the circuit
+        # Advance time slightly for the failed call
+        mock_time.return_value = current_time + self.recovery_timeout + 2
         mock_function_fail_again = MagicMock(side_effect=Exception("Half-open fail"))
 
-        # Reset failure count to simulate fresh HALF_OPEN state for this specific test of HALF_OPEN behavior
-        # No, this is not right. `execute` will handle it.
-        # When in HALF_OPEN, record_failure() will immediately set it to OPEN if failure_count >= threshold.
-        # The CB starts in HALF_OPEN, failure_count is likely already at threshold or more.
-        # Let's ensure failure_count is reset by a successful call or a new CB for this scenario.
-        # The current CB already has failure_count at threshold.
-        # So, one more failure recorded by execute() will keep it/make it OPEN.
-
+        # In HALF_OPEN, a failure will trigger record_failure which will re-open the circuit
+        # because failure_count is already at threshold (from step 1)
         with self.assertRaisesRegex(Exception, "Half-open fail"):
             self.cb.execute(mock_function_fail_again)
 
         self.assertEqual(self.cb.state, CircuitBreakerState.OPEN)
-        # failure_count would be self.failure_threshold + 1 (or just self.failure_threshold if it was already maxed)
-        # record_failure increments failure_count, then checks threshold.
-        # If already at threshold, it becomes threshold + 1. Then it sets state to OPEN.
-        # The log "Circuit breaker opened after X failures" in record_failure will show the new count.
+        # failure_count increments on each record_failure call
+        # After opening the first time, it's at threshold (2)
+        # After the HALF_OPEN failure, it's at threshold + 1 (3)
         self.assertGreaterEqual(self.cb.failure_count, self.failure_threshold)
         self.mock_logger.warning.assert_any_call(
              f"Circuit breaker opened after {self.cb.failure_count} failures. State changed to {CircuitBreakerState.OPEN}"

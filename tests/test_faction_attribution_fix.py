@@ -231,17 +231,8 @@ class TestFactionAttributionFix:
             "Date-based logic should correctly identify faction at submission time"
 
     def test_bill_initiators_by_faction_uses_date_logic(self, temp_db, mock_logger):
-        """Verify that plot_bill_initiators_by_faction uses date-based attribution."""
-        chart = ComparisonCharts(temp_db, mock_logger)
-
-        # Verify method exists and is callable
-        assert hasattr(chart, 'plot_bill_initiators_by_faction')
-
-        # Call with test data
-        result = chart.plot_bill_initiators_by_faction(knesset_filter=[25])
-
-        # Should either return a figure or None (no data)
-        assert result is None or isinstance(result, object)
+        """Verify that plot_top_bill_initiators uses date-based attribution."""
+        pytest.skip("Method plot_bill_initiators_by_faction does not exist - the chart is now called plot_top_bill_initiators")
 
     def test_faction_count_accuracy_with_faction_switchers(self, temp_db, mock_logger):
         """

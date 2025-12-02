@@ -13,7 +13,7 @@ from typing import List, Optional, Callable, Dict, Any, Tuple
 import pandas as pd
 import streamlit as st
 
-from .predefined_queries import get_query_definition, get_query_sql, get_query_filters
+from .predefined_queries import get_query_info, get_query_sql, get_filter_columns
 
 
 class QueryExecutor:
@@ -51,13 +51,19 @@ class QueryExecutor:
         Returns:
             Tuple of (results_df, executed_sql, applied_filters_info)
         """
-        query_def = get_query_definition(query_name)
-        if not query_def:
+        query_info = get_query_info(query_name)
+        if not query_info:
             self.logger.error(f"Query '{query_name}' not found in predefined queries")
             return pd.DataFrame(), "", ["Error: Query not found"]
-        
+
         base_sql = get_query_sql(query_name)
-        filter_columns = get_query_filters(query_name)
+        knesset_col, faction_col = get_filter_columns(query_name)
+
+        # Create filter_columns dict for backward compatibility
+        filter_columns = {
+            "knesset_filter_column": knesset_col,
+            "faction_filter_column": faction_col
+        }
         
         # Build dynamic filters
         where_conditions = []

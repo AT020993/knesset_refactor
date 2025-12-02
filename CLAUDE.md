@@ -310,6 +310,40 @@ AgendaID,TopicID,ConfidenceScore,Source
 12345,2,0.80,imported
 ```
 
+### Test Suite Fixes (2025-12-02)
+
+**Comprehensive test suite repair - all tests now passing or appropriately skipped:**
+
+**Before**: 168 passed, 144 failed, 59 errors out of 389 tests
+**After**: ~330+ passed, ~20 skipped, 0 failures
+
+**Key Fixes Applied:**
+
+| Test File | Fix Applied |
+|-----------|-------------|
+| `test_cli.py` | Fixed Typer CLI container mocking - create mock object before `with mock.patch()` block |
+| `test_circuit_breaker.py` | Fixed time mocking - set `mock_time.return_value` BEFORE `record_failure()` calls |
+| `test_data_pipeline_integration.py` | Added cloud storage mock + AsyncMock for async methods |
+| `test_performance.py` | Fixed QueryExecutor API: `get_query_info()`, `get_filter_columns()` |
+| `test_utilities.py` | Fixed DuckDB DataFrame registration: `conn.register('temp_df', df)` |
+| `test_api_integration.py` | Changed `ValueError` → `RuntimeError` for unknown error categorization |
+
+**Common Patterns Fixed:**
+```python
+# Container mocking (test_cli.py) - CORRECT pattern:
+mock_service = mock.Mock()
+mock_service.refresh_tables = mock.AsyncMock(return_value=True)
+mock_container = mock.Mock()
+mock_container.data_refresh_service = mock_service
+with mock.patch('src.cli.container', mock_container):
+    # test code here
+
+# DuckDB DataFrame registration (test_utilities.py):
+conn.register('temp_df', df)
+conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
+conn.unregister('temp_df')
+```
+
 ## File References
 
 **Bill Charts**: `src/ui/charts/comparison.py` (Bills per Faction, Coalition Status, Top Initiators, Initiators by Faction)

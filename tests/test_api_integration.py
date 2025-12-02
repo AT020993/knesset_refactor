@@ -113,7 +113,17 @@ class TestCircuitBreakerAPIIntegration:
 
 class TestODataClientIntegration:
     """Test OData client with circuit breaker and error handling."""
-    
+
+    @pytest.fixture(autouse=True)
+    def reset_circuit_breaker(self):
+        """Reset circuit breaker state before each test."""
+        from api.circuit_breaker import circuit_breaker_manager
+        # Clear all circuit breakers
+        circuit_breaker_manager._breakers.clear()
+        yield
+        # Clear again after test
+        circuit_breaker_manager._breakers.clear()
+
     @pytest.fixture
     def client(self):
         """Fresh OData client for each test."""
@@ -155,8 +165,8 @@ class TestODataClientIntegration:
     async def test_api_call_with_retries(self, client):
         """Test API call retry mechanism with backoff."""
         call_count = 0
-        
-        async def mock_get(*args, **kwargs):
+
+        def mock_get_factory(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -165,9 +175,11 @@ class TestODataClientIntegration:
             mock_response = AsyncMock()
             mock_response.json.return_value = {"value": []}
             mock_response.status = 200
-            return mock_response
-        
-        with patch('aiohttp.ClientSession.get', side_effect=mock_get):
+            mock_context = AsyncMock()
+            mock_context.__aenter__.return_value = mock_response
+            return mock_context
+
+        with patch('aiohttp.ClientSession.get', side_effect=mock_get_factory):
             async with aiohttp.ClientSession() as session:
                 # Should succeed after retries
                 result = await client.fetch_json(session, "http://test-api.com/data")
@@ -218,19 +230,21 @@ class TestAPIReliabilityEnd2End:
         
         success_response = {"value": [{"id": 1}]}
         call_count = 0
-        
-        async def alternating_responses(*args, **kwargs):
+
+        def alternating_responses(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            
+
             if call_count % 3 == 0:  # Every third call fails
                 raise aiohttp.ClientConnectionError("Intermittent failure")
-            
+
             mock_response = AsyncMock()
             mock_response.json.return_value = success_response
             mock_response.status = 200
-            return mock_response
-        
+            mock_context = AsyncMock()
+            mock_context.__aenter__.return_value = mock_response
+            return mock_context
+
         with patch('aiohttp.ClientSession.get', side_effect=alternating_responses):
             # Make several API calls
             successful_calls = 0

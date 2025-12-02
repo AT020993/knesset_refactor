@@ -288,13 +288,16 @@ class DatabaseTestHelper:
         """Create temporary database with test data."""
         temp_dir = tempfile.mkdtemp()
         db_path = Path(temp_dir) / "test.duckdb"
-        
+
         if tables:
             conn = duckdb.connect(str(db_path))
-            for table_name, data in tables.items():
-                conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM data", {'data': data})
+            for table_name, df in tables.items():
+                # Register DataFrame with DuckDB before using it in SQL
+                conn.register('temp_df', df)
+                conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
+                conn.unregister('temp_df')
             conn.close()
-        
+
         return db_path
     
     @staticmethod

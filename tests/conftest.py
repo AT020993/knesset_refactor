@@ -55,8 +55,12 @@ except ImportError:
 
 
 @pytest.fixture(autouse=True)
-def stub_download_table(monkeypatch):
-    async def fake_download_table(table, **kwargs):
+def stub_download_table(request, monkeypatch):
+    # Skip this fixture if the test is marked with 'no_autouse_stub'
+    if 'no_autouse_stub' in request.keywords:
+        return
+
+    async def fake_download_table(self, table, resume_state=None):
         import pandas as pd
 
         return pd.DataFrame([])
@@ -74,6 +78,32 @@ def stub_download_table(monkeypatch):
         from api.odata_client import ODataClient
 
         monkeypatch.setattr(ODataClient, "download_table", fake_download_table)
+
+
+@pytest.fixture(autouse=True)
+def disable_cloud_storage(monkeypatch):
+    """Disable cloud storage sync during tests to avoid Streamlit secrets issues."""
+    try:
+        from data.services.storage_sync_service import StorageSyncService
+
+        # Mock StorageSyncService to always be disabled
+        def mock_init(self, gcs_manager=None, logger_obj=None):
+            import logging
+            self.logger = logger_obj or logging.getLogger(__name__)
+            self.gcs_manager = None
+            self.enabled = False
+
+        def mock_is_enabled(self):
+            return False
+
+        def mock_sync_after_refresh(self, progress_callback=None):
+            return True
+
+        monkeypatch.setattr(StorageSyncService, "__init__", mock_init)
+        monkeypatch.setattr(StorageSyncService, "is_enabled", mock_is_enabled)
+        monkeypatch.setattr(StorageSyncService, "sync_after_refresh", mock_sync_after_refresh)
+    except ImportError:
+        pass  # StorageSyncService not available
 
 
 @pytest.fixture(scope="session")

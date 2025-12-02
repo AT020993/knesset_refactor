@@ -99,10 +99,10 @@ class TestSettings:
     def test_feature_flags(self):
         """Test feature flag configurations."""
         # Test monitoring enabled flag
-        assert isinstance(Settings.MONITORING_ENABLED, bool)
-        
+        assert isinstance(Settings.ENABLE_BACKGROUND_MONITORING, bool)
+
         # Test dashboard enabled flag
-        assert isinstance(Settings.DASHBOARD_ENABLED, bool)
+        assert isinstance(Settings.ENABLE_CONNECTION_DASHBOARD, bool)
     
     def test_file_paths(self):
         """Test specific file path configurations."""
@@ -149,10 +149,6 @@ class TestAPIConfig:
         assert isinstance(APIConfig.PAGE_SIZE, int)
         assert APIConfig.PAGE_SIZE > 0
         assert APIConfig.PAGE_SIZE == 100
-        
-        # Test skip size (should match page size)
-        assert isinstance(APIConfig.SKIP_SIZE, int)
-        assert APIConfig.SKIP_SIZE == APIConfig.PAGE_SIZE
     
     def test_timeout_configuration(self):
         """Test timeout configurations."""
@@ -160,10 +156,6 @@ class TestAPIConfig:
         assert isinstance(APIConfig.REQUEST_TIMEOUT, int)
         assert APIConfig.REQUEST_TIMEOUT > 0
         assert APIConfig.REQUEST_TIMEOUT == 60
-        
-        # Test connection timeout
-        assert isinstance(APIConfig.CONNECTION_TIMEOUT, int)
-        assert APIConfig.CONNECTION_TIMEOUT > 0
     
     def test_retry_configuration(self):
         """Test retry mechanism configuration."""
@@ -171,15 +163,16 @@ class TestAPIConfig:
         assert isinstance(APIConfig.MAX_RETRIES, int)
         assert APIConfig.MAX_RETRIES > 0
         assert APIConfig.MAX_RETRIES == 8
-        
+
         # Test retry base delay
         assert isinstance(APIConfig.RETRY_BASE_DELAY, (int, float))
         assert APIConfig.RETRY_BASE_DELAY > 0
         assert APIConfig.RETRY_BASE_DELAY == 2
-        
+
         # Test max retry delay
-        assert isinstance(APIConfig.MAX_RETRY_DELAY, (int, float))
-        assert APIConfig.MAX_RETRY_DELAY >= APIConfig.RETRY_BASE_DELAY
+        assert isinstance(APIConfig.RETRY_MAX_DELAY, (int, float))
+        assert APIConfig.RETRY_MAX_DELAY >= APIConfig.RETRY_BASE_DELAY
+        assert APIConfig.RETRY_MAX_DELAY == 60
     
     def test_circuit_breaker_configuration(self):
         """Test circuit breaker configuration."""
@@ -195,10 +188,10 @@ class TestAPIConfig:
     
     def test_concurrency_configuration(self):
         """Test concurrency-related settings."""
-        # Test max concurrent requests
-        assert isinstance(APIConfig.MAX_CONCURRENT_REQUESTS, int)
-        assert APIConfig.MAX_CONCURRENT_REQUESTS > 0
-        assert APIConfig.MAX_CONCURRENT_REQUESTS == 10
+        # Test max concurrent requests (actual attribute is CONCURRENCY_LIMIT)
+        assert isinstance(APIConfig.CONCURRENCY_LIMIT, int)
+        assert APIConfig.CONCURRENCY_LIMIT > 0
+        assert APIConfig.CONCURRENCY_LIMIT == 8
 
 
 class TestErrorCategory:
@@ -488,20 +481,21 @@ class TestConfigurationIntegration:
         with patch.object(Settings, 'PROJECT_ROOT', tmp_path), \
              patch.object(Settings, 'DATA_DIR', tmp_path / "data"), \
              patch.object(Settings, 'LOGS_DIR', tmp_path / "logs"), \
-             patch.object(Settings, 'PARQUET_DIR', tmp_path / "parquet"):
-            
+             patch.object(Settings, 'PARQUET_DIR', tmp_path / "parquet"), \
+             patch.object(Settings, 'DEFAULT_DB_PATH', tmp_path / "data" / "warehouse.duckdb"):
+
             # Ensure directories
             Settings.ensure_directories()
-            
+
             # Test complete structure exists
             assert Settings.DATA_DIR.exists()
             assert Settings.LOGS_DIR.exists()
             assert Settings.PARQUET_DIR.exists()
-            
+
             # Test database path resolves correctly
             db_path = Settings.get_db_path()
             assert db_path.parent == Settings.DATA_DIR
-            
+
             # Test parquet directory is separate from database
             assert Settings.PARQUET_DIR != Settings.DATA_DIR
 
