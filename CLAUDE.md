@@ -6,8 +6,17 @@ Guidance for Claude Code when working with this Knesset parliamentary data analy
 
 **Testing:**
 ```bash
-pytest                                  # Unit tests with coverage
-pytest -m e2e --base-url http://localhost:8501  # E2E tests (requires app running)
+# Fast unit tests (~10s) - excludes slow integration tests
+pytest tests/ --ignore=tests/test_api_integration.py --ignore=tests/test_e2e.py --ignore=tests/test_data_pipeline_integration.py --ignore=tests/test_connection_leaks.py --tb=short -q
+
+# Full test suite (may hang on integration tests with network calls)
+pytest tests/ --tb=short -q
+
+# E2E tests (requires app running on localhost:8501)
+pytest -m e2e --base-url http://localhost:8501
+
+# Parallel execution (requires pytest-xdist)
+pytest tests/ -n auto --ignore=tests/test_api_integration.py --ignore=tests/test_e2e.py
 ```
 
 **Data Operations:**
