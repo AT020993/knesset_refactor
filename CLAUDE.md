@@ -283,23 +283,19 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 
 ### Topic Classification Infrastructure (2025-12-02)
 
-**New Tables** (user-managed, for external topic data):
+**Backend infrastructure ready for future topic classification features (UI not yet implemented).**
+
+**Database Tables** (user-managed, for external topic data):
 - `UserTopicTaxonomy`: Topic hierarchy with Hebrew/English names, parent relationships
 - `UserAgendaTopics`: Agenda-to-topic mappings with confidence scores
 - `UserQueryTopics`: Query-to-topic mappings
 - `UserBillTopics`: Bill-to-topic mappings
 
-**New Utility**: `src/utils/topic_importer.py`
+**Utility**: `src/utils/topic_importer.py`
 - `TopicImporter` class for CSV import and topic management
 - Methods: `import_taxonomy_from_csv()`, `import_agenda_topics()`, `import_query_topics()`, `import_bill_topics()`
 - Retrieval: `get_topics_for_agenda()`, `get_topics_for_query()`, `get_topics_for_bill()`
 - Statistics: `get_topic_statistics()` returns counts for all tables
-
-**UI Section**: "📚 Topic Classifications (Coming Soon)"
-- Shows topic statistics when data is imported
-- Displays taxonomy preview (first 20 topics)
-- "Initialize Topic Tables" button for first-time setup
-- Instructions for CSV format requirements
 
 **CSV Format for Topic Taxonomy:**
 ```csv
@@ -382,7 +378,7 @@ conn.unregister('temp_df')
 **Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
 **SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
 **Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates)
-**Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, verification, topic section)
+**Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, verification)
 **Plots Page**: `src/ui/renderers/plots_page.py` (Chart rendering, network explanation expander)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
 **Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)

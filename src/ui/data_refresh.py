@@ -141,9 +141,6 @@ data_refresh_renderer.render_page_header()
 data_refresh_renderer.render_query_results_section()
 data_refresh_renderer.render_table_explorer_section()
 
-# Topic classification section (infrastructure ready for external data)
-data_refresh_renderer.render_topic_classification_section()
-
 # Render plots/visualizations section
 try:
     plots_renderer.render_plots_section(
