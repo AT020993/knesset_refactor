@@ -1,6 +1,7 @@
 """Base chart class for all chart types."""
 
 from abc import ABC, abstractmethod
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Tuple
 import logging
@@ -15,18 +16,314 @@ from config.charts import ChartConfig
 from utils.query_builder import SecureQueryBuilder, FilterOperator, QueryTemplate
 
 
-class BaseChart(ABC):
-    """Base class for all chart generators."""
+def chart_error_handler(chart_name: str):
+    """Decorator for standardized chart error handling.
 
-    def __init__(self, db_path: Path, logger_obj: logging.Logger):
+    Wraps chart generation methods to catch exceptions and provide
+    consistent error logging and user feedback.
+
+    Uses the instance's show_error() method for testability - in tests,
+    a custom error handler can be injected to capture errors without Streamlit.
+
+    Args:
+        chart_name: Human-readable name of the chart for error messages.
+
+    Returns:
+        Decorator function that wraps the chart method.
+
+    Example:
+        @chart_error_handler("queries per faction chart")
+        def plot_queries_per_faction(self, ...):
+            # chart logic here (no try/except needed)
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Error generating {chart_name}: {e}", exc_info=True)
+                # Use instance's show_error for testability
+                if hasattr(self, 'show_error'):
+                    self.show_error(f"Could not generate {chart_name}: {e}")
+                else:
+                    st.error(f"Could not generate {chart_name}: {e}")
+                return None
+        return wrapper
+    return decorator
+
+
+class FilterBuilder:
+    """Unified filter builder for SQL query conditions.
+
+    Consolidates filter building logic that was previously duplicated across
+    build_filters(), build_secure_filters(), and _build_legacy_advanced_filters().
+
+    Supports both legacy string-based conditions and parameterized conditions.
+
+    Example:
+        builder = FilterBuilder(table_prefix="q")
+        builder.add_knesset([25]).add_faction(["Likud"]).add_date_range(start="2023-01-01")
+        filters = builder.build()
+    """
+
+    # Filter type constants
+    BILL_ORIGIN_ALL = "All Bills"
+    BILL_ORIGIN_PRIVATE = "Private Bills Only"
+    BILL_ORIGIN_GOVERNMENTAL = "Governmental Bills Only"
+
+    def __init__(self, table_prefix: str = "", date_column: str = "SubmitDate"):
+        """Initialize the FilterBuilder.
+
+        Args:
+            table_prefix: Table alias prefix (e.g., "q" for "q.KnessetNum")
+            date_column: Column name for date filters (default: "SubmitDate")
+        """
+        self.prefix = f"{table_prefix}." if table_prefix else ""
+        self.date_column = date_column
+        self._knesset_filter: Optional[List[int]] = None
+        self._faction_filter: Optional[List[str]] = None
+        self._query_type_filter: List[str] = []
+        self._query_status_filter: List[str] = []
+        self._session_type_filter: List[str] = []
+        self._bill_type_filter: List[str] = []
+        self._bill_status_filter: List[str] = []
+        self._bill_origin_filter: str = self.BILL_ORIGIN_ALL
+        self._start_date: Optional[str] = None
+        self._end_date: Optional[str] = None
+
+    def add_knesset(self, knesset_filter: Optional[List[int]]) -> 'FilterBuilder':
+        """Add Knesset filter."""
+        self._knesset_filter = knesset_filter
+        return self
+
+    def add_faction(self, faction_filter: Optional[List[str]]) -> 'FilterBuilder':
+        """Add faction filter."""
+        self._faction_filter = faction_filter
+        return self
+
+    def add_query_type(self, query_type_filter: List[str]) -> 'FilterBuilder':
+        """Add query type filter."""
+        self._query_type_filter = query_type_filter
+        return self
+
+    def add_query_status(self, query_status_filter: List[str]) -> 'FilterBuilder':
+        """Add query status filter."""
+        self._query_status_filter = query_status_filter
+        return self
+
+    def add_session_type(self, session_type_filter: List[str]) -> 'FilterBuilder':
+        """Add session type filter."""
+        self._session_type_filter = session_type_filter
+        return self
+
+    def add_bill_type(self, bill_type_filter: List[str]) -> 'FilterBuilder':
+        """Add bill type filter."""
+        self._bill_type_filter = bill_type_filter
+        return self
+
+    def add_bill_status(self, bill_status_filter: List[str]) -> 'FilterBuilder':
+        """Add bill status filter."""
+        self._bill_status_filter = bill_status_filter
+        return self
+
+    def add_bill_origin(self, bill_origin_filter: str) -> 'FilterBuilder':
+        """Add bill origin filter (All Bills / Private Bills Only / Governmental Bills Only)."""
+        self._bill_origin_filter = bill_origin_filter
+        return self
+
+    def add_date_range(
+        self, start_date: Optional[str] = None, end_date: Optional[str] = None
+    ) -> 'FilterBuilder':
+        """Add date range filter."""
+        self._start_date = start_date
+        self._end_date = end_date
+        return self
+
+    def from_kwargs(self, **kwargs) -> 'FilterBuilder':
+        """Populate filters from kwargs (for backward compatibility).
+
+        Args:
+            **kwargs: Filter parameters from chart methods
+        """
+        if kwargs.get("query_type_filter"):
+            self.add_query_type(kwargs["query_type_filter"])
+        if kwargs.get("query_status_filter"):
+            self.add_query_status(kwargs["query_status_filter"])
+        if kwargs.get("session_type_filter"):
+            self.add_session_type(kwargs["session_type_filter"])
+        if kwargs.get("bill_type_filter"):
+            self.add_bill_type(kwargs["bill_type_filter"])
+        if kwargs.get("bill_status_filter"):
+            self.add_bill_status(kwargs["bill_status_filter"])
+        if kwargs.get("bill_origin_filter"):
+            self.add_bill_origin(kwargs["bill_origin_filter"])
+        if kwargs.get("start_date"):
+            self._start_date = str(kwargs["start_date"])
+        if kwargs.get("end_date"):
+            self._end_date = str(kwargs["end_date"])
+        return self
+
+    @staticmethod
+    def _escape_sql_string(value: str) -> str:
+        """Escape single quotes for SQL injection prevention."""
+        return value.replace("'", "''")
+
+    def _build_knesset_condition(self) -> Tuple[str, bool, str]:
+        """Build Knesset filter condition.
+
+        Returns:
+            Tuple of (sql_condition, is_single_knesset, title_string)
+        """
+        if self._knesset_filter:
+            if len(self._knesset_filter) == 1:
+                return (
+                    f"{self.prefix}KnessetNum = {self._knesset_filter[0]}",
+                    True,
+                    f"Knesset {self._knesset_filter[0]}"
+                )
+            else:
+                knesset_str = ", ".join(map(str, self._knesset_filter))
+                return (
+                    f"{self.prefix}KnessetNum IN ({knesset_str})",
+                    False,
+                    f"Knessets: {', '.join(map(str, self._knesset_filter))}"
+                )
+        return "1=1", False, "All Knessets"
+
+    def _build_faction_condition(self) -> str:
+        """Build faction filter condition."""
+        if self._faction_filter:
+            escaped = [f"'{self._escape_sql_string(f)}'" for f in self._faction_filter]
+            return f"FactionName IN ({', '.join(escaped)})"
+        return "1=1"
+
+    def _build_in_condition(self, column: str, values: List[str]) -> str:
+        """Build IN condition for a list of string values."""
+        if not values:
+            return "1=1"
+        escaped = [f"'{self._escape_sql_string(v)}'" for v in values]
+        return f"{column} IN ({', '.join(escaped)})"
+
+    def build(self) -> Dict[str, Any]:
+        """Build the complete filter dictionary.
+
+        Returns:
+            Dictionary with all filter conditions and metadata.
+        """
+        knesset_cond, is_single, knesset_title = self._build_knesset_condition()
+
+        filters = {
+            # Core filters
+            "knesset_condition": knesset_cond,
+            "is_single_knesset": is_single,
+            "knesset_title": knesset_title,
+            "faction_condition": self._build_faction_condition(),
+
+            # Named conditions for specific filter types
+            "query_type_condition": self._build_in_condition(
+                f"{self.prefix}TypeDesc", self._query_type_filter
+            ),
+            "query_status_condition": self._build_in_condition(
+                's."Desc"', self._query_status_filter
+            ),
+            "session_type_condition": self._build_in_condition(
+                f"{self.prefix}SubTypeDesc", self._session_type_filter
+            ),
+            "bill_type_condition": self._build_in_condition(
+                f"{self.prefix}SubTypeDesc", self._bill_type_filter
+            ),
+            "bill_status_condition": self._build_in_condition(
+                's."Desc"', self._bill_status_filter
+            ),
+
+            # Bill origin filter
+            "bill_origin_condition": "1=1",
+
+            # Date conditions
+            "start_date_condition": "1=1",
+            "end_date_condition": "1=1",
+        }
+
+        # Bill origin filter
+        if self._bill_origin_filter == self.BILL_ORIGIN_PRIVATE:
+            filters["bill_origin_condition"] = f"{self.prefix}PrivateNumber IS NOT NULL"
+        elif self._bill_origin_filter == self.BILL_ORIGIN_GOVERNMENTAL:
+            filters["bill_origin_condition"] = f"{self.prefix}PrivateNumber IS NULL"
+
+        # Date filters
+        if self._start_date:
+            filters["start_date_condition"] = (
+                f"{self.prefix}{self.date_column} >= '{self._escape_sql_string(self._start_date)}'"
+            )
+        if self._end_date:
+            filters["end_date_condition"] = (
+                f"date({self.prefix}{self.date_column}) <= '{self._escape_sql_string(self._end_date)}'"
+            )
+
+        return filters
+
+
+class BaseChart(ABC):
+    """Base class for all chart generators.
+
+    Provides common functionality for database access, query execution,
+    filter building, and error handling for all chart types.
+
+    The error_handler parameter allows decoupling from Streamlit for testing:
+        - In production: Uses st.error()/st.warning() by default
+        - In tests: Pass a custom handler to capture errors without Streamlit
+
+    Example:
+        # Production usage (default Streamlit handler)
+        chart = MyChart(db_path, logger)
+
+        # Test usage (custom handler)
+        errors = []
+        chart = MyChart(db_path, logger, error_handler=lambda msg, lvl: errors.append((msg, lvl)))
+    """
+
+    def __init__(
+        self,
+        db_path: Path,
+        logger_obj: logging.Logger,
+        error_handler: Optional[Callable[[str, str], None]] = None
+    ):
+        """Initialize the chart generator.
+
+        Args:
+            db_path: Path to the DuckDB database file.
+            logger_obj: Logger instance for this chart.
+            error_handler: Optional callback for error/warning display.
+                           Signature: (message: str, level: str) -> None
+                           where level is "error" or "warning".
+                           If None, uses Streamlit st.error()/st.warning().
+        """
         self.db_path = db_path
         self.logger = logger_obj
         self.config = ChartConfig()
+        self._error_handler = error_handler
+
+    def show_error(self, message: str, level: str = "error") -> None:
+        """Display an error or warning message.
+
+        Uses the custom error_handler if provided, otherwise falls back to Streamlit.
+
+        Args:
+            message: The message to display.
+            level: Either "error" or "warning".
+        """
+        if self._error_handler:
+            self._error_handler(message, level)
+        elif level == "warning":
+            st.warning(message)
+        else:
+            st.error(message)
 
     def check_database_exists(self) -> bool:
         """Check if database file exists."""
         if not self.db_path.exists():
-            st.error("Database not found. Cannot generate visualization.")
+            self.show_error("Database not found. Cannot generate visualization.")
             self.logger.error(f"Database not found: {self.db_path}")
             return False
         return True
@@ -47,8 +344,9 @@ class BaseChart(ABC):
             ]
 
             if missing_tables:
-                st.warning(
-                    f"Visualization skipped: Required table(s) '{', '.join(missing_tables)}' not found. Please refresh data."
+                self.show_error(
+                    f"Visualization skipped: Required table(s) '{', '.join(missing_tables)}' not found. Please refresh data.",
+                    level="warning"
                 )
                 self.logger.warning(
                     f"Required table(s) '{', '.join(missing_tables)}' not found for visualization."
@@ -57,8 +355,33 @@ class BaseChart(ABC):
             return True
         except Exception as e:
             self.logger.error(f"Error checking table existence: {e}", exc_info=True)
-            st.error(f"Error checking table existence: {e}")
+            self.show_error(f"Error checking table existence: {e}")
             return False
+
+    @staticmethod
+    def ensure_numeric_columns(
+        df: pd.DataFrame,
+        columns: List[str],
+        fillna: Any = 0
+    ) -> pd.DataFrame:
+        """Convert columns to numeric type with safe error handling.
+
+        Reduces code duplication for the common pattern:
+            df["Col"] = pd.to_numeric(df["Col"], errors="coerce").fillna(0)
+
+        Args:
+            df: The DataFrame to modify.
+            columns: List of column names to convert.
+            fillna: Value to use for NaN values (default: 0).
+
+        Returns:
+            DataFrame with specified columns converted to numeric.
+        """
+        df = df.copy()
+        for col in columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(fillna)
+        return df
 
     def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[pd.DataFrame]:
         """Execute a query safely with optional parameters and return the result."""
@@ -103,7 +426,7 @@ class BaseChart(ABC):
                     return safe_execute_query(con, query, _self.logger)
         except Exception as e:
             _self.logger.error(f"Error executing query: {e}", exc_info=True)
-            st.error(f"Error executing query: {e}")
+            _self.show_error(f"Error executing query: {e}")
             return None
 
     def execute_secure_query(self, query: str, builder: SecureQueryBuilder) -> Optional[pd.DataFrame]:
@@ -113,7 +436,7 @@ class BaseChart(ABC):
             return self.execute_query(query, params)
         except Exception as e:
             self.logger.error(f"Error executing secure query: {e}", exc_info=True)
-            st.error(f"Error executing secure query: {e}")
+            self.show_error(f"Error executing secure query: {e}")
             return None
 
     def build_secure_filters(
@@ -165,7 +488,6 @@ class BaseChart(ABC):
         """Escape single quotes for SQL injection prevention."""
         return value.replace("'", "''")
 
-    # Keep legacy methods for backward compatibility
     def build_filters(
         self,
         knesset_filter: Optional[List[int]] = None,
@@ -174,163 +496,29 @@ class BaseChart(ABC):
         date_column: str = "SubmitDate",
         **kwargs,
     ) -> Dict[str, Any]:
-        """Legacy filter building method - converts secure filters to simple string conditions."""
-        # For legacy compatibility, convert parameterized conditions to simple string conditions
-        builder = SecureQueryBuilder()
-        filters = {}
+        """Build common filter conditions for SQL queries.
 
-        # Add table prefix with dot if provided
-        prefix = f"{table_prefix}." if table_prefix else ""
+        Uses FilterBuilder internally for consistent filter generation.
 
-        # Build Knesset filter - convert to simple condition
-        if knesset_filter:
-            if len(knesset_filter) == 1:
-                filters["knesset_condition"] = f"{prefix}KnessetNum = {knesset_filter[0]}"
-                filters["is_single_knesset"] = True
-                filters["knesset_title"] = f"Knesset {knesset_filter[0]}"
-            else:
-                knesset_str = ", ".join(map(str, knesset_filter))
-                filters["knesset_condition"] = f"{prefix}KnessetNum IN ({knesset_str})"
-                filters["is_single_knesset"] = False
-                filters["knesset_title"] = f"Knessets: {', '.join(map(str, knesset_filter))}"
-        else:
-            filters["knesset_condition"] = "1=1"
-            filters["is_single_knesset"] = False
-            filters["knesset_title"] = "All Knessets"
+        Args:
+            knesset_filter: List of Knesset numbers to filter by.
+            faction_filter: List of faction names to filter by.
+            table_prefix: Table alias prefix (e.g., "q" for "q.KnessetNum").
+            date_column: Column name for date filters (default: "SubmitDate").
+            **kwargs: Additional filter parameters (query_type_filter, bill_status_filter, etc.)
 
-        # Build faction filter - convert to simple condition  
-        if faction_filter:
-            escaped_factions = [f"'{self._escape_sql_string(f)}'" for f in faction_filter]
-            faction_str = ", ".join(escaped_factions)
-            filters["faction_condition"] = f"FactionName IN ({faction_str})"
-        else:
-            filters["faction_condition"] = "1=1"
+        Returns:
+            Dictionary with all filter conditions and metadata.
+        """
+        # Delegate to FilterBuilder for consistent filter generation
+        builder = FilterBuilder(table_prefix=table_prefix, date_column=date_column)
+        builder.add_knesset(knesset_filter).add_faction(faction_filter).from_kwargs(**kwargs)
+        filters = builder.build()
 
-        # Add advanced filters as named conditions for legacy compatibility
-        advanced_conditions = self._build_legacy_advanced_filters(prefix, date_column, **kwargs)
-        
-        # Create specific named conditions that charts expect
-        filters["query_type_condition"] = "1=1"
-        filters["query_status_condition"] = "1=1" 
-        filters["session_type_condition"] = "1=1"
+        # Add agenda_status_condition for backward compatibility
         filters["agenda_status_condition"] = "1=1"
-        filters["bill_type_condition"] = "1=1"
-        filters["bill_status_condition"] = "1=1"
-        filters["bill_origin_condition"] = "1=1"
-        filters["start_date_condition"] = "1=1"
-        filters["end_date_condition"] = "1=1"
-        
-        # Apply actual conditions based on filter types
-        query_type_filter = kwargs.get("query_type_filter", [])
-        if query_type_filter:
-            escaped_types = [f"'{self._escape_sql_string(t)}'" for t in query_type_filter]
-            type_str = ", ".join(escaped_types)
-            filters["query_type_condition"] = f"{prefix}TypeDesc IN ({type_str})"
-            
-        query_status_filter = kwargs.get("query_status_filter", [])
-        if query_status_filter:
-            escaped_statuses = [f"'{self._escape_sql_string(s)}'" for s in query_status_filter]
-            status_str = ", ".join(escaped_statuses)
-            filters["query_status_condition"] = f's.\"Desc\" IN ({status_str})'
-            
-        session_type_filter = kwargs.get("session_type_filter", [])
-        if session_type_filter:
-            escaped_session_types = [f"'{self._escape_sql_string(st)}'" for st in session_type_filter]
-            session_str = ", ".join(escaped_session_types)
-            filters["session_type_condition"] = f"{prefix}SubTypeDesc IN ({session_str})"
-            
-        bill_type_filter = kwargs.get("bill_type_filter", [])
-        if bill_type_filter:
-            escaped_bill_types = [f"'{self._escape_sql_string(bt)}'" for bt in bill_type_filter]
-            bill_str = ", ".join(escaped_bill_types)
-            filters["bill_type_condition"] = f"{prefix}SubTypeDesc IN ({bill_str})"
-            
-        bill_status_filter = kwargs.get("bill_status_filter", [])
-        if bill_status_filter:
-            escaped_bill_statuses = [f"'{self._escape_sql_string(bs)}'" for bs in bill_status_filter]
-            bill_status_str = ", ".join(escaped_bill_statuses)
-            filters["bill_status_condition"] = f's.\"Desc\" IN ({bill_status_str})'
-            
-        bill_origin_filter = kwargs.get("bill_origin_filter", "All Bills")
-        if bill_origin_filter == "Private Bills Only":
-            filters["bill_origin_condition"] = f"{prefix}PrivateNumber IS NOT NULL"
-        elif bill_origin_filter == "Governmental Bills Only":
-            filters["bill_origin_condition"] = f"{prefix}PrivateNumber IS NULL"
-            
-        start_date = kwargs.get("start_date")
-        if start_date:
-            filters["start_date_condition"] = f"{prefix}{date_column} >= '{self._escape_sql_string(str(start_date))}'"
-            
-        end_date = kwargs.get("end_date")
-        if end_date:
-            filters["end_date_condition"] = f"date({prefix}{date_column}) <= '{self._escape_sql_string(str(end_date))}'"
-            
-        # Also add numbered conditions for compatibility
-        for i, condition in enumerate(advanced_conditions):
-            filters[f"advanced_condition_{i}"] = condition
-            
+
         return filters
-
-    def _build_legacy_advanced_filters(
-        self,
-        prefix: str = "",
-        date_column: str = "SubmitDate",
-        **kwargs,
-    ) -> List[str]:
-        """Build advanced filter conditions as simple string conditions for legacy compatibility."""
-        conditions = []
-
-        # Query-specific filters
-        query_type_filter = kwargs.get("query_type_filter", [])
-        if query_type_filter:
-            escaped_types = [f"'{self._escape_sql_string(t)}'" for t in query_type_filter]
-            type_str = ", ".join(escaped_types)
-            conditions.append(f"{prefix}TypeDesc IN ({type_str})")
-
-        # Status filters using joined table alias
-        query_status_filter = kwargs.get("query_status_filter", [])
-        if query_status_filter:
-            escaped_statuses = [f"'{self._escape_sql_string(s)}'" for s in query_status_filter]
-            status_str = ", ".join(escaped_statuses)
-            conditions.append(f's.\"Desc\" IN ({status_str})')
-
-        # Agenda-specific filters
-        session_type_filter = kwargs.get("session_type_filter", [])
-        if session_type_filter:
-            escaped_session_types = [f"'{self._escape_sql_string(st)}'" for st in session_type_filter]
-            session_str = ", ".join(escaped_session_types)
-            conditions.append(f"{prefix}SubTypeDesc IN ({session_str})")
-
-        # Bill-specific filters
-        bill_type_filter = kwargs.get("bill_type_filter", [])
-        if bill_type_filter:
-            escaped_bill_types = [f"'{self._escape_sql_string(bt)}'" for bt in bill_type_filter]
-            bill_str = ", ".join(escaped_bill_types)
-            conditions.append(f"{prefix}SubTypeDesc IN ({bill_str})")
-
-        bill_status_filter = kwargs.get("bill_status_filter", [])
-        if bill_status_filter:
-            escaped_bill_statuses = [f"'{self._escape_sql_string(bs)}'" for bs in bill_status_filter]
-            bill_status_str = ", ".join(escaped_bill_statuses)
-            conditions.append(f's.\"Desc\" IN ({bill_status_str})')
-
-        # Bill origin filter
-        bill_origin_filter = kwargs.get("bill_origin_filter", "All Bills")
-        if bill_origin_filter == "Private Bills Only":
-            conditions.append(f"{prefix}PrivateNumber IS NOT NULL")
-        elif bill_origin_filter == "Governmental Bills Only":
-            conditions.append(f"{prefix}PrivateNumber IS NULL")
-
-        # Date filters
-        start_date = kwargs.get("start_date")
-        if start_date:
-            conditions.append(f"{prefix}{date_column} >= '{self._escape_sql_string(str(start_date))}'")
-
-        end_date = kwargs.get("end_date")
-        if end_date:
-            conditions.append(f"date({prefix}{date_column}) <= '{self._escape_sql_string(str(end_date))}'")
-
-        return conditions
 
     def _build_secure_advanced_filters(
         self,
@@ -411,6 +599,108 @@ class BaseChart(ABC):
             )
 
         return conditions
+
+    # ============== Time Series Helpers ==============
+
+    @staticmethod
+    def get_time_period_config(date_column: str) -> Dict[str, Dict[str, str]]:
+        """Return time period SQL configurations for time series charts.
+
+        Consolidates the duplicated time_configs dict that was repeated
+        in plot_queries_by_time_period, plot_agendas_by_time_period, and
+        plot_bills_by_time_period.
+
+        Args:
+            date_column: The date column to use in SQL (e.g., "q.SubmitDate")
+
+        Returns:
+            Dict with Monthly, Quarterly, Yearly configurations containing
+            'sql' (SQL expression) and 'label' (axis label) keys.
+        """
+        return {
+            "Monthly": {
+                "sql": f"strftime(CAST({date_column} AS TIMESTAMP), '%Y-%m')",
+                "label": "Year-Month"
+            },
+            "Quarterly": {
+                "sql": (
+                    f"strftime(CAST({date_column} AS TIMESTAMP), '%Y') || '-Q' || "
+                    f"CAST((CAST(strftime(CAST({date_column} AS TIMESTAMP), '%m') AS INTEGER) - 1) / 3 + 1 AS VARCHAR)"
+                ),
+                "label": "Year-Quarter"
+            },
+            "Yearly": {
+                "sql": f"strftime(CAST({date_column} AS TIMESTAMP), '%Y')",
+                "label": "Year"
+            }
+        }
+
+    @staticmethod
+    def normalize_time_series_df(df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize DataFrame columns for time series charts.
+
+        Converts KnessetNum and TimePeriod columns to strings for proper
+        chart rendering.
+
+        Args:
+            df: DataFrame with time series data.
+
+        Returns:
+            DataFrame with normalized column types.
+        """
+        df = df.copy()
+        if "KnessetNum" in df.columns:
+            df["KnessetNum"] = df["KnessetNum"].astype(str)
+        if "TimePeriod" in df.columns:
+            df["TimePeriod"] = df["TimePeriod"].astype(str)
+        return df
+
+    # ============== Result Handling Helpers ==============
+
+    def handle_empty_result(
+        self,
+        df: pd.DataFrame,
+        entity_type: str,
+        filters: Dict[str, Any],
+        chart_context: str = ""
+    ) -> bool:
+        """Check if DataFrame is empty and show appropriate message.
+
+        Args:
+            df: The DataFrame to check.
+            entity_type: Type of data (e.g., "query", "agenda", "bill").
+            filters: Filter dict containing 'knesset_title'.
+            chart_context: Additional context for the message (e.g., "by Year").
+
+        Returns:
+            True if DataFrame is empty (caller should return None), False otherwise.
+        """
+        if df.empty:
+            context_str = f" to visualize '{chart_context}'" if chart_context else ""
+            message = f"No {entity_type} data found for '{filters.get('knesset_title', 'selected filters')}'{context_str} with the current filters."
+            self.show_error(message, level="info")
+            return True
+        return False
+
+    # ============== Chart Styling Helpers ==============
+
+    @staticmethod
+    def apply_pie_chart_defaults(fig: go.Figure) -> go.Figure:
+        """Apply standard pie chart styling.
+
+        Consolidates the repeated pattern:
+            fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(title_x=0.5)
+
+        Args:
+            fig: Plotly Figure to style.
+
+        Returns:
+            Styled Figure.
+        """
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        fig.update_layout(title_x=0.5)
+        return fig
 
     @abstractmethod
     def generate(self, **kwargs) -> Optional[go.Figure]:

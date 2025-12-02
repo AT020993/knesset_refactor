@@ -11,8 +11,9 @@ import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
 from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
+from ui.queries.sql_templates import SQLTemplates
 
-from ..base import BaseChart
+from ..base import BaseChart, chart_error_handler
 
 
 class ComparisonCharts(BaseChart):
@@ -862,34 +863,7 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 query = f"""
-                WITH BillFirstSubmission AS (
-                    -- Get the earliest activity date for each bill (true submission date)
-                    SELECT
-                        B.BillID,
-                        MIN(earliest_date) as FirstSubmissionDate
-                    FROM KNS_Bill B
-                    LEFT JOIN (
-                        -- Initiator assignment dates
-                        SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                        UNION ALL
-                        -- Committee session dates
-                        SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                        UNION ALL
-                        -- Plenum session dates
-                        SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                        UNION ALL
-                        -- Publication dates
-                        SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                        FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                    ) all_dates ON B.BillID = all_dates.BillID
-                    WHERE all_dates.earliest_date IS NOT NULL
-                    GROUP BY B.BillID
-                )
+                WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
                     COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
                     CASE
@@ -1054,30 +1028,7 @@ class ComparisonCharts(BaseChart):
                     return None
 
                 query = f"""
-                WITH BillFirstSubmission AS (
-                    -- Get the earliest activity date for each bill (true submission date)
-                    SELECT
-                        B.BillID,
-                        MIN(earliest_date) as FirstSubmissionDate
-                    FROM KNS_Bill B
-                    LEFT JOIN (
-                        SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                        UNION ALL
-                        SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                        UNION ALL
-                        SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                        FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                        UNION ALL
-                        SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                        FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                    ) all_dates ON B.BillID = all_dates.BillID
-                    WHERE all_dates.earliest_date IS NOT NULL
-                    GROUP BY B.BillID
-                )
+                WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
                     ufs.CoalitionStatus AS CoalitionStatus,
                     CASE
@@ -1234,35 +1185,8 @@ class ComparisonCharts(BaseChart):
                 # Build base query - structure depends on Knesset selection
                 if knesset_filter and len(knesset_filter) == 1:
                     # Single Knesset - simpler query without KnessetNum in SELECT
-                    query = """
-                    WITH BillFirstSubmission AS (
-                        -- Get the earliest activity date for each bill (true submission date)
-                        SELECT
-                            B.BillID,
-                            MIN(earliest_date) as FirstSubmissionDate
-                        FROM KNS_Bill B
-                        LEFT JOIN (
-                            -- Initiator assignment dates
-                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                            UNION ALL
-                            -- Committee session dates
-                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                            UNION ALL
-                            -- Plenum session dates
-                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                            UNION ALL
-                            -- Publication dates
-                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                        ) all_dates ON B.BillID = all_dates.BillID
-                        WHERE all_dates.earliest_date IS NOT NULL
-                        GROUP BY B.BillID
-                    )
+                    query = f"""
+                    WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
@@ -1311,35 +1235,8 @@ class ComparisonCharts(BaseChart):
                     
                 else:
                     # Multiple Knessets - include KnessetNum in SELECT and GROUP BY
-                    query = """
-                    WITH BillFirstSubmission AS (
-                        -- Get the earliest activity date for each bill (true submission date)
-                        SELECT
-                            B.BillID,
-                            MIN(earliest_date) as FirstSubmissionDate
-                        FROM KNS_Bill B
-                        LEFT JOIN (
-                            -- Initiator assignment dates
-                            SELECT BI.BillID, MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_BillInitiator BI WHERE BI.LastUpdatedDate IS NOT NULL GROUP BY BI.BillID
-                            UNION ALL
-                            -- Committee session dates
-                            SELECT csi.ItemID as BillID, MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_CmtSessionItem csi JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-                            WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL GROUP BY csi.ItemID
-                            UNION ALL
-                            -- Plenum session dates
-                            SELECT psi.ItemID as BillID, MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-                            FROM KNS_PlmSessionItem psi JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-                            WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL GROUP BY psi.ItemID
-                            UNION ALL
-                            -- Publication dates
-                            SELECT B.BillID, CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-                            FROM KNS_Bill B WHERE B.PublicationDate IS NOT NULL
-                        ) all_dates ON B.BillID = all_dates.BillID
-                        WHERE all_dates.earliest_date IS NOT NULL
-                        GROUP BY B.BillID
-                    )
+                    query = f"""
+                    WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,

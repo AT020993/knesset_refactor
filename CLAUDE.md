@@ -353,16 +353,43 @@ conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
 conn.unregister('temp_df')
 ```
 
+### Code Quality Refactoring (2025-12-02)
+
+**Chart Architecture Improvements:**
+- **BaseChart Helpers** (`src/ui/charts/base.py`):
+  - `get_time_period_config(date_column)` - SQL configs for Monthly/Quarterly/Yearly time series
+  - `normalize_time_series_df(df)` - DataFrame type normalization for time series
+  - `handle_empty_result(df, entity_type, filters)` - Standardized empty DataFrame handling with user feedback
+  - `apply_pie_chart_defaults(fig)` - Consistent pie chart styling (textposition, title centering)
+  - `@chart_error_handler(chart_name)` - Decorator for consistent error handling across all chart methods
+
+**SQL Template Consolidation** (`src/ui/queries/sql_templates.py`):
+- `SQLTemplates.STANDARD_FACTION_LOOKUP` - Faction lookup with ROW_NUMBER deduplication
+- `SQLTemplates.BILL_FIRST_SUBMISSION` - Earliest bill activity date calculation
+- `SQLTemplates.MINISTER_LOOKUP` - Ministry position lookup
+- `SQLTemplates.AGENDA_DOCUMENTS` - Agenda document aggregation
+- `SQLTemplates.BILL_STATUS_CASE_HE/EN` - Bill status categorization
+- `SQLTemplates.QUERY_STATUS_CASE` - Query answer status categorization
+
+**Refactoring Impact:**
+- ~280 lines of duplicated code eliminated
+- All chart methods now use `@chart_error_handler` decorator
+- `predefined_queries.py` uses SQLTemplates instead of inline CTEs
+- Consistent error handling and empty result messaging across all charts
+
 ## File References
 
 **Bill Charts**: `src/ui/charts/comparison.py` (Bills per Faction, Coalition Status, Top Initiators, Initiators by Faction)
 **Time Series**: `src/ui/charts/time_series.py` (Bills/Queries/Agendas by Time)
 **Distribution**: `src/ui/charts/distribution.py` (Status, SubType distributions)
 **Network**: `src/ui/charts/network.py` (4 collaboration charts + `get_layout_explanation()`)
-**Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions with BillFirstSubmission CTE, BillDocuments CTE, AgendaDocuments CTE)
+**Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
+**SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
+**Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates)
 **Page Rendering**: `src/ui/pages/data_refresh_page.py` (Query results display, document links, Excel exports, faction export, verification, topic section)
 **Plots Page**: `src/ui/pages/plots_page.py` (Chart rendering, network explanation expander)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
 **Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)
 **Database Config**: `src/config/database.py` (Table definitions including KNS_DocumentAgenda, USER_TABLES)
 **Table Metadata**: `src/backend/tables.py` (TableMetadata definitions including topic tables)
+**Connection Manager**: `src/backend/connection_manager.py` (Centralized DB connection with `get_db_connection()`, `safe_execute_query()`, leak monitoring)

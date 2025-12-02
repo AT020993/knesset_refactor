@@ -22,41 +22,14 @@ fetching using KnessetNum filtering.
 from typing import Any, Dict
 from utils.faction_resolver import FactionResolver, get_faction_name_field, get_coalition_status_field
 from utils.committee_resolver import CommitteeResolver, get_committee_name_with_enhanced_fallback
+from ui.queries.sql_templates import SQLTemplates  # Reusable SQL CTEs
 
 # Query definitions with their SQL and metadata
 PREDEFINED_QUERIES: Dict[str, Dict[str, Any]] = {
     "Parliamentary Queries (Full Details)": {
-        "sql": """
-WITH StandardFactionLookup AS (
-            SELECT 
-                ptp.PersonID as PersonID,
-                ptp.KnessetNum as KnessetNum,
-                ptp.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
-                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        ptp.KnessetNum DESC,
-                        ptp.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition ptp
-            WHERE ptp.FactionID IS NOT NULL
-        ),
-MinisterLookup AS (
-    SELECT 
-        p2p.GovMinistryID,
-        p2p.PersonID,
-        p2p.DutyDesc,
-        ROW_NUMBER() OVER (PARTITION BY p2p.GovMinistryID ORDER BY p2p.StartDate DESC) as rn
-    FROM KNS_PersonToPosition p2p
-    WHERE (
-        p2p.DutyDesc LIKE 'שר %' OR p2p.DutyDesc LIKE 'השר %' OR p2p.DutyDesc = 'שר' OR
-        p2p.DutyDesc LIKE 'שרה %' OR p2p.DutyDesc LIKE 'השרה %' OR p2p.DutyDesc = 'שרה' OR
-        p2p.DutyDesc = 'ראש הממשלה'
-    )
-    AND p2p.DutyDesc NOT LIKE 'סגן %' AND p2p.DutyDesc NOT LIKE 'סגנית %'
-    AND p2p.DutyDesc NOT LIKE '%יושב ראש%' AND p2p.DutyDesc NOT LIKE '%יו""ר%'
-)
+        "sql": f"""
+WITH {SQLTemplates.STANDARD_FACTION_LOOKUP},
+{SQLTemplates.MINISTER_LOOKUP}
 SELECT
     Q.QueryID,
     Q.Number,
@@ -107,40 +80,10 @@ LIMIT 1000;
         ),
     },
     "Agenda Motions (Full Details)": {
-        "sql": """
-WITH StandardFactionLookup AS (
-            SELECT
-                ptp.PersonID as PersonID,
-                ptp.KnessetNum as KnessetNum,
-                ptp.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum
-                    ORDER BY
-                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        ptp.KnessetNum DESC,
-                        ptp.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition ptp
-            WHERE ptp.FactionID IS NOT NULL
-        ),
+        "sql": f"""
+WITH {SQLTemplates.STANDARD_FACTION_LOOKUP},
 -- Agenda Documents CTE (aggregates documents per agenda)
-AgendaDocuments AS (
-    SELECT
-        da.AgendaID,
-        COUNT(*) as DocumentCount,
-        -- Primary document URL (prefer PDF)
-        MAX(CASE WHEN da.ApplicationDesc = 'PDF' THEN da.FilePath END) AS PrimaryDocPDF,
-        MAX(CASE WHEN da.ApplicationDesc != 'PDF' THEN da.FilePath END) AS PrimaryDocOther,
-        MAX(da.GroupTypeDesc) AS PrimaryDocType,
-        -- Document counts by format
-        COUNT(CASE WHEN da.ApplicationDesc = 'PDF' THEN 1 END) AS PDFDocCount,
-        COUNT(CASE WHEN da.ApplicationDesc = 'DOC' OR da.ApplicationDesc = 'DOCX' THEN 1 END) AS WordDocCount,
-        -- All documents as concatenated string
-        GROUP_CONCAT(DISTINCT da.GroupTypeDesc || ' (' || da.ApplicationDesc || ')', ' | ') as DocumentTypes
-    FROM KNS_DocumentAgenda da
-    WHERE da.FilePath IS NOT NULL
-    GROUP BY da.AgendaID
-)
+{SQLTemplates.AGENDA_DOCUMENTS}
 SELECT
     A.AgendaID,
     A.Number,
@@ -213,22 +156,8 @@ LIMIT 1000;
         ),
     },
     "Bills & Legislation (Full Details)": {
-        "sql": """
-WITH StandardFactionLookup AS (
-            SELECT 
-                ptp.PersonID as PersonID,
-                ptp.KnessetNum as KnessetNum,
-                ptp.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum 
-                    ORDER BY 
-                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        ptp.KnessetNum DESC,
-                        ptp.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition ptp
-            WHERE ptp.FactionID IS NOT NULL
-        ),
+        "sql": f"""
+WITH {SQLTemplates.STANDARD_FACTION_LOOKUP},
 BillMainInitiatorFaction AS (
     SELECT 
         BI.BillID,
@@ -355,56 +284,7 @@ BillDocuments AS (
     WHERE db.FilePath IS NOT NULL
     GROUP BY db.BillID
 ),
-BillFirstSubmission AS (
-    -- Get the earliest activity date for each bill (true submission date)
-    -- This considers initiator assignment, committee sessions, plenum sessions, and publication
-    SELECT 
-        B.BillID,
-        MIN(earliest_date) as FirstSubmissionDate
-    FROM KNS_Bill B
-    LEFT JOIN (
-        -- Initiator assignment dates (often the earliest/true submission)
-        SELECT 
-            BI.BillID,
-            MIN(CAST(BI.LastUpdatedDate AS TIMESTAMP)) as earliest_date
-        FROM KNS_BillInitiator BI
-        WHERE BI.LastUpdatedDate IS NOT NULL
-        GROUP BY BI.BillID
-        
-        UNION ALL
-        
-        -- Committee session dates
-        SELECT 
-            csi.ItemID as BillID,
-            MIN(CAST(cs.StartDate AS TIMESTAMP)) as earliest_date
-        FROM KNS_CmtSessionItem csi
-        JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
-        WHERE csi.ItemID IS NOT NULL AND cs.StartDate IS NOT NULL
-        GROUP BY csi.ItemID
-        
-        UNION ALL
-        
-        -- Plenum session dates
-        SELECT 
-            psi.ItemID as BillID,
-            MIN(CAST(ps.StartDate AS TIMESTAMP)) as earliest_date
-        FROM KNS_PlmSessionItem psi
-        JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
-        WHERE psi.ItemID IS NOT NULL AND ps.StartDate IS NOT NULL
-        GROUP BY psi.ItemID
-        
-        UNION ALL
-        
-        -- Publication dates
-        SELECT 
-            B.BillID,
-            CAST(B.PublicationDate AS TIMESTAMP) as earliest_date
-        FROM KNS_Bill B
-        WHERE B.PublicationDate IS NOT NULL
-    ) all_dates ON B.BillID = all_dates.BillID
-    WHERE all_dates.earliest_date IS NOT NULL
-    GROUP BY B.BillID
-)
+{SQLTemplates.BILL_FIRST_SUBMISSION}
 SELECT
     B.BillID,
     B.KnessetNum,
