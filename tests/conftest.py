@@ -106,11 +106,16 @@ def disable_cloud_storage(monkeypatch):
         pass  # StorageSyncService not available
 
 
-@pytest.fixture(scope="session")
-def duckdb_conn(tmp_path_factory):
+@pytest.fixture(scope="function")
+def duckdb_conn(tmp_path):
+    """Provide an isolated DuckDB connection for each test.
+
+    Changed from session to function scope for better test isolation
+    and parallelization support with pytest-xdist.
+    """
     import duckdb
 
-    db_path = tmp_path_factory.mktemp("db") / "test.duckdb"
+    db_path = tmp_path / "test.duckdb"
     con = duckdb.connect(str(db_path))
 
     # Create tables needed by get_filter_options_from_db and other tests

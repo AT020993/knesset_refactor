@@ -24,15 +24,7 @@ def reset_mocks():
     yield
 
 
-@pytest.fixture
-def mock_logger():
-    return mock.MagicMock()
-
-
-@pytest.fixture
-def temp_db_path(tmp_path):
-    """Create a temporary database path."""
-    return tmp_path / "test.db"
+# NOTE: mock_logger and temp_db_path fixtures are provided by conftest.py
 
 
 class TestConnectDb:

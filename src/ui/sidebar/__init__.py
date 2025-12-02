@@ -1,17 +1,15 @@
-"""Sidebar UI components for the Knesset data console.
+"""Sidebar components package.
 
-This module is a facade for backward compatibility.
-The actual implementation has been moved to the sidebar/ package.
+This package contains sidebar UI components including:
+- Table selection and display
+- Knesset and faction filters
+- Data refresh controls
+- Query execution controls
 
-All imports from this module will continue to work:
-    from src.ui.sidebar_components import display_sidebar, TABLE_DISPLAY_NAMES
-
-For new code, you can also import directly from the package:
-    from src.ui.sidebar.components import display_sidebar, TABLE_DISPLAY_NAMES
+For backward compatibility, all functions and constants are re-exported at the package level.
 """
 
-# Re-export all public symbols from the package for backward compatibility
-from .sidebar import (
+from .components import (
     TABLE_DISPLAY_NAMES,
     get_table_display_name,
     get_table_name_from_display,

@@ -552,7 +552,7 @@ class TestServiceErrorScenarios:
         # In practice, this might require more sophisticated testing setup
 
         async def mock_slow_refresh(table_name, callback=None):
-            await asyncio.sleep(0.1)  # Simulate slow operation
+            # No real sleep needed - just return immediately for testing
             return True
 
         with patch.object(self.service, 'refresh_single_table', new_callable=AsyncMock, side_effect=mock_slow_refresh):

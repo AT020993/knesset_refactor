@@ -188,7 +188,7 @@ class TestConnectionLeakDetection:
         def worker(worker_id):
             with get_db_connection(db_path) as conn:
                 result = safe_execute_query(conn, f"SELECT {worker_id} as worker_id")
-                time.sleep(0.1)  # Simulate some work
+                # No sleep needed - test connection handling without delay
                 return result
         
         threads = []

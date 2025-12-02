@@ -226,8 +226,13 @@ class TestCircuitBreaker:
         assert breaker.failure_count == 0
         assert breaker.state == CircuitBreakerState.CLOSED
 
-    def test_recovery_timeout(self):
+    @mock.patch('src.api.circuit_breaker.time.time')
+    def test_recovery_timeout(self, mock_time):
         """Test circuit breaker recovery after timeout."""
+        # Start at time 0
+        current_time = 0.0
+        mock_time.return_value = current_time
+
         breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
 
         # Open the circuit
@@ -236,8 +241,8 @@ class TestCircuitBreaker:
         assert breaker.is_open() == True
         assert breaker.can_attempt() == False
 
-        # Wait for recovery timeout
-        time.sleep(0.2)
+        # Simulate time passing beyond recovery timeout (mock instead of real sleep)
+        mock_time.return_value = current_time + 0.2
 
         # Should transition to half-open
         assert breaker.can_attempt() == True

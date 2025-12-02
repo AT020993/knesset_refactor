@@ -226,31 +226,37 @@ class TestCircuitBreakerIntegration:
     async def test_circuit_breaker_recovery(self):
         """Test circuit breaker recovery after failures."""
         from src.config.api import CircuitBreakerState
-        test_breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1, max_retries=1)
 
-        # Cause failures to open circuit
-        def failing_function():
-            raise Exception("Test failure")
+        # Mock time to avoid real sleep
+        with patch('src.api.circuit_breaker.time.time') as mock_time:
+            current_time = 0.0
+            mock_time.return_value = current_time
 
-        for _ in range(3):
-            try:
-                test_breaker.execute(failing_function)
-            except:
-                pass
+            test_breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1, max_retries=1)
 
-        assert test_breaker.state == CircuitBreakerState.OPEN
+            # Cause failures to open circuit
+            def failing_function():
+                raise Exception("Test failure")
 
-        # Wait for recovery timeout
-        await asyncio.sleep(0.2)
+            for _ in range(3):
+                try:
+                    test_breaker.execute(failing_function)
+                except:
+                    pass
 
-        # Now provide a successful function
-        def successful_function():
-            return "success"
+            assert test_breaker.state == CircuitBreakerState.OPEN
 
-        # Should be able to execute after recovery timeout
-        result = test_breaker.execute(successful_function)
-        assert result == "success"
-        assert test_breaker.state == CircuitBreakerState.CLOSED
+            # Simulate time passing beyond recovery timeout (mock instead of real sleep)
+            mock_time.return_value = current_time + 0.2
+
+            # Now provide a successful function
+            def successful_function():
+                return "success"
+
+            # Should be able to execute after recovery timeout
+            result = test_breaker.execute(successful_function)
+            assert result == "success"
+            assert test_breaker.state == CircuitBreakerState.CLOSED
 
     @pytest.mark.asyncio
     @pytest.mark.no_autouse_stub
@@ -470,8 +476,7 @@ class TestPerformanceIntegration:
         }
 
         async def mock_download_table(table_name, resume_state=None):
-            # Simulate some processing time
-            await asyncio.sleep(0.1)
+            # No real delay needed for testing - return immediately
             if table_name in mock_data_map:
                 return mock_data_map[table_name]
             return pd.DataFrame()
