@@ -20,7 +20,6 @@ import streamlit as st
 from backend.connection_manager import get_db_connection, safe_execute_query
 from ui.state.session_manager import SessionStateManager
 from ui.queries.predefined_queries import get_all_query_names, get_query_info
-from utils.faction_exporter import FactionExporter
 from utils.export_verifier import ExportVerifier
 import ui.ui_utils as ui_utils
 
@@ -870,95 +869,6 @@ class DataRefreshPageRenderer:
                     st.info("No tables found to display status, or TABLES list is empty.")
             else:
                 st.info("Database not found. Table status cannot be displayed.")
-
-    def render_faction_export_section(self) -> None:
-        """Render the faction data export section with per-Knesset CSV download."""
-        st.divider()
-        with st.expander("🏛️ Export Faction Data per Knesset", expanded=False):
-            st.markdown("""
-            Download a CSV file containing all political factions (parties) appearing in the Knesset data,
-            along with their coalition status where available.
-            """)
-
-            if not self.db_path.exists():
-                st.warning("Database not found. Cannot export faction data.")
-                return
-
-            try:
-                exporter = FactionExporter(self.db_path, self.logger)
-
-                # Show summary statistics
-                summary_df = exporter.get_faction_summary_by_knesset()
-                if not summary_df.empty:
-                    st.markdown("### Faction Statistics by Knesset")
-                    st.dataframe(
-                        summary_df.rename(columns={
-                            'KnessetNum': 'Knesset',
-                            'TotalFactions': 'Total Factions',
-                            'CoalitionCount': 'Coalition',
-                            'OppositionCount': 'Opposition',
-                            'UnknownCount': 'Unknown Status'
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
-                # Download options
-                st.markdown("### Download Options")
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.markdown("**Download All Knessets:**")
-                    csv_buffer = exporter.export_to_csv_buffer(knesset_num=None)
-                    st.download_button(
-                        "⬇️ Download All Factions (CSV)",
-                        csv_buffer.getvalue(),
-                        "all_knessets_factions.csv",
-                        "text/csv",
-                        key="faction_export_all",
-                        help="Download faction data for all Knessets in one CSV file"
-                    )
-
-                with col2:
-                    st.markdown("**Download Specific Knesset:**")
-                    available_knessets = exporter.get_available_knesset_numbers()
-                    if available_knessets:
-                        selected_knesset = st.selectbox(
-                            "Select Knesset:",
-                            options=available_knessets,
-                            format_func=lambda x: f"Knesset {x}",
-                            key="faction_export_knesset_select"
-                        )
-
-                        csv_buffer_single = exporter.export_to_csv_buffer(knesset_num=selected_knesset)
-                        st.download_button(
-                            f"⬇️ Download Knesset {selected_knesset} Factions",
-                            csv_buffer_single.getvalue(),
-                            f"knesset_{selected_knesset}_factions.csv",
-                            "text/csv",
-                            key=f"faction_export_k{selected_knesset}",
-                            help=f"Download faction data for Knesset {selected_knesset} only"
-                        )
-                    else:
-                        st.info("No Knesset data available")
-
-                # Show preview of all factions
-                st.markdown("### Preview: All Factions Data")
-                preview_df = exporter.get_all_factions_with_coalition_status()
-                if not preview_df.empty:
-                    st.dataframe(
-                        preview_df.head(50),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    if len(preview_df) > 50:
-                        st.caption(f"Showing first 50 of {len(preview_df)} total faction records. Download to see all.")
-                else:
-                    st.info("No faction data available")
-
-            except Exception as e:
-                self.logger.error(f"Error in faction export section: {e}", exc_info=True)
-                st.error(f"Error loading faction data: {e}")
 
     def render_topic_classification_section(self):
         """Render the topic classification infrastructure section."""

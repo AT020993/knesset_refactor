@@ -218,14 +218,10 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - **Not shown for**: Matrix chart (uses different visualization)
 
 **Faction Export per Knesset:**
-- **New Utility**: `src/utils/faction_exporter.py` - exports faction data with coalition status
-- **New UI Section**: "🏛️ Export Faction Data per Knesset" expandable section
-- **Features**:
-  - Summary table showing faction counts per Knesset (Coalition/Opposition/Unknown)
-  - Download all Knessets as single CSV
-  - Download specific Knesset CSV
-  - Preview of faction data (first 50 rows)
-- **Output**: CSV with UTF-8 BOM, columns: KnessetNum, FactionID, FactionName, CoalitionStatus, MemberCount
+- **Utility**: `src/utils/faction_exporter.py` - exports faction data with coalition status
+- **Pre-generated File**: `all_knessets_factions.csv` in project root (542 records across all Knessets)
+- **Output Format**: CSV with UTF-8 BOM, columns: KnessetNum, FactionID, FactionName, CoalitionStatus, MemberCount
+- **Usage**: Run `PYTHONPATH="./src" python -c "from utils.faction_exporter import FactionExporter; FactionExporter().export_to_file('output.csv')"` to regenerate
 
 ### Bug Fixes & Query Analytics Improvements (2025-11-27)
 
@@ -386,7 +382,7 @@ conn.unregister('temp_df')
 **Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
 **SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
 **Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates)
-**Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, faction export, verification, topic section)
+**Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, verification, topic section)
 **Plots Page**: `src/ui/renderers/plots_page.py` (Chart rendering, network explanation expander)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
 **Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)

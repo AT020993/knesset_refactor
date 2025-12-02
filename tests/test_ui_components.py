@@ -299,7 +299,7 @@ class TestComponentIntegration:
 
     def test_error_handling_across_components(self, mock_streamlit):
         """Test error handling propagation across components."""
-        from src.ui.pages.data_refresh_page import DataRefreshPageRenderer
+        from src.ui.renderers.data_refresh.page import DataRefreshPageRenderer
 
         mock_db_path = Path("nonexistent.db")
         mock_logger = Mock()
