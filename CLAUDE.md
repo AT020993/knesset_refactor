@@ -206,6 +206,16 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - **Inclusive Proposals (כוללת)**: Shows "Inclusive Proposal (הצעה כוללת - Multiple MKs)"
 - **Coverage**: ~19% independent, ~81% inclusive (no single initiator by design)
 
+**Agenda LeadingAgendaID (Parent-Child Relationships):**
+- **New Fields**: `LeadingAgendaID` and `LeadingAgendaName` in agenda query
+- **Purpose**: Links consolidated agenda items (מוכללת) to their parent umbrella proposal (כוללת)
+- **Data Availability**: **Only Knessets 12-19** have this data (99 total records)
+- **Knesset Policy Change**: Starting from Knesset 20, the Knesset stopped using the מוכללת (Consolidated) classification. Individual MK submissions are no longer recorded - only the umbrella כוללת item is created.
+- **Classification Types**:
+  - `עצמאית` (Independent): Single MK proposal, no parent
+  - `כוללת` (Inclusive): Umbrella proposal grouping multiple MKs, IS the parent
+  - `מוכללת` (Consolidated): Child item linked to parent via LeadingAgendaID (only Knessets 12-19)
+
 **Export Data Verification:**
 - **New Utility**: `src/utils/export_verifier.py` - verifies export consistency
 - **Checks**: Row count, column count, column names match between source and export

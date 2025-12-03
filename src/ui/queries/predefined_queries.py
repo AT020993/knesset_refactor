@@ -132,7 +132,14 @@ SELECT
     'https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid=' || CAST(A.AgendaID AS VARCHAR) AS AgendaKnessetWebsiteURL,
 
     strftime(CAST(A.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDateFormatted,
-    strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted
+    strftime(CAST(A.PresidentDecisionDate AS TIMESTAMP), '%Y-%m-%d') AS PresidentDecisionDateFormatted,
+
+    -- Leading Agenda (parent umbrella for consolidated proposals)
+    -- NOTE: LeadingAgendaID only has data for Knessets 12-19. Starting from Knesset 20,
+    -- the Knesset stopped using מוכללת (Consolidated) classification and no longer
+    -- records individual submissions linked to umbrella proposals.
+    A.LeadingAgendaID,
+    LA.Name AS LeadingAgendaName
 
 FROM KNS_Agenda A
 LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
@@ -144,6 +151,7 @@ LEFT JOIN KNS_Faction f ON sfl.FactionID = f.FactionID
 LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND A.KnessetNum = ufs.KnessetNum
 LEFT JOIN AgendaDocuments ad ON A.AgendaID = ad.AgendaID
+LEFT JOIN KNS_Agenda LA ON A.LeadingAgendaID = LA.AgendaID
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC
 LIMIT 1000;
