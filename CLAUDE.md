@@ -233,6 +233,35 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - **Output Format**: CSV with UTF-8 BOM, columns: KnessetNum, FactionID, FactionName, CoalitionStatus, MemberCount
 - **Usage**: Run `PYTHONPATH="./src" python -c "from utils.faction_exporter import FactionExporter; FactionExporter().export_to_file('output.csv')"` to regenerate
 
+### Parliamentary Data CSV Export (2025-12-03)
+
+**Bulk CSV export utility for agendas, queries, and bills with faction information.**
+
+**Utility**: `src/utils/parliamentary_exporter.py`
+- `ParliamentaryExporter` class for exporting parliamentary data
+- Methods: `export_all_agendas()`, `export_all_queries()`, `export_all_bills()`, `export_all()`
+- Output: UTF-8 BOM CSV files for Excel compatibility
+
+**Generated Files** (in project root):
+| File | Rows | Columns |
+|------|------|---------|
+| `all_agendas.csv` | ~21,700 | AgendaID, KnessetNum, FactionID, FactionName, CoalitionStatus |
+| `all_queries.csv` | ~42,400 | QueryID, KnessetNum, FactionID, FactionName, CoalitionStatus |
+| `all_bills.csv` | ~58,500 | BillID, KnessetNum, FactionID, FactionName, CoalitionStatus |
+
+**Usage:**
+```bash
+PYTHONPATH="./src" python -c "
+from utils.parliamentary_exporter import ParliamentaryExporter
+ParliamentaryExporter().export_all('.')
+"
+```
+
+**Data Coverage Notes:**
+- **Queries**: Knessets 19-25 have 99-100% faction coverage; Knessets 0-9 use placeholder PersonID ("אין נתונים"); Knessets 10-18 have no query data
+- **Agendas**: ~19% independent (עצמאית) have faction; ~81% inclusive (כוללת) have no single initiator
+- **Bills**: 83-99% faction coverage for Knessets 12-25; older bills often lack initiator records (government bills)
+
 ### Bug Fixes & Query Analytics Improvements (2025-11-27)
 
 **Query Analytics Charts:**
@@ -391,7 +420,7 @@ conn.unregister('temp_df')
 **Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, verification)
 **Plots Page**: `src/ui/renderers/plots_page.py` (Chart rendering, network explanation expander)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
-**Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)
+**Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/parliamentary_exporter.py` (Bulk CSV export for agendas/queries/bills), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)
 **Database Config**: `src/config/database.py` (Table definitions including KNS_DocumentAgenda, USER_TABLES)
 **Table Metadata**: `src/backend/tables.py` (TableMetadata definitions including topic tables)
 **Connection Manager**: `src/backend/connection_manager.py` (Centralized DB connection with `get_db_connection()`, `safe_execute_query()`, leak monitoring)
