@@ -186,10 +186,36 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - **Grey Circles Fix**: Guaranteed faction assignment ('Independent' if none)
 - **Enhanced Spacing**: Node repulsion 1.5×, optimal distance k=80
 
+### Coalition Status Data (2025-12-12)
+
+**Coalition status data is currently available only for Knesset 25.**
+
+**Source File**: `data/faction_coalition_status.csv`
+- **Current Coverage**: Knesset 25 only (14 factions)
+- **Values**: Coalition, Opposition
+- **Future**: More Knessets will be added manually over time
+
+**How Missing Data is Handled:**
+| Chart/Feature | Behavior for Non-K25 Knessets |
+|--------------|-------------------------------|
+| Agendas by Coalition | Shows "Unmapped" category (gray) |
+| Bills by Coalition | Excludes unmapped factions (no data shown) |
+| Faction Network | Nodes appear gray ("Unknown") |
+| Predefined Queries | CoalitionStatus column shows "Unknown" |
+
+**To Add Coalition Status for Other Knessets:**
+1. Edit `data/faction_coalition_status.csv` directly (add rows with KnessetNum, FactionID, FactionName, CoalitionStatus)
+2. Run data refresh in UI or reload via: `PYTHONPATH="./src" python -c "from data.repositories.database_repository import DatabaseRepository; DatabaseRepository().load_faction_coalition_status()"`
+3. Charts will automatically use the new data
+
+**Related Files:**
+- `unique_factions_agendas.csv` - All factions from agendas (CoalitionStatus only for K25)
+- `unique_factions_bills.csv` - All factions from bills (CoalitionStatus only for K25)
+- `unique_factions_queries.csv` - All factions from queries (CoalitionStatus only for K25)
+
 ### UI & Cleanup (2025-08)
 - **E2E Testing**: Playwright suite (7/7 passing), CI/CD in GitHub Actions
 - **Project Cleanup**: Removed legacy files, unused scripts
-- **Faction Coalition CSV**: 529 faction records with UTF-8 BOM for Excel
 
 ### New Features (2025-11-27)
 
