@@ -635,6 +635,43 @@ conn.unregister('temp_df')
 
 **Current Test Status:** 306 passed, 26 skipped, 0 failures
 
+### Streamlit Double-Click Bug Fix (2025-12-31)
+
+**Problem:** Chart/topic/Knesset selection required two clicks instead of one.
+
+**Root Cause:** Post-render comparison pattern in `plots_page.py`:
+```python
+# PROBLEMATIC - comparison happens after widget renders
+selected_value = st.selectbox(...)
+if selected_value != session_state_value:  # Timing issue!
+    update_session_state()
+```
+
+**Solution:** Use Streamlit's `on_change` callback pattern:
+```python
+# FIXED - callback runs BEFORE rerun
+st.selectbox(..., on_change=self._on_selection_change, kwargs={...})
+```
+
+**Files Modified:** `src/ui/renderers/plots_page.py`
+
+| Method | Change |
+|--------|--------|
+| `_render_topic_selection()` | Added `on_change` callback |
+| `_render_chart_selection()` | Added `on_change` callback |
+| `_render_time_period_plot_options()` | Added `on_change` callback |
+| `_render_single_knesset_plot_options()` | Added `on_change` callback |
+
+**New Callback Methods:**
+- `_on_topic_selection_change()` - Handles topic changes
+- `_on_chart_selection_change()` - Handles chart changes
+- `_on_knesset_selection_change()` - Handles Knesset changes
+
+**Other Pages Verified (no changes needed):**
+- `filter_panels.py` - Uses direct state update (no comparison)
+- `data_refresh/page.py` - Uses `on_click` callbacks for buttons
+- `cap_annotation_page.py` - Uses forms with submit buttons
+
 ## File References
 
 **Bill Charts**: `src/ui/charts/comparison.py` (Bills per Faction, Coalition Status, Top Initiators, Initiators by Faction)

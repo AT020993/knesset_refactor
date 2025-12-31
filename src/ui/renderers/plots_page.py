@@ -103,21 +103,31 @@ class PlotsPageRenderer:
             else 0
         )
 
-        selected_topic_widget = st.selectbox(
+        # Use on_change callback to handle selection changes immediately
+        # This ensures consistent behavior with chart selection
+        st.selectbox(
             "1. Choose Plot Topic:",
             options=plot_topic_options,
             index=topic_select_default_index,
             key="sb_selected_plot_topic_widget",
+            on_change=self._on_topic_selection_change,
         )
 
-        # Handle topic change
-        if selected_topic_widget != current_selected_topic:
-            SessionStateManager.reset_plot_state(keep_topic=False)
-            SessionStateManager.set_plot_selection(selected_topic_widget, "")
-            # NOTE: Streamlit automatically handles the rerun when widget state changes
-            # Do NOT call st.rerun() here - it causes infinite loops
+        # Return from session state for consistent value across reruns
+        return SessionStateManager.get_selected_plot_topic()
 
-        return selected_topic_widget
+    def _on_topic_selection_change(self) -> None:
+        """
+        Handle topic selection change via callback.
+
+        This callback runs BEFORE the rerun, ensuring state is updated
+        synchronously and avoiding any potential timing issues.
+        """
+        new_topic = st.session_state.get("sb_selected_plot_topic_widget", "")
+
+        # Reset all plot state when topic changes
+        SessionStateManager.reset_plot_state(keep_topic=False)
+        SessionStateManager.set_plot_selection(new_topic, "")
 
     def _render_chart_selection(
         self, available_plots: Dict[str, Dict[str, Callable]], selected_topic: str
@@ -144,27 +154,44 @@ class PlotsPageRenderer:
             else 0
         )
 
-        selected_chart_widget = st.selectbox(
+        # Build widget key for this topic
+        widget_key = f"sb_selected_chart_for_topic_{selected_topic.replace(' ', '_')}"
+
+        # Use on_change callback to handle selection changes immediately
+        # This avoids the double-click issue caused by post-render comparison
+        st.selectbox(
             f"2. Choose Visualization for '{selected_topic}':",
             options=chart_options_for_topic,
             index=chart_select_default_index,
-            key=f"sb_selected_chart_for_topic_{selected_topic.replace(' ', '_')}",
+            key=widget_key,
+            on_change=self._on_chart_selection_change,
+            kwargs={"widget_key": widget_key, "topic": selected_topic},
         )
 
-        # Handle chart change
-        if selected_chart_widget != current_selected_chart:
-            # Reset plot-specific state but keep topic and chart selection
-            st.session_state.plot_aggregation_level = "Yearly"
-            st.session_state.plot_show_average_line = False
-            st.session_state.plot_start_date = None
-            st.session_state.plot_end_date = None
-            SessionStateManager.set_plot_selection(
-                selected_topic, selected_chart_widget
-            )
-            # NOTE: Streamlit automatically handles the rerun when widget state changes
-            # Do NOT call st.rerun() here - it causes infinite loops
+        # Return from session state for consistent value across reruns
+        return SessionStateManager.get_selected_plot_name()
 
-        return selected_chart_widget
+    def _on_chart_selection_change(self, widget_key: str, topic: str) -> None:
+        """
+        Handle chart selection change via callback.
+
+        This callback runs BEFORE the rerun, ensuring state is updated
+        synchronously and avoiding the double-click issue.
+
+        Args:
+            widget_key: The selectbox widget key to read value from
+            topic: The currently selected topic
+        """
+        new_chart = st.session_state.get(widget_key, "")
+
+        # Reset plot-specific state but keep topic and chart selection
+        st.session_state.plot_aggregation_level = "Yearly"
+        st.session_state.plot_show_average_line = False
+        st.session_state.plot_start_date = None
+        st.session_state.plot_end_date = None
+
+        # Update selection in session manager
+        SessionStateManager.set_plot_selection(topic, new_chart)
 
     def _render_plot_options(
         self, selected_chart: str, knesset_options: List[str]
@@ -242,14 +269,20 @@ class PlotsPageRenderer:
         aggregation_level = SessionStateManager.get_plot_aggregation_level()
         show_average_line = SessionStateManager.get_plot_show_average_line()
 
+        # Build widget key
+        widget_key = f"plot_main_knesset_selector_tp_{selected_chart.replace(' ', '_')}"
+
         col_knesset_select, col_agg_select, col_avg_line = st.columns([2, 1, 1])
 
         with col_knesset_select:
-            selected_knesset_val = st.selectbox(
+            # Use on_change callback to handle selection changes immediately
+            st.selectbox(
                 "3. Select Knesset for Plot:",
                 options=plot_knesset_options,
                 index=knesset_select_default_index,
-                key=f"plot_main_knesset_selector_tp_{selected_chart.replace(' ', '_')}",
+                key=widget_key,
+                on_change=self._on_knesset_selection_change,
+                kwargs={"widget_key": widget_key},
             )
 
         with col_agg_select:
@@ -266,12 +299,6 @@ class PlotsPageRenderer:
                 value=show_average_line,
                 key=f"avg_line_{selected_chart.replace(' ', '_')}",
             )
-
-        # Update session state if selection changed
-        if selected_knesset_val != current_selection:
-            SessionStateManager.set_plot_knesset_selection(selected_knesset_val)
-            # NOTE: Streamlit automatically handles the rerun when widget state changes
-            # Do NOT call st.rerun() here - it causes infinite loops
 
     def _render_single_knesset_plot_options(
         self,
@@ -302,18 +329,31 @@ class PlotsPageRenderer:
             else 0
         )
 
-        selected_knesset_val = st.selectbox(
+        # Build widget key
+        widget_key = f"plot_main_knesset_selector_single_{selected_chart.replace(' ', '_')}"
+
+        # Use on_change callback to handle selection changes immediately
+        st.selectbox(
             "3. Select Knesset for Plot:",
             options=effective_options_single,
             index=single_knesset_default_idx,
-            key=f"plot_main_knesset_selector_single_{selected_chart.replace(' ', '_')}",
+            key=widget_key,
+            on_change=self._on_knesset_selection_change,
+            kwargs={"widget_key": widget_key},
         )
 
-        # Update session state if selection changed
-        if selected_knesset_val != current_selection:
-            SessionStateManager.set_plot_knesset_selection(selected_knesset_val)
-            # NOTE: Streamlit automatically handles the rerun when widget state changes
-            # Do NOT call st.rerun() here - it causes infinite loops
+    def _on_knesset_selection_change(self, widget_key: str) -> None:
+        """
+        Handle Knesset selection change via callback.
+
+        This callback runs BEFORE the rerun, ensuring state is updated
+        synchronously and avoiding the double-click issue.
+
+        Args:
+            widget_key: The selectbox widget key to read value from
+        """
+        new_knesset = st.session_state.get(widget_key, "")
+        SessionStateManager.set_plot_knesset_selection(new_knesset)
 
     def _render_date_filter_options(self, selected_chart: str) -> None:
         """Render date filter options for specific plots."""
