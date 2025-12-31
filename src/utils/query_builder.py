@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 import logging
 from enum import Enum
 
+from utils.faction_resolver import FactionResolver, get_faction_name_field
+
 
 class FilterOperator(Enum):
     """Supported filter operators."""
@@ -394,8 +396,6 @@ class QueryTemplate:
             conditions.extend(additional_conditions)
         
         # Use standardized faction resolution
-        from utils.faction_resolver import FactionResolver, get_faction_name_field
-        
         faction_cte = FactionResolver.get_standard_faction_lookup_cte()
         
         query = f"""
