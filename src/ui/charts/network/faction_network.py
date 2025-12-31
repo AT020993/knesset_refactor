@@ -340,3 +340,11 @@ class FactionCollaborationNetwork(BaseChart):
             target_col='SupporterFactionID',
             weight_col='CollaborationCount'
         )
+
+    def generate(self, **kwargs) -> Optional[go.Figure]:
+        """Generate the faction collaboration network chart.
+
+        Required implementation of BaseChart abstract method.
+        Delegates to plot() with the provided kwargs.
+        """
+        return self.plot(**kwargs)

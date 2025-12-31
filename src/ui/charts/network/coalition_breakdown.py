@@ -233,3 +233,11 @@ class CoalitionBreakdownChart(BaseChart):
         )
 
         return fig
+
+    def generate(self, **kwargs) -> Optional[go.Figure]:
+        """Generate the coalition breakdown chart.
+
+        Required implementation of BaseChart abstract method.
+        Delegates to plot() with the provided kwargs.
+        """
+        return self.plot(**kwargs)

@@ -607,12 +607,46 @@ conn.unregister('temp_df')
 - `predefined_queries.py` uses SQLTemplates instead of inline CTEs
 - Consistent error handling and empty result messaging across all charts
 
+### Post-Refactoring Test Coverage (2025-12-31)
+
+**New Test Files Created:**
+
+| Test File | Coverage | Tests |
+|-----------|----------|-------|
+| `tests/test_cap_services.py` | CAP annotation services | 19 tests |
+| `tests/test_sql_templates.py` | SQL template validation | 12 tests |
+
+**test_cap_services.py** (~280 lines):
+- `TestCAPTaxonomyService`: Table creation, direction constants, taxonomy retrieval
+- `TestCAPAnnotationRepository`: CRUD operations (save, get, delete), filtering, limit handling
+- `TestCAPStatisticsService`: Statistics generation, coverage stats
+- `TestCAPServiceFacade`: Facade pattern delegation verification
+
+**test_sql_templates.py** (~165 lines):
+- `TestSQLTemplatesSyntax`: Validates all SQL templates produce valid SQL
+- `TestSQLTemplatesExecution`: Verifies templates return correct columns and data
+- `TestSQLTemplatesCombined`: Tests combining multiple CTEs
+- `TestSQLTemplatesClass`: Validates class structure and helper methods
+
+**Network Chart Abstract Method Fix:**
+- Added missing `generate()` method to 4 network chart classes (required by `BaseChart` abstract class)
+- Files fixed: `mk_network.py`, `faction_network.py`, `collaboration_matrix.py`, `coalition_breakdown.py`
+- Each `generate()` delegates to the class's `plot()` method
+
+**Current Test Status:** 306 passed, 26 skipped, 0 failures
+
 ## File References
 
 **Bill Charts**: `src/ui/charts/comparison.py` (Bills per Faction, Coalition Status, Top Initiators, Initiators by Faction)
 **Time Series**: `src/ui/charts/time_series.py` (Bills/Queries/Agendas by Time)
 **Distribution**: `src/ui/charts/distribution.py` (Status, SubType distributions)
-**Network**: `src/ui/charts/network.py` (4 collaboration charts + `get_layout_explanation()`)
+**Network Charts**: `src/ui/charts/network/` (modular structure):
+  - `charts.py` - NetworkCharts facade with `generate()` router and `get_layout_explanation()`
+  - `mk_network.py` - MKCollaborationNetwork (MK collaboration visualization)
+  - `faction_network.py` - FactionCollaborationNetwork (faction collaboration visualization)
+  - `collaboration_matrix.py` - CollaborationMatrix (heatmap visualization)
+  - `coalition_breakdown.py` - CoalitionBreakdown (stacked bar visualization)
+  - `network_utils.py` - Shared utilities (colors, node sizing)
 **Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
 **SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
 **Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates, CAP annotation columns)

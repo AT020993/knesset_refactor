@@ -438,3 +438,11 @@ class CollaborationMatrixChart(BaseChart):
                         )
             hover_text.append(hover_row)
         return hover_text
+
+    def generate(self, **kwargs) -> Optional[go.Figure]:
+        """Generate the collaboration matrix chart.
+
+        Required implementation of BaseChart abstract method.
+        Delegates to plot() with the provided kwargs.
+        """
+        return self.plot(**kwargs)
