@@ -174,6 +174,20 @@ class KnessetTables:
         dependencies=["KNS_Bill", "UserTopicTaxonomy"]
     )
 
+    # CAP (Democratic Erosion) annotation tables
+    USER_CAP_TAXONOMY = TableMetadata(
+        name="UserCAPTaxonomy",
+        description="Democratic Erosion codebook taxonomy for bill classification",
+        primary_key="MinorCode"
+    )
+
+    USER_BILL_CAP = TableMetadata(
+        name="UserBillCAP",
+        description="Bill annotations using Democratic Erosion codebook",
+        primary_key="BillID",
+        dependencies=["KNS_Bill", "UserCAPTaxonomy"]
+    )
+
     @classmethod
     def get_all_tables(cls) -> List[TableMetadata]:
         """Get all table metadata."""

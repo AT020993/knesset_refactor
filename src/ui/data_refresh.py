@@ -29,6 +29,7 @@ from backend.fetch_table import TABLES
 from ui.state.session_manager import SessionStateManager
 from ui.renderers.data_refresh_page import DataRefreshPageRenderer
 from ui.renderers.plots_page import PlotsPageRenderer
+from ui.renderers.cap_annotation_page import CAPAnnotationPageRenderer
 from ui.queries.predefined_queries import PREDEFINED_QUERIES
 import ui.plot_generators as pg
 import ui.sidebar_components as sc
@@ -133,6 +134,7 @@ sc.display_sidebar(
 # Initialize page renderers
 data_refresh_renderer = DataRefreshPageRenderer(DB_PATH, ui_logger)
 plots_renderer = PlotsPageRenderer(DB_PATH, ui_logger)
+cap_annotation_renderer = CAPAnnotationPageRenderer(DB_PATH, ui_logger)
 
 # Render main page header
 data_refresh_renderer.render_page_header()
@@ -152,6 +154,14 @@ try:
 except Exception as e:
     st.error(f"Error loading visualizations section: {e}")
     ui_logger.error(f"Error in plots section: {e}", exc_info=True)
+
+# Render CAP Bill Annotation section (password-protected)
+try:
+    st.markdown("---")
+    cap_annotation_renderer.render_cap_annotation_section()
+except Exception as e:
+    st.error(f"Error loading CAP annotation section: {e}")
+    ui_logger.error(f"Error in CAP annotation section: {e}", exc_info=True)
 
 
 ui_logger.info("--- data_refresh.py script finished loading UI components ---")

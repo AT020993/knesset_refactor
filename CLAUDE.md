@@ -213,6 +213,179 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 - `unique_factions_bills.csv` - All factions from bills (CoalitionStatus only for K25)
 - `unique_factions_queries.csv` - All factions from queries (CoalitionStatus only for K25)
 
+## CAP Bill Annotation System (2025-12-31)
+
+**Password-protected annotation interface for classifying bills according to the Democratic Erosion codebook.**
+
+### Overview
+The CAP (Comparative Agendas Project) Bill Annotation System allows researchers to classify Israeli parliamentary bills based on their impact on democratic institutions. Bills are coded by:
+- **Category**: Major and minor topic codes (e.g., Government Institutions → Courts)
+- **Direction**: Whether the bill strengthens (+1), weakens (-1), or has neutral effect (0) on democratic institutions
+- **Confidence**: High/Medium/Low annotation confidence
+- **Notes**: Free-text researcher notes
+
+### Authentication
+- **Password Protection**: Access requires password stored in `.streamlit/secrets.toml`
+- **Researcher Tracking**: Each annotation records the researcher name
+- **Session Management**: Login persists in Streamlit session state
+
+**Configuration** (`.streamlit/secrets.toml`):
+```toml
+[cap_annotation]
+password = "your_secure_password"
+```
+
+### Database Tables
+
+**UserCAPTaxonomy** - The codebook taxonomy:
+| Column | Type | Description |
+|--------|------|-------------|
+| MajorCode | INTEGER | Major category (1=Government, 2=Civil, 3=Rights) |
+| MajorTopic_HE | VARCHAR | Hebrew major category name |
+| MajorTopic_EN | VARCHAR | English major category name |
+| MinorCode | INTEGER (PK) | Minor category code (101-108, 201-204, 301-306) |
+| MinorTopic_HE | VARCHAR | Hebrew minor category name |
+| MinorTopic_EN | VARCHAR | English minor category name |
+| Description_HE | VARCHAR | Hebrew description |
+| Examples_HE | VARCHAR | Hebrew examples |
+
+**UserBillCAP** - Bill annotations:
+| Column | Type | Description |
+|--------|------|-------------|
+| BillID | INTEGER (PK) | Bill identifier |
+| CAPMinorCode | INTEGER (FK) | Reference to taxonomy |
+| Direction | INTEGER | +1 (strengthen), -1 (weaken), 0 (other) |
+| AssignedBy | VARCHAR | Researcher name |
+| AssignedDate | TIMESTAMP | When annotated |
+| Confidence | VARCHAR | High/Medium/Low |
+| Notes | VARCHAR | Free-text notes |
+| Source | VARCHAR | "Database" or "API" |
+| SubmissionDate | VARCHAR | Bill submission date |
+
+### Taxonomy Structure
+
+**Major Categories:**
+| Code | Hebrew | English |
+|------|--------|---------|
+| 1 | מוסדות שלטון | Government Institutions |
+| 2 | מוסדות אזרחיים | Civil Institutions |
+| 3 | זכויות | Rights |
+
+**Minor Categories (Examples):**
+- 100: כללי (General - Government)
+- 101: בתי משפט (Courts)
+- 102: יועץ משפטי (Attorney General)
+- 201: תקשורת (Media)
+- 301: זכויות מיעוטים (Minority Rights)
+
+**Direction Coding:**
+| Value | Hebrew | English | Meaning |
+|-------|--------|---------|---------|
+| +1 | הרחבה/חיזוק | Strengthening | Bill strengthens democratic institutions |
+| -1 | צמצום/פגיעה | Weakening | Bill weakens democratic institutions |
+| 0 | אחר | Other | Neutral or unclear effect |
+
+### UI Features
+
+**Three Tabs:**
+1. **📝 Annotate Bills**: Queue of uncoded bills from local database
+2. **📚 View Coded**: Browse/edit/delete existing annotations
+3. **🌐 API Bills**: Fetch and annotate bills directly from Knesset API
+
+**Annotation Form:**
+- Category dropdown (filters minor by major selection)
+- Direction radio buttons with Hebrew labels
+- Confidence dropdown (High/Medium/Low)
+- Notes text area
+- Save/Skip buttons
+
+**View Coded Tab:**
+- Filterable table of coded bills
+- Edit button opens inline form with current values
+- Delete button with confirmation dialog
+- Shows bill name, category, direction, confidence, annotator, date
+
+**API Fetch Tab:**
+- Fetch recent bills from Knesset OData API
+- Useful for bills not yet in local database
+- Bills marked with `Source: "API"` in annotations
+
+### Integration with Predefined Queries
+
+**CAP columns added to "Bills & Legislation (Full Details)" query:**
+| Column | Description |
+|--------|-------------|
+| CAPCode | Minor category code |
+| CAPMajorCategory | Hebrew major category name |
+| CAPMinorCategory | Hebrew minor category name |
+| CAPDirection | Numeric direction (-1, 0, +1) |
+| CAPDirectionLabel | Hebrew label (הרחבה/חיזוק, צמצום/פגיעה, אחר) |
+| CAPConfidence | High/Medium/Low |
+| CAPAnnotator | Researcher name |
+| CAPAnnotationDate | YYYY-MM-DD format |
+| CAPNotes | Free-text notes |
+
+**SQL Implementation** (`predefined_queries.py`):
+```sql
+LEFT JOIN UserBillCAP cap ON B.BillID = cap.BillID
+LEFT JOIN UserCAPTaxonomy capt ON cap.CAPMinorCode = capt.MinorCode
+```
+
+### Cache Invalidation
+
+**Problem Solved:** Annotations weren't appearing in predefined queries due to Streamlit caching.
+
+**Solution:** `_clear_query_cache()` method clears both session state and Streamlit's data cache after every annotation save/update/delete operation.
+
+**Implementation** (`cap_annotation_page.py`):
+```python
+@staticmethod
+def _clear_query_cache():
+    if 'query_results_df' in st.session_state:
+        del st.session_state['query_results_df']
+    st.cache_data.clear()
+```
+
+Called after: save (3 locations), update, delete
+
+### File References
+
+| File | Purpose |
+|------|---------|
+| `src/ui/renderers/cap_annotation_page.py` | Main UI renderer (authentication, forms, tabs) |
+| `src/ui/services/cap_service.py` | Backend service (CRUD operations, taxonomy loading) |
+| `src/ui/services/cap_api_service.py` | Knesset API client for fetching bills |
+| `src/ui/queries/predefined_queries.py` | Bills query with CAP columns (lines 482-520) |
+| `data/taxonomies/democratic_erosion_codebook.csv` | Taxonomy CSV file |
+| `.streamlit/secrets.toml` | Password configuration |
+
+### Usage
+
+**Loading Taxonomy:**
+```python
+from ui.services.cap_service import get_cap_service
+service = get_cap_service(db_path)
+service.load_taxonomy_from_csv()  # Uses INSERT OR REPLACE to avoid FK errors
+```
+
+**Programmatic Annotation:**
+```python
+service.save_annotation(
+    bill_id=12345,
+    cap_minor_code=101,  # Courts
+    direction=1,  # Strengthening
+    assigned_by="researcher@email.com",
+    confidence="High",
+    notes="Expands judicial independence"
+)
+```
+
+**Querying Annotated Bills:**
+```python
+coded_bills = service.get_coded_bills()  # Returns DataFrame
+stats = service.get_annotation_stats()  # Returns dict with counts
+```
+
 ### UI & Cleanup (2025-08)
 - **E2E Testing**: Playwright suite (7/7 passing), CI/CD in GitHub Actions
 - **Project Cleanup**: Removed legacy files, unused scripts
@@ -442,11 +615,15 @@ conn.unregister('temp_df')
 **Network**: `src/ui/charts/network.py` (4 collaboration charts + `get_layout_explanation()`)
 **Base Chart**: `src/ui/charts/base.py` (BaseChart class with shared helpers, `@chart_error_handler` decorator)
 **SQL Templates**: `src/ui/queries/sql_templates.py` (Reusable SQL CTEs for faction lookup, bill submission dates, etc.)
-**Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates)
+**Queries**: `src/ui/queries/predefined_queries.py` (SQL definitions using SQLTemplates, CAP annotation columns)
 **Page Rendering**: `src/ui/renderers/data_refresh_page.py` (Query results display, document links, Excel exports, verification)
 **Plots Page**: `src/ui/renderers/plots_page.py` (Chart rendering, network explanation expander)
+**CAP Annotation**: `src/ui/renderers/cap_annotation_page.py` (Bill annotation UI with authentication, forms, cache invalidation)
+**CAP Service**: `src/ui/services/cap_service.py` (Annotation CRUD, taxonomy loading, coded bills retrieval)
+**CAP API Service**: `src/ui/services/cap_api_service.py` (Knesset OData API client for fetching bills)
 **Sidebar Filters**: `src/ui/sidebar_components.py` (Knesset filter, faction filter, document type filter, TABLE_DISPLAY_NAMES)
 **Utilities**: `src/utils/faction_exporter.py` (Faction CSV export), `src/utils/parliamentary_exporter.py` (Bulk CSV export for agendas/queries/bills), `src/utils/export_verifier.py` (Export verification), `src/utils/topic_importer.py` (Topic import)
-**Database Config**: `src/config/database.py` (Table definitions including KNS_DocumentAgenda, USER_TABLES)
-**Table Metadata**: `src/backend/tables.py` (TableMetadata definitions including topic tables)
+**Database Config**: `src/config/database.py` (Table definitions including KNS_DocumentAgenda, USER_TABLES, CAP tables)
+**Table Metadata**: `src/backend/tables.py` (TableMetadata definitions including topic tables, CAP tables)
 **Connection Manager**: `src/backend/connection_manager.py` (Centralized DB connection with `get_db_connection()`, `safe_execute_query()`, leak monitoring)
+**Taxonomy Data**: `data/taxonomies/democratic_erosion_codebook.csv` (CAP codebook taxonomy CSV)

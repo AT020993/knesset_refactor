@@ -477,7 +477,23 @@ SELECT
         || CAST(B.BillID AS VARCHAR) AS BillKnessetWebsiteURL,
 
     -- First Bill Submission Date (earliest activity: initiator assignment, committee, plenum, or publication)
-    strftime(bfs.FirstSubmissionDate, '%Y-%m-%d') AS FirstBillSubmissionDate
+    strftime(bfs.FirstSubmissionDate, '%Y-%m-%d') AS FirstBillSubmissionDate,
+
+    -- CAP Annotation columns (Democratic Bill Coding)
+    cap.CAPMinorCode AS CAPCode,
+    capt.MajorTopic_HE AS CAPMajorCategory,
+    capt.MinorTopic_HE AS CAPMinorCategory,
+    cap.Direction AS CAPDirection,
+    CASE cap.Direction
+        WHEN 1 THEN 'הרחבה/חיזוק (+1)'
+        WHEN -1 THEN 'צמצום/פגיעה (-1)'
+        WHEN 0 THEN 'אחר (0)'
+        ELSE NULL
+    END AS CAPDirectionLabel,
+    cap.Confidence AS CAPConfidence,
+    cap.AssignedBy AS CAPAnnotator,
+    strftime(cap.AssignedDate, '%Y-%m-%d') AS CAPAnnotationDate,
+    cap.Notes AS CAPNotes
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
@@ -500,6 +516,8 @@ LEFT JOIN BillPlenumSessions bps ON B.BillID = bps.BillID
 LEFT JOIN KNS_PlmSessionItem psi ON B.BillID = psi.ItemID
 LEFT JOIN BillDocuments bd ON B.BillID = bd.BillID
 LEFT JOIN BillFirstSubmission bfs ON B.BillID = bfs.BillID
+LEFT JOIN UserBillCAP cap ON B.BillID = cap.BillID
+LEFT JOIN UserCAPTaxonomy capt ON cap.CAPMinorCode = capt.MinorCode
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
@@ -518,7 +536,9 @@ GROUP BY
     bd.EarlyDiscussion_Doc_PDF, bd.EarlyDiscussion_Doc_Other,
     bd.PublishedLawCount, bd.FirstReadingCount, bd.SecondThirdCount,
     bd.EarlyDiscussionCount, bd.OtherDocCount,
-    bfs.FirstSubmissionDate
+    bfs.FirstSubmissionDate,
+    cap.CAPMinorCode, capt.MajorTopic_HE, capt.MinorTopic_HE,
+    cap.Direction, cap.Confidence, cap.AssignedBy, cap.AssignedDate, cap.Notes
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
 LIMIT 1000;
@@ -529,7 +549,8 @@ LIMIT 1000;
             "Comprehensive bill data with initiator information, committee assignments, "
             "status details, committee session activity analysis, plenum session information "
             "with FirstPlenumDiscussionDate showing when each bill was first discussed in plenum, "
-            "and FirstBillSubmissionDate showing the earliest activity date (true submission: initiator assignment, committee, plenum, or publication)"
+            "FirstBillSubmissionDate showing the earliest activity date (true submission: initiator assignment, committee, plenum, or publication), "
+            "and CAP annotation columns (CAPCode, CAPMajorCategory, CAPMinorCategory, CAPDirection, CAPDirectionLabel, CAPConfidence, CAPAnnotator, CAPAnnotationDate, CAPNotes) for bills that have been annotated"
         ),
     },
 }
