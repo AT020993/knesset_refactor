@@ -7,9 +7,27 @@ This package contains comparison and faction analysis charts including:
 - Top initiators
 - Ministry comparisons
 
-For backward compatibility, all classes are re-exported at the package level.
+The charts have been refactored into separate modules for better maintainability:
+- query_charts.py - QueryComparisonCharts class
+- agenda_charts.py - AgendaComparisonCharts class
+- bill_charts.py - BillComparisonCharts class
+
+For backward compatibility, ComparisonCharts is still exported and delegates to the new classes.
 """
 
+# Backward compatible facade
 from .charts import ComparisonCharts
 
-__all__ = ['ComparisonCharts']
+# Individual chart classes for direct usage
+from .query_charts import QueryComparisonCharts
+from .agenda_charts import AgendaComparisonCharts
+from .bill_charts import BillComparisonCharts
+
+__all__ = [
+    # Main facade (backward compatible)
+    'ComparisonCharts',
+    # Individual chart classes
+    'QueryComparisonCharts',
+    'AgendaComparisonCharts',
+    'BillComparisonCharts',
+]
