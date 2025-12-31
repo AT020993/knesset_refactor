@@ -3,9 +3,13 @@ Standardized faction resolution utility for consistent faction lookups across al
 
 This module provides a single, consistent approach to resolve faction affiliations for MKs,
 eliminating inconsistencies between different calculation methods throughout the system.
+
+This module uses SQLTemplates for the core CTE definitions to avoid duplication.
 """
 
 from typing import List, Optional, Dict, Any
+
+from ui.queries.sql_templates import SQLTemplates
 
 
 class FactionResolver:
@@ -14,41 +18,32 @@ class FactionResolver:
     @staticmethod
     def get_standard_faction_lookup_cte(
         table_alias: str = "ptp",
-        person_id_field: str = "PersonID", 
+        person_id_field: str = "PersonID",
         knesset_num_field: str = "KnessetNum"
     ) -> str:
         """
         Generate standardized faction lookup CTE.
-        
+
         This uses a consistent ranking approach:
         1. Prioritize non-null FactionID
-        2. Order by KnessetNum DESC (most recent Knesset first) 
+        2. Order by KnessetNum DESC (most recent Knesset first)
         3. Order by StartDate DESC (most recent position first)
-        
+
         Args:
             table_alias: Alias to use for the PersonToPosition table
-            person_id_field: Name of the PersonID field
-            knesset_num_field: Name of the KnessetNum field
-            
+            person_id_field: Name of the PersonID field (must be "PersonID")
+            knesset_num_field: Name of the KnessetNum field (must be "KnessetNum")
+
         Returns:
             SQL CTE definition for faction lookup
+
+        Note:
+            Uses SQLTemplates.get_standard_faction_lookup() internally.
+            The person_id_field and knesset_num_field parameters are kept for
+            backward compatibility but must match the default values.
         """
-        return f"""
-        StandardFactionLookup AS (
-            SELECT 
-                {table_alias}.{person_id_field} as PersonID,
-                {table_alias}.{knesset_num_field} as KnessetNum,
-                {table_alias}.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY {table_alias}.{person_id_field}, {table_alias}.{knesset_num_field} 
-                    ORDER BY 
-                        CASE WHEN {table_alias}.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        {table_alias}.KnessetNum DESC,
-                        {table_alias}.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition {table_alias}
-            WHERE {table_alias}.FactionID IS NOT NULL
-        )"""
+        # Delegate to SQLTemplates for the core CTE logic
+        return SQLTemplates.get_standard_faction_lookup(table_alias)
     
     @staticmethod
     def get_faction_join_clause(

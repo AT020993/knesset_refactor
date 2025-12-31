@@ -17,6 +17,7 @@ import pandas as pd
 
 from config.settings import Settings
 from backend.connection_manager import get_db_connection, safe_execute_query
+from ui.queries.sql_templates import SQLTemplates
 
 
 class ParliamentaryExporter:
@@ -43,22 +44,8 @@ class ParliamentaryExporter:
         Returns:
             Number of rows exported
         """
-        query = """
-        WITH StandardFactionLookup AS (
-            SELECT
-                ptp.PersonID as PersonID,
-                ptp.KnessetNum as KnessetNum,
-                ptp.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum
-                    ORDER BY
-                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        ptp.KnessetNum DESC,
-                        ptp.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition ptp
-            WHERE ptp.FactionID IS NOT NULL
-        )
+        query = f"""
+        WITH {SQLTemplates.STANDARD_FACTION_LOOKUP}
         SELECT
             A.AgendaID,
             A.KnessetNum,
@@ -86,22 +73,8 @@ class ParliamentaryExporter:
         Returns:
             Number of rows exported
         """
-        query = """
-        WITH StandardFactionLookup AS (
-            SELECT
-                ptp.PersonID as PersonID,
-                ptp.KnessetNum as KnessetNum,
-                ptp.FactionID,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ptp.PersonID, ptp.KnessetNum
-                    ORDER BY
-                        CASE WHEN ptp.FactionID IS NOT NULL THEN 0 ELSE 1 END,
-                        ptp.KnessetNum DESC,
-                        ptp.StartDate DESC NULLS LAST
-                ) as rn
-            FROM KNS_PersonToPosition ptp
-            WHERE ptp.FactionID IS NOT NULL
-        )
+        query = f"""
+        WITH {SQLTemplates.STANDARD_FACTION_LOOKUP}
         SELECT
             Q.QueryID,
             Q.KnessetNum,
