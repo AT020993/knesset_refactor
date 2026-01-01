@@ -19,7 +19,9 @@ from backend.connection_manager import get_db_connection, safe_execute_query
 class CAPTaxonomyService:
     """Service for managing CAP taxonomy operations."""
 
-    TAXONOMY_FILE = Path("data/taxonomies/democratic_erosion_codebook.csv")
+    # Project root is 5 levels up from src/ui/services/cap/taxonomy.py
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+    TAXONOMY_FILE = PROJECT_ROOT / "data" / "taxonomies" / "democratic_erosion_codebook.csv"
 
     # Direction codes and labels
     DIRECTION_STRENGTHENING = 1
