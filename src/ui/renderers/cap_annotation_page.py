@@ -367,7 +367,7 @@ class CAPAnnotationPageRenderer:
 
             if skip:
                 st.info("Skipping this bill")
-                st.rerun()
+                # Form submission automatically triggers rerun
 
         return False
     
@@ -603,7 +603,7 @@ class CAPAnnotationPageRenderer:
                 if success:
                     st.success("✅ Annotation updated successfully!")
                     self._clear_query_cache()
-                    st.rerun()
+                    # Form submission automatically triggers rerun
                     return True
                 else:
                     st.error("❌ Error updating annotation")
