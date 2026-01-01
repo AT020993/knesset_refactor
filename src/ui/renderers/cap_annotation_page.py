@@ -55,22 +55,22 @@ class CAPAnnotationPageRenderer:
     def _check_authentication(self) -> Tuple[bool, str]:
         """
         Check if the user is authenticated for CAP annotation.
-        
+
         Returns:
             Tuple of (is_authenticated, researcher_name)
         """
         try:
             # Check if CAP annotation is enabled
-            if not st.secrets.get("cap_annotation", {}).get("enabled", False):
+            if not st.secrets["cap_annotation"]["enabled"]:
                 return False, ""
-            
+
             # Check session state for authentication
             if st.session_state.get("cap_authenticated", False):
                 return True, st.session_state.get("cap_researcher_name", "Unknown")
-            
+
             return False, ""
-            
-        except Exception:
+
+        except (KeyError, FileNotFoundError, AttributeError):
             # Secrets not configured
             return False, ""
     
@@ -91,8 +91,8 @@ class CAPAnnotationPageRenderer:
 
             if submitted:
                 try:
-                    correct_password = st.secrets.get("cap_annotation", {}).get("password", "")
-                    researcher_name = st.secrets.get("cap_annotation", {}).get("researcher_name", "Researcher")
+                    correct_password = st.secrets["cap_annotation"]["password"]
+                    researcher_name = st.secrets["cap_annotation"].get("researcher_name", "Researcher")
 
                     if password == correct_password and correct_password:
                         st.session_state.cap_authenticated = True
@@ -819,8 +819,8 @@ class CAPAnnotationPageRenderer:
 
         # Check if feature is enabled
         try:
-            cap_enabled = st.secrets.get("cap_annotation", {}).get("enabled", False)
-        except Exception:
+            cap_enabled = st.secrets["cap_annotation"]["enabled"]
+        except (KeyError, FileNotFoundError, AttributeError):
             cap_enabled = False
 
         if not cap_enabled:
