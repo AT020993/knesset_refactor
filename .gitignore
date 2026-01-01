@@ -1,5 +1,6 @@
 # Data directory (database files, parquet files, etc.)
-/data/
+/data/*
+!/data/taxonomies/
 *.duckdb
 *.parquet
 
