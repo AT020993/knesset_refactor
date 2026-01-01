@@ -125,6 +125,20 @@ if st.selectbox(...) != session_state_value:
     update()
 ```
 
+**Tab State Persistence**: Use `st.radio` with session state instead of `st.tabs` (tabs don't persist across form submissions):
+```python
+# Correct - radio buttons with session state
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = options[0]
+selected = st.radio("Nav", options, horizontal=True, key="tab_selector")
+st.session_state.active_tab = selected
+
+# Wrong - st.tabs resets to first tab after form submission
+tab1, tab2 = st.tabs(["A", "B"])
+```
+
+**Avoid Redundant `st.rerun()`**: Form submissions and `on_click` callbacks auto-rerun. Extra `st.rerun()` calls can reset UI state.
+
 ## Test Status
 
 306 passed, 26 skipped, 0 failures. Run fast tests before commits.
