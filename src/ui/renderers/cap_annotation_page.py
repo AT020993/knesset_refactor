@@ -39,6 +39,22 @@ class CAPAnnotationPageRenderer:
         # Clear Streamlit's data cache
         st.cache_data.clear()
 
+    def _handle_confirm_delete(self, bill_id: int):
+        """Callback for confirming annotation deletion."""
+        success = self.service.delete_annotation(bill_id)
+        if success:
+            self._clear_query_cache()
+        # Clear confirmation state
+        if f'confirm_delete_{bill_id}' in st.session_state:
+            del st.session_state[f'confirm_delete_{bill_id}']
+        # Store result for display after rerun
+        st.session_state[f'delete_result_{bill_id}'] = success
+
+    def _handle_cancel_delete(self, bill_id: int):
+        """Callback for canceling annotation deletion."""
+        if f'confirm_delete_{bill_id}' in st.session_state:
+            del st.session_state[f'confirm_delete_{bill_id}']
+
     def __init__(self, db_path: Path, logger_obj: Optional[logging.Logger] = None):
         """Initialize the renderer."""
         self.db_path = db_path
@@ -598,24 +614,34 @@ class CAPAnnotationPageRenderer:
                 st.session_state[f'confirm_delete_{bill_id}'] = True
                 st.rerun()
 
+        # Handle delete result from callback (shown after rerun)
+        if st.session_state.get(f'delete_result_{bill_id}') is True:
+            st.success("🗑️ Annotation deleted successfully!")
+            del st.session_state[f'delete_result_{bill_id}']
+            st.rerun()
+        elif st.session_state.get(f'delete_result_{bill_id}') is False:
+            st.error("❌ Error deleting annotation")
+            del st.session_state[f'delete_result_{bill_id}']
+
         # Handle delete confirmation outside the form
         if st.session_state.get(f'confirm_delete_{bill_id}', False):
             st.warning(f"⚠️ Are you sure you want to delete the annotation for Bill {bill_id}?")
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Yes, Delete", key=f"confirm_del_{bill_id}", type="primary"):
-                    success = self.service.delete_annotation(bill_id)
-                    if success:
-                        st.success("🗑️ Annotation deleted successfully!")
-                        self._clear_query_cache()
-                        del st.session_state[f'confirm_delete_{bill_id}']
-                        st.rerun()
-                    else:
-                        st.error("❌ Error deleting annotation")
+                st.button(
+                    "Yes, Delete",
+                    key=f"confirm_del_{bill_id}",
+                    type="primary",
+                    on_click=self._handle_confirm_delete,
+                    args=(bill_id,)
+                )
             with col2:
-                if st.button("Cancel", key=f"cancel_del_{bill_id}"):
-                    del st.session_state[f'confirm_delete_{bill_id}']
-                    st.rerun()
+                st.button(
+                    "Cancel",
+                    key=f"cancel_del_{bill_id}",
+                    on_click=self._handle_cancel_delete,
+                    args=(bill_id,)
+                )
 
         return False
 
