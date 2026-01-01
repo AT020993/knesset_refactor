@@ -611,17 +611,15 @@ class CAPAnnotationPageRenderer:
 
             if delete:
                 # Store in session state for confirmation
+                # Form submission automatically triggers rerun - no explicit st.rerun() needed
                 st.session_state[f'confirm_delete_{bill_id}'] = True
-                st.rerun()
 
-        # Handle delete result from callback (shown after rerun)
-        if st.session_state.get(f'delete_result_{bill_id}') is True:
+        # Handle delete result from callback (shown after automatic rerun)
+        delete_result = st.session_state.pop(f'delete_result_{bill_id}', None)
+        if delete_result is True:
             st.success("🗑️ Annotation deleted successfully!")
-            del st.session_state[f'delete_result_{bill_id}']
-            st.rerun()
-        elif st.session_state.get(f'delete_result_{bill_id}') is False:
+        elif delete_result is False:
             st.error("❌ Error deleting annotation")
-            del st.session_state[f'delete_result_{bill_id}']
 
         # Handle delete confirmation outside the form
         if st.session_state.get(f'confirm_delete_{bill_id}', False):
