@@ -99,8 +99,6 @@ class CAPAnnotationPageRenderer:
         """
         st.subheader("🔐 Login")
 
-        st.info("This system is for authorized researchers only to annotate bills according to the Democratic Erosion codebook.")
-
         with st.form("cap_login_form"):
             password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Login")
