@@ -891,15 +891,29 @@ class CAPAnnotationPageRenderer:
                 self.service.load_taxonomy_from_csv()
                 st.session_state.cap_tables_initialized = True
 
-        # Tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📝 New Annotation",
-            "🌐 Fetch from API",
-            "📚 View Coded",
-            "📊 Statistics"
-        ])
+        # Tab navigation with persistent state (st.tabs doesn't persist across form submissions)
+        tab_options = ["📝 New Annotation", "🌐 Fetch from API", "📚 View Coded", "📊 Statistics"]
 
-        with tab1:
+        # Initialize tab state if not exists
+        if 'cap_active_tab' not in st.session_state:
+            st.session_state.cap_active_tab = tab_options[0]
+
+        # Radio button for tab selection (persists in session state)
+        selected_tab = st.radio(
+            "Navigation",
+            options=tab_options,
+            index=tab_options.index(st.session_state.cap_active_tab),
+            horizontal=True,
+            key="cap_tab_selector",
+            label_visibility="collapsed"
+        )
+
+        # Update session state when tab changes
+        st.session_state.cap_active_tab = selected_tab
+
+        st.markdown("---")
+
+        if selected_tab == "📝 New Annotation":
             # Bill queue and annotation form
             result = self._render_bill_queue()
             selected_bill_id, submission_date = result if result[0] else (None, None)
@@ -911,13 +925,13 @@ class CAPAnnotationPageRenderer:
                     # Clear and refresh
                     st.rerun()
 
-        with tab2:
+        elif selected_tab == "🌐 Fetch from API":
             self._render_api_fetch_section(researcher_name)
 
-        with tab3:
+        elif selected_tab == "📚 View Coded":
             self._render_coded_bills_view()
 
-        with tab4:
+        elif selected_tab == "📊 Statistics":
             self._render_stats_dashboard()
 
 
