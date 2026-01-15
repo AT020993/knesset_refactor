@@ -10,8 +10,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from backend.fetch_table import TABLES
+from config.database import DatabaseConfig
 import backend.fetch_table as ft
+
+# Use canonical source for table list
+TABLES = DatabaseConfig.TABLES
 
 
 # Constants

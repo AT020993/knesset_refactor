@@ -10,8 +10,13 @@ Core API:
 
 Diagnostics (see connection_diagnostics.py):
 - monitor_connection_health(): Get connection health metrics
-- create_connection_dashboard(): Streamlit dashboard
 - start_background_monitoring(): Enable leak detection
+
+UI Dashboard (see ui.renderers.data_refresh.connection_dashboard):
+- render_connection_dashboard(): Streamlit dashboard for connection monitoring
+
+Note: This module uses callback functions for UI notifications instead of
+direct Streamlit imports, enabling proper separation of concerns and testability.
 """
 
 from __future__ import annotations
@@ -22,29 +27,51 @@ import threading
 import time
 import weakref
 from pathlib import Path
-from typing import Any, Generator, List, Optional
+from typing import Any, Callable, Generator, List, Optional
 
 import duckdb
 
-try:
-    import streamlit as st
 
-    _STREAMLIT_AVAILABLE = True
-except ImportError:
-    _STREAMLIT_AVAILABLE = False
+# Type alias for UI notification callbacks
+# Callback signature: (message: str, level: str) -> None
+# Level can be: "info", "warning", "error"
+UINotifyCallback = Callable[[str, str], None]
 
-    # Create a mock st object for testing
-    class MockStreamlit:
-        def warning(self, msg):
-            pass
 
-        def info(self, msg):
-            pass
+def _get_streamlit_notifier() -> Optional[UINotifyCallback]:
+    """
+    Get a Streamlit-based notification callback if available.
 
-        def error(self, msg):
-            pass
+    Returns None if Streamlit is not available (e.g., in CLI or tests).
+    """
+    try:
+        import streamlit as st
 
-    st = MockStreamlit()
+        def notify(message: str, level: str) -> None:
+            if level == "info":
+                st.info(message)
+            elif level == "warning":
+                st.warning(message)
+            elif level == "error":
+                st.error(message)
+
+        return notify
+    except ImportError:
+        return None
+
+
+def _default_ui_notifier() -> UINotifyCallback:
+    """
+    Get the default UI notification callback.
+
+    Uses Streamlit if available, otherwise a no-op function.
+    """
+    streamlit_notifier = _get_streamlit_notifier()
+    if streamlit_notifier:
+        return streamlit_notifier
+
+    # No-op callback for non-Streamlit environments
+    return lambda msg, level: None
 
 
 class ConnectionMonitor:
@@ -118,7 +145,10 @@ _connection_monitor = ConnectionMonitor()
 
 @contextlib.contextmanager
 def get_db_connection(
-    db_path: Path, read_only: bool = True, logger_obj: logging.Logger | None = None
+    db_path: Path,
+    read_only: bool = True,
+    logger_obj: logging.Logger | None = None,
+    ui_notify: UINotifyCallback | None = None,
 ) -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """
     Context manager for DuckDB connections with proper resource cleanup.
@@ -130,6 +160,8 @@ def get_db_connection(
         db_path: Path to the database file
         read_only: Whether to open in read-only mode
         logger_obj: Optional logger for debug messages
+        ui_notify: Optional callback for UI notifications (info/warning/error)
+                   If None, uses Streamlit if available, otherwise no-op
 
     Yields:
         DuckDB connection that will be automatically closed
@@ -141,13 +173,17 @@ def get_db_connection(
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
 
+    if ui_notify is None:
+        ui_notify = _default_ui_notifier()
+
     # Handle missing database file
     if not db_path.exists() and read_only:
         logger_obj.warning(
             f"Database {db_path} does not exist. Using in-memory fallback."
         )
-        st.warning(
-            f"Database {db_path} does not exist. Please run a data refresh first."
+        ui_notify(
+            f"Database {db_path} does not exist. Please run a data refresh first.",
+            "warning"
         )
 
         conn = duckdb.connect(database=":memory:", read_only=False)
@@ -162,7 +198,7 @@ def get_db_connection(
 
     elif not db_path.exists() and not read_only:
         logger_obj.info(f"Database {db_path} does not exist. It will be created.")
-        st.info(f"Database {db_path} will be created during write operation.")
+        ui_notify(f"Database {db_path} will be created during write operation.", "info")
 
     conn = None
     try:
@@ -181,7 +217,7 @@ def get_db_connection(
         logger_obj.error(
             f"Error connecting to database at {db_path}: {e}", exc_info=True
         )
-        st.error(f"Database connection error: {e}")
+        ui_notify(f"Database connection error: {e}", "error")
 
         # Provide fallback in-memory connection for read operations
         if read_only:
@@ -208,6 +244,7 @@ def safe_execute_query(
     query: str,
     logger_obj: logging.Logger | None = None,
     params: Optional[List[Any]] = None,
+    ui_notify: UINotifyCallback | None = None,
 ) -> Any:
     """
     Safely execute a query with proper error handling.
@@ -217,6 +254,7 @@ def safe_execute_query(
         query: SQL query to execute
         logger_obj: Optional logger for debug messages
         params: Optional list of parameters for the query
+        ui_notify: Optional callback for UI notifications
 
     Returns:
         Query result dataframe or empty dataframe on error
@@ -225,6 +263,9 @@ def safe_execute_query(
 
     if logger_obj is None:
         logger_obj = logging.getLogger(__name__)
+
+    if ui_notify is None:
+        ui_notify = _default_ui_notifier()
 
     try:
         if params:
@@ -238,7 +279,7 @@ def safe_execute_query(
         if params:
             query_info += f"\nParams: {params}"
         logger_obj.error(f"Query execution error: {e}\n{query_info}", exc_info=True)
-        st.error(f"Query execution error: {e}")
+        ui_notify(f"Query execution error: {e}", "error")
         return pd.DataFrame()
 
 
@@ -257,8 +298,12 @@ def _cache_data_decorator(ttl=3600):
     """Decorator that uses Streamlit cache if available, otherwise no-op."""
 
     def decorator(func):
-        if _STREAMLIT_AVAILABLE and hasattr(st, "cache_data"):
-            return st.cache_data(ttl=ttl)(func)
+        try:
+            import streamlit as st
+            if hasattr(st, "cache_data"):
+                return st.cache_data(ttl=ttl)(func)
+        except ImportError:
+            pass
         return func
 
     return decorator
@@ -298,7 +343,10 @@ def cached_query_with_connection(
 
 # Legacy compatibility function
 def connect_db(
-    db_path: Path, read_only: bool = True, _logger_obj: logging.Logger | None = None
+    db_path: Path,
+    read_only: bool = True,
+    _logger_obj: logging.Logger | None = None,
+    ui_notify: UINotifyCallback | None = None,
 ) -> duckdb.DuckDBPyConnection:
     """
     Legacy connection function - DEPRECATED.
@@ -309,6 +357,9 @@ def connect_db(
     if _logger_obj is None:
         _logger_obj = logging.getLogger(__name__)
 
+    if ui_notify is None:
+        ui_notify = _default_ui_notifier()
+
     _logger_obj.warning(
         "connect_db() is deprecated. Use get_db_connection() context manager to prevent connection leaks."
     )
@@ -318,8 +369,9 @@ def connect_db(
         _logger_obj.warning(
             f"Database {db_path} does not exist. Query execution will fail."
         )
-        st.warning(
-            f"Database {db_path} does not exist. Please run a data refresh first."
+        ui_notify(
+            f"Database {db_path} does not exist. Please run a data refresh first.",
+            "warning"
         )
         conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
@@ -337,7 +389,7 @@ def connect_db(
         _logger_obj.error(
             f"Error connecting to database at {db_path}: {e}", exc_info=True
         )
-        st.error(f"Database connection error: {e}")
+        ui_notify(f"Database connection error: {e}", "error")
         conn = duckdb.connect(database=":memory:", read_only=False)
         _connection_monitor.register_connection(conn, ":memory:")
         return conn
@@ -354,9 +406,20 @@ def monitor_connection_health() -> dict[str, Any]:
 
 
 def create_connection_dashboard() -> None:
-    """Create connection dashboard. (Backward compatibility - see connection_diagnostics.py)"""
-    from .connection_diagnostics import create_connection_dashboard as _dashboard
-    _dashboard()
+    """Create connection dashboard.
+
+    DEPRECATED: Use ui.renderers.data_refresh.render_connection_dashboard() instead.
+    This backward compatibility wrapper imports from the UI layer.
+    """
+    import warnings
+    warnings.warn(
+        "create_connection_dashboard() is deprecated. "
+        "Use ui.renderers.data_refresh.render_connection_dashboard() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from ui.renderers.data_refresh import render_connection_dashboard
+    render_connection_dashboard()
 
 
 def start_background_monitoring(interval_seconds: int = 60) -> None:

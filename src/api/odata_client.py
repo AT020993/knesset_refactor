@@ -23,7 +23,7 @@ class ODataClient:
         self.logger = logger_obj or logging.getLogger(__name__)
         self.config = APIConfig()
     
-    def _backoff_handler(self, details):
+    def _backoff_handler(self, details: Dict[str, Any]) -> None:
         """Handler for logging backoff attempts with error categorization."""
         exception = details['exception']
         error_category = categorize_error(exception)

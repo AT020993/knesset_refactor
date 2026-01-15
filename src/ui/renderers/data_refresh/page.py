@@ -188,7 +188,7 @@ class DataRefreshPageRenderer:
         # Re-execute the query immediately with updated filter
         query_name = SessionStateManager.get_executed_query_name()
         if query_name:
-            from ui.sidebar_components import _handle_run_query_button_click
+            from ui.sidebar import _handle_run_query_button_click
             from ui.queries.predefined_queries import PREDEFINED_QUERIES
 
             _handle_run_query_button_click(
@@ -288,7 +288,7 @@ class DataRefreshPageRenderer:
                 st.session_state.query_page_number = max(1, current_page - 1)
                 st.session_state.query_page_offset = (st.session_state.query_page_number - 1) * 1000
                 self._rerun_query_with_pagination()
-                st.rerun()
+                # Note: st.rerun() removed - _rerun_query_with_pagination already updates state
 
         with col3:
             # Next page button
@@ -297,7 +297,7 @@ class DataRefreshPageRenderer:
                 st.session_state.query_page_number = current_page + 1
                 st.session_state.query_page_offset = (st.session_state.query_page_number - 1) * 1000
                 self._rerun_query_with_pagination()
-                st.rerun()
+                # Note: st.rerun() removed - _rerun_query_with_pagination already updates state
 
         with col4:
             # Reset to first page button
@@ -306,13 +306,13 @@ class DataRefreshPageRenderer:
                     st.session_state.query_page_number = 1
                     st.session_state.query_page_offset = 0
                     self._rerun_query_with_pagination()
-                    st.rerun()
+                    # Note: st.rerun() removed - _rerun_query_with_pagination already updates state
 
     def _rerun_query_with_pagination(self):
         """Re-execute the current query with updated pagination offset."""
         query_name = SessionStateManager.get_executed_query_name()
         if query_name:
-            from ui.sidebar_components import _handle_run_query_button_click
+            from ui.sidebar import _handle_run_query_button_click
             from ui.queries.predefined_queries import PREDEFINED_QUERIES
 
             _handle_run_query_button_click(

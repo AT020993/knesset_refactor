@@ -60,11 +60,7 @@ class BillComparisonCharts(BaseChart):
                 WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
                     COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
-                    CASE
-                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                        ELSE 'הופסק/לא פעיל'
-                    END AS Stage,
+                    {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
                 LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
@@ -119,13 +115,9 @@ class BillComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
-                # Define stage order and colors
-                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-                stage_colors = {
-                    'הופסק/לא פעיל': '#EF553B',  # Red
-                    'קריאה ראשונה': '#636EFA',    # Blue
-                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
-                }
+                # Use centralized stage order and colors from SQLTemplates
+                stage_order = SQLTemplates.BILL_STAGE_ORDER
+                stage_colors = SQLTemplates.BILL_STAGE_COLORS
 
                 # Sort factions by total bill count
                 faction_totals = df.groupby('FactionName')['BillCount'].sum().sort_values(ascending=False)
@@ -225,11 +217,7 @@ class BillComparisonCharts(BaseChart):
                 WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
                     ufs.CoalitionStatus AS CoalitionStatus,
-                    CASE
-                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                        ELSE 'הופסק/לא פעיל'
-                    END AS Stage,
+                    {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
                 LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
@@ -283,13 +271,9 @@ class BillComparisonCharts(BaseChart):
                     df["BillCount"], errors="coerce"
                 ).fillna(0)
 
-                # Define stage order and colors
-                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-                stage_colors = {
-                    'הופסק/לא פעיל': '#EF553B',  # Red
-                    'קריאה ראשונה': '#636EFA',    # Blue
-                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
-                }
+                # Use centralized stage order and colors from SQLTemplates
+                stage_order = SQLTemplates.BILL_STAGE_ORDER
+                stage_colors = SQLTemplates.BILL_STAGE_COLORS
 
                 # Sort coalition statuses by total bill count
                 coalition_totals = df.groupby('CoalitionStatus')['BillCount'].sum().sort_values(ascending=False)
@@ -384,11 +368,7 @@ class BillComparisonCharts(BaseChart):
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
-                        CASE
-                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                            ELSE 'הופסק/לא פעיל'
-                        END AS Stage,
+                        {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount
                     FROM KNS_Bill b
                     LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
@@ -434,11 +414,7 @@ class BillComparisonCharts(BaseChart):
                     SELECT
                         p.FirstName || ' ' || p.LastName AS MKName,
                         p.PersonID,
-                        CASE
-                            WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                            WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                            ELSE 'הופסק/לא פעיל'
-                        END AS Stage,
+                        {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                         COUNT(DISTINCT b.BillID) AS BillCount,
                         b.KnessetNum
                     FROM KNS_Bill b
@@ -510,13 +486,9 @@ class BillComparisonCharts(BaseChart):
                 # Sort MKs by total bill count
                 mk_order = person_totals.index.get_level_values("MKName").tolist()
 
-                # Define stage order and colors
-                stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-                stage_colors = {
-                    'הופסק/לא פעיל': '#EF553B',  # Red
-                    'קריאה ראשונה': '#636EFA',    # Blue
-                    'התקבלה בקריאה שלישית': '#00CC96'  # Green
-                }
+                # Use centralized stage order and colors from SQLTemplates
+                stage_order = SQLTemplates.BILL_STAGE_ORDER
+                stage_colors = SQLTemplates.BILL_STAGE_COLORS
 
                 # Create figure with manual traces for proper stacking
                 fig = go.Figure()

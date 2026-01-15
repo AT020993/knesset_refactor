@@ -263,8 +263,8 @@ class PlotFilterPanels:
                     session_types_df = safe_execute_query(con, session_types_query, logger)
                     if not session_types_df.empty:
                         filter_options['session_types'] = session_types_df['SubTypeDesc'].tolist()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not fetch agenda session types: {e}")
 
                 # Agenda statuses
                 try:
@@ -278,8 +278,8 @@ class PlotFilterPanels:
                     agenda_status_df = safe_execute_query(con, agenda_status_query, logger)
                     if not agenda_status_df.empty:
                         filter_options['agenda_statuses'] = agenda_status_df['StatusDesc'].tolist()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not fetch agenda statuses: {e}")
 
                 # Bill types
                 try:
@@ -287,8 +287,8 @@ class PlotFilterPanels:
                     bill_types_df = safe_execute_query(con, bill_types_query, logger)
                     if not bill_types_df.empty:
                         filter_options['bill_types'] = bill_types_df['SubTypeDesc'].tolist()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not fetch bill types: {e}")
 
                 # Bill statuses
                 try:
@@ -302,8 +302,8 @@ class PlotFilterPanels:
                     bill_status_df = safe_execute_query(con, bill_status_query, logger)
                     if not bill_status_df.empty:
                         filter_options['bill_statuses'] = bill_status_df['StatusDesc'].tolist()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not fetch bill statuses: {e}")
 
         except Exception as e:
             logger.error(f"Error fetching filter options: {e}", exc_info=True)

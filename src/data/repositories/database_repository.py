@@ -76,10 +76,18 @@ class DatabaseRepository:
         """Get the number of rows in a table."""
         if not self.table_exists(table_name):
             return 0
-        
+
         query = f'SELECT COUNT(*) as count FROM "{table_name}"'
         result = self.execute_query(query)
         return result.iloc[0]['count'] if result is not None and not result.empty else 0
+
+    def get_tables(self) -> list:
+        """Get list of all tables in the database."""
+        query = "SELECT table_name FROM duckdb_tables() ORDER BY table_name"
+        result = self.execute_query(query)
+        if result is not None and not result.empty:
+            return result['table_name'].tolist()
+        return []
     
     def load_faction_coalition_status(self) -> bool:
         """Load faction coalition status from CSV file."""

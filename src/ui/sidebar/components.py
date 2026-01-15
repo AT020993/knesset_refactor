@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Tuple
 
 import streamlit as st
 
@@ -48,15 +49,15 @@ __all__ = [
 
 def display_sidebar(
     db_path_arg: Path,
-    exports_arg: dict,
-    connect_func_arg: callable,
-    get_db_table_list_func_arg: callable,
-    get_table_columns_func_arg: callable,
-    get_filter_options_func_arg: callable,
-    faction_display_map_arg: dict,
+    exports_arg: Dict[str, Any],
+    connect_func_arg: Callable[..., Any],
+    get_db_table_list_func_arg: Callable[[], List[str]],
+    get_table_columns_func_arg: Callable[[str], List[str]],
+    get_filter_options_func_arg: Callable[[], Tuple[List[int], List[str]]],
+    faction_display_map_arg: Dict[str, int],
     ui_logger_arg: logging.Logger,
-    format_exc_func_arg: callable,
-):
+    format_exc_func_arg: Callable[[Exception], str],
+) -> None:
     """Renders all sidebar components.
 
     This is the main orchestrator that assembles and displays all sidebar
@@ -112,8 +113,8 @@ def display_sidebar(
 
 
 def _render_data_management_section(
-    db_path: Path, ui_logger: logging.Logger, format_exc_func: callable
-):
+    db_path: Path, ui_logger: logging.Logger, format_exc_func: Callable[[Exception], str]
+) -> None:
     """Render the data management section of the sidebar."""
     st.sidebar.header("💾 Data Management")
 
@@ -126,18 +127,24 @@ def _render_data_management_section(
     )
     handle_multiselect_change()  # Initialize state correctly
 
-    if st.sidebar.button("🔄 Refresh Selected Data", key="btn_refresh_data"):
+    # Disable button while refresh is running to prevent double-clicks
+    is_refreshing = st.session_state.get("data_refresh_process_running", False)
+    if st.sidebar.button(
+        "🔄 Refresh Selected Data",
+        key="btn_refresh_data",
+        disabled=is_refreshing
+    ):
         handle_data_refresh_button_click(db_path, ui_logger, format_exc_func)
 
 
 def _render_query_templates_section(
-    exports_arg: dict,
+    exports_arg: Dict[str, Any],
     db_path: Path,
-    connect_func: callable,
+    connect_func: Callable[..., Any],
     ui_logger: logging.Logger,
-    format_exc_func: callable,
-    faction_display_map: dict,
-):
+    format_exc_func: Callable[[Exception], str],
+    faction_display_map: Dict[str, int],
+) -> None:
     """Render the query templates section of the sidebar."""
     st.sidebar.header("📊 Query Templates")
     query_names_options = [""] + list(exports_arg.keys())
@@ -175,13 +182,13 @@ def _render_query_templates_section(
 
 def _render_table_explorer_section(
     db_path: Path,
-    connect_func: callable,
-    get_db_table_list_func: callable,
-    get_table_columns_func: callable,
+    connect_func: Callable[..., Any],
+    get_db_table_list_func: Callable[[], List[str]],
+    get_table_columns_func: Callable[[str], List[str]],
     ui_logger: logging.Logger,
-    format_exc_func: callable,
-    faction_display_map: dict,
-):
+    format_exc_func: Callable[[Exception], str],
+    faction_display_map: Dict[str, int],
+) -> None:
     """Render the table explorer section of the sidebar."""
     st.sidebar.header("📑 Browse Raw Data")
 
@@ -233,9 +240,9 @@ def _render_table_explorer_section(
 
 
 def _render_global_filters_section(
-    get_filter_options_func: callable,
-    faction_display_map: dict,
-):
+    get_filter_options_func: Callable[[], Tuple[List[int], List[str]]],
+    faction_display_map: Dict[str, int],
+) -> None:
     """Render the global filters section of the sidebar."""
     st.sidebar.header("🔍 Global Filters")
     knesset_nums_options, _ = get_filter_options_func()

@@ -1,11 +1,15 @@
-"""Chart factory for creating different chart types."""
+"""Chart factory for creating different chart types.
+
+This module provides a factory pattern for creating charts without
+tight coupling to Streamlit. Caching is applied conditionally
+when Streamlit is available.
+"""
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import plotly.graph_objects as go
-import streamlit as st
 
 from .comparison import ComparisonCharts
 from .distribution import DistributionCharts
@@ -13,35 +17,69 @@ from .time_series import TimeSeriesCharts
 from .network import NetworkCharts
 
 
+def _get_cache_resource_decorator():
+    """Get a cache decorator that uses Streamlit if available, otherwise no-op.
+
+    This allows the factory to work without Streamlit in CLI or test contexts.
+    """
+    try:
+        import streamlit as st
+        if hasattr(st, "cache_resource"):
+            return st.cache_resource(show_spinner=False)
+    except ImportError:
+        pass
+    # Return identity decorator if Streamlit not available
+    return lambda func: func
+
+
+# Create the cached function at module level
+# The decorator is applied at import time, using Streamlit if available
+@_get_cache_resource_decorator()
+def _create_chart_generators(db_path_str: str) -> Dict:
+    """Create chart generator instances (cached when Streamlit available).
+
+    Args:
+        db_path_str: String path to database (string for cache key hashability).
+
+    Returns:
+        Dictionary mapping category names to chart generator instances.
+    """
+    db_path = Path(db_path_str)
+    logger = logging.getLogger("knesset.ui.charts.factory")
+
+    return {
+        "time_series": TimeSeriesCharts(db_path, logger),
+        "distribution": DistributionCharts(db_path, logger),
+        "comparison": ComparisonCharts(db_path, logger),
+        "network": NetworkCharts(db_path, logger),
+    }
+
+
 class ChartFactory:
-    """Factory class for creating different types of charts."""
+    """Factory class for creating different types of charts.
+
+    Uses conditional caching: When Streamlit is available, chart generators
+    are cached to avoid redundant instantiation. In CLI/test contexts,
+    generators are created fresh each time.
+    """
 
     def __init__(self, db_path: Path, logger_obj: logging.Logger):
+        """Initialize the chart factory.
+
+        Args:
+            db_path: Path to the DuckDB database file.
+            logger_obj: Logger instance for error reporting.
+        """
         self.db_path = db_path
         self.logger = logger_obj
-
-        # Initialize chart generators lazily with caching
         self._generators = None
 
     @property
-    def generators(self):
+    def generators(self) -> Dict:
         """Lazy-load chart generators with caching."""
         if self._generators is None:
-            self._generators = self._create_generators_cached(str(self.db_path))
+            self._generators = _create_chart_generators(str(self.db_path))
         return self._generators
-
-    @st.cache_resource(show_spinner=False)
-    def _create_generators_cached(_self, _db_path: str):
-        """Create cached chart generators to avoid redundant instantiation."""
-        db_path = Path(_db_path)
-        logger = logging.getLogger("knesset.ui.charts.factory")
-
-        return {
-            "time_series": TimeSeriesCharts(db_path, logger),
-            "distribution": DistributionCharts(db_path, logger),
-            "comparison": ComparisonCharts(db_path, logger),
-            "network": NetworkCharts(db_path, logger),
-        }
 
     def create_chart(
         self, chart_category: str, chart_type: str, **kwargs

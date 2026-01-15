@@ -1,29 +1,24 @@
 """
-Connection diagnostics, health monitoring, and dashboard utilities.
+Connection diagnostics and health monitoring utilities.
 
 This module provides diagnostic and monitoring tools for database connections:
 - Health monitoring and metrics
-- Streamlit dashboard for connection visualization
 - Background monitoring for leak detection
+
+Note: UI rendering for connection dashboards has been moved to the UI layer.
+See: ui.renderers.data_refresh.connection_dashboard.render_connection_dashboard()
 """
 
 import logging
 import threading
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 # Import the global monitor from connection_manager
 from .connection_manager import (
     _connection_monitor,
     get_connection_stats,
 )
-
-try:
-    import streamlit as st
-    _STREAMLIT_AVAILABLE = True
-except ImportError:
-    _STREAMLIT_AVAILABLE = False
-    st = None
 
 
 def monitor_connection_health() -> Dict[str, Any]:
@@ -90,82 +85,6 @@ def monitor_connection_health() -> Dict[str, Any]:
         health_info["health_status"] = "attention"
 
     return health_info
-
-
-def create_connection_dashboard() -> None:
-    """
-    Create a Streamlit dashboard component for monitoring database connections.
-    Should only be called from within Streamlit apps.
-    """
-    if not _STREAMLIT_AVAILABLE or st is None:
-        logging.getLogger(__name__).warning(
-            "Streamlit not available for connection dashboard"
-        )
-        return
-
-    st.subheader("🔌 Database Connection Monitor")
-
-    health_info = monitor_connection_health()
-
-    # Health status indicator
-    status_colors = {
-        "healthy": "🟢",
-        "attention": "🟡",
-        "warning": "🟠",
-        "critical": "🔴",
-    }
-
-    status_icon = status_colors.get(health_info["health_status"], "⚪")
-    st.write(f"**Status:** {status_icon} {health_info['health_status'].title()}")
-
-    # Metrics
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Active Connections", health_info["total_active"])
-
-    with col2:
-        st.metric("Databases Connected", len(health_info["connections_by_db"]))
-
-    with col3:
-        st.metric("Long-Running", len(health_info["long_running_connections"]))
-
-    # Details in expandable sections
-    if health_info["total_active"] > 0:
-        with st.expander("📊 Connection Details"):
-            # Connections by database
-            if health_info["connections_by_db"]:
-                st.write("**Connections by Database:**")
-                for db_path, count in health_info["connections_by_db"].items():
-                    st.write(f"- `{db_path}`: {count} connection(s)")
-
-            # Connections by thread
-            if health_info["connections_by_thread"]:
-                st.write("**Connections by Thread:**")
-                for thread_id, count in health_info["connections_by_thread"].items():
-                    st.write(f"- Thread `{thread_id}`: {count} connection(s)")
-
-            # Long-running connections
-            if health_info["long_running_connections"]:
-                st.warning("**Long-Running Connections (>5 min):**")
-                for conn in health_info["long_running_connections"]:
-                    age_min = conn["age_seconds"] / 60
-                    st.write(
-                        f"- Connection `{conn['conn_id']}` to `{conn['db_path']}`: {age_min:.1f} minutes"
-                    )
-
-    # Actions
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🔄 Refresh Stats"):
-            st.rerun()
-
-    with col2:
-        if st.button("📋 Log Connection Details"):
-            from .connection_manager import log_connection_leaks
-            log_connection_leaks()
-            st.success("Connection details logged to application logs")
 
 
 # Background monitoring state

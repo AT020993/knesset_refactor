@@ -24,9 +24,13 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 # Local Application Imports
+from config.settings import Settings
+from config.database import DatabaseConfig
 from utils.logger_setup import setup_logging
-from backend.fetch_table import TABLES
 from ui.state.session_manager import SessionStateManager
+
+# Use canonical source for table list
+TABLES = DatabaseConfig.TABLES
 from ui.renderers.data_refresh_page import DataRefreshPageRenderer
 from ui.renderers.plots_page import PlotsPageRenderer
 from ui.renderers.cap_annotation_page import CAPAnnotationPageRenderer
@@ -43,11 +47,11 @@ if not ui_logger.handlers:
 ui_logger.info("--- data_refresh.py script started ---")
 
 
-# --- Constants and Global-like Configurations ---
-DB_PATH = Path("data/warehouse.duckdb")
-PARQUET_DIR = Path("data/parquet")
-MAX_ROWS_FOR_CHART_BUILDER = 50000
-MAX_UNIQUE_VALUES_FOR_FACET = 50
+# --- Configuration from Settings (no hardcoded duplicates) ---
+DB_PATH = Settings.DEFAULT_DB_PATH
+PARQUET_DIR = Settings.PARQUET_DIR
+MAX_ROWS_FOR_CHART_BUILDER = Settings.MAX_ROWS_FOR_CHART_BUILDER
+MAX_UNIQUE_VALUES_FOR_FACET = Settings.MAX_UNIQUE_VALUES_FOR_FACET
 
 st.set_page_config(
     page_title="Knesset OData – Refresh & Export", 

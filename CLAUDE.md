@@ -139,6 +139,31 @@ tab1, tab2 = st.tabs(["A", "B"])
 
 **Avoid Redundant `st.rerun()`**: Form submissions and `on_click` callbacks auto-rerun. Extra `st.rerun()` calls can reset UI state.
 
+**Double-Click Button Prevention**:
+```python
+# Wrong - causes double execution
+if st.button("Action"):
+    do_something()  # Updates session state
+    st.rerun()  # REDUNDANT - button click already triggers rerun
+
+# Correct - let Streamlit handle the rerun
+if st.button("Action"):
+    do_something()  # Updates session state
+    # No st.rerun() needed - state is already updated for next render
+```
+
+**Disable Buttons During Long Operations**:
+```python
+# Correct - prevents double-clicks during async operations
+is_running = st.session_state.get("operation_running", False)
+if st.button("Start Operation", disabled=is_running):
+    st.session_state.operation_running = True
+    try:
+        await long_operation()
+    finally:
+        st.session_state.operation_running = False
+```
+
 ## Test Status
 
 306 passed, 26 skipped, 0 failures. Run fast tests before commits.

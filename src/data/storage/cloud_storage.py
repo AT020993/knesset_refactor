@@ -297,11 +297,60 @@ class CloudStorageManager:
             return None
 
 
+def create_gcs_manager_from_config(
+    config: Dict[str, Any],
+    logger_obj: Optional[logging.Logger] = None
+) -> Optional[CloudStorageManager]:
+    """
+    Create CloudStorageManager from a configuration dictionary.
+
+    This is the framework-agnostic factory function. The config dict should have:
+    - 'bucket_name': GCS bucket name (required)
+    - 'credentials': Dict with service account credentials (optional)
+    - 'credentials_path': Path to credentials JSON file (optional)
+
+    Args:
+        config: Configuration dictionary
+        logger_obj: Optional logger instance
+
+    Returns:
+        CloudStorageManager instance or None if config is invalid
+    """
+    logger = logger_obj or logging.getLogger(__name__)
+
+    try:
+        bucket_name = config.get('bucket_name')
+        if not bucket_name:
+            logger.info("GCS bucket name not configured")
+            return None
+
+        credentials_dict = config.get('credentials')
+        credentials_path = config.get('credentials_path')
+
+        if credentials_path:
+            credentials_path = Path(credentials_path)
+
+        return CloudStorageManager(
+            bucket_name=bucket_name,
+            credentials_dict=credentials_dict,
+            credentials_path=credentials_path,
+            logger_obj=logger
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating GCS manager from config: {e}", exc_info=True)
+        return None
+
+
 def create_gcs_manager_from_streamlit_secrets(
     logger_obj: Optional[logging.Logger] = None
 ) -> Optional[CloudStorageManager]:
     """
     Create CloudStorageManager from Streamlit secrets.
+
+    DEPRECATED: This function is being moved to the UI layer.
+    Use ui.services.gcs_factory.create_gcs_manager_from_streamlit_secrets() instead.
+    Or use create_gcs_manager_from_config() with a generic config dict.
 
     Expects secrets in this format:
     [gcp_service_account]
@@ -335,19 +384,15 @@ def create_gcs_manager_from_streamlit_secrets(
             logger.info("GCS bucket name not configured in Streamlit secrets")
             return None
 
-        bucket_name = st.secrets['storage']['gcs_bucket_name']
+        # Build config dict from Streamlit secrets
+        config = {
+            'bucket_name': st.secrets['storage']['gcs_bucket_name']
+        }
 
-        # Get credentials
         if 'gcp_service_account' in st.secrets:
-            credentials_dict = dict(st.secrets['gcp_service_account'])
-            return CloudStorageManager(
-                bucket_name=bucket_name,
-                credentials_dict=credentials_dict,
-                logger_obj=logger
-            )
-        else:
-            logger.warning("GCP service account credentials not found in Streamlit secrets")
-            return None
+            config['credentials'] = dict(st.secrets['gcp_service_account'])
+
+        return create_gcs_manager_from_config(config, logger)
 
     except ImportError:
         logger.info("Streamlit not available, skipping GCS initialization")

@@ -299,11 +299,7 @@ class TimeSeriesCharts(BaseChart):
                 SELECT
                     {time_period_sql} AS TimePeriod,
                     {knesset_select}
-                    CASE
-                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                        ELSE 'הופסק/לא פעיל'
-                    END AS Stage,
+                    {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(b.BillID) AS BillCount
                 FROM KNS_Bill b
                 LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
@@ -334,13 +330,9 @@ class TimeSeriesCharts(BaseChart):
             # Normalize DataFrame types
             df = self.normalize_time_series_df(df)
 
-            # Define stage order and colors
-            stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-            stage_colors = {
-                'הופסק/לא פעיל': '#EF553B',
-                'קריאה ראשונה': '#636EFA',
-                'התקבלה בקריאה שלישית': '#00CC96'
-            }
+            # Use centralized stage order and colors from SQLTemplates
+            stage_order = SQLTemplates.BILL_STAGE_ORDER
+            stage_colors = SQLTemplates.BILL_STAGE_COLORS
 
             # Create stacked bar chart
             plot_title = f"<b>Bills per {aggregation_level.replace('ly','')} by Status for {filters['knesset_title']}</b>"

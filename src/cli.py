@@ -1,6 +1,5 @@
 import typer
 from typing import Optional, List
-import asyncio
 from pathlib import Path
 
 from core.dependencies import DependencyContainer
@@ -47,14 +46,15 @@ def refresh(
     try:
         # Use the data refresh service from dependency container
         service = refresh_container.data_refresh_service
-        success = asyncio.run(service.refresh_tables(tables_to_process))
-        
+        # Use sync method - it handles async internally
+        success = service.refresh_tables_sync(tables_to_process)
+
         if success:
             typer.secho("Refresh process completed successfully.", fg=typer.colors.GREEN)
         else:
             typer.secho("Refresh process completed with errors.", fg=typer.colors.YELLOW)
             raise typer.Exit(code=1)
-            
+
     except Exception as e:
         typer.secho(f"An unexpected error occurred during refresh: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)

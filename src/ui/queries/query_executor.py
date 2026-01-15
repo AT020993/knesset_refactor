@@ -195,16 +195,16 @@ class QueryExecutor:
                         safe_execute_func(con, test_query, _logger_obj=self.logger)
                     else:
                         pd.read_sql_query(test_query, con)
-                    
+
                     if len(knesset_filter) == 1:
                         where_conditions.append(f"KnessetNum = {knesset_filter[0]}")
                     else:
                         knesset_list = ", ".join(map(str, knesset_filter))
                         where_conditions.append(f"KnessetNum IN ({knesset_list})")
-                except:
+                except Exception as e:
                     # KnessetNum column doesn't exist, skip this filter
-                    pass
-            
+                    self.logger.debug(f"Table '{table_name}' doesn't have KnessetNum column: {e}")
+
             # Add filters for faction if applicable
             if faction_filter and faction_display_map:
                 faction_ids = [faction_display_map[name] for name in faction_filter if name in faction_display_map]
@@ -216,15 +216,15 @@ class QueryExecutor:
                             safe_execute_func(con, test_query, _logger_obj=self.logger)
                         else:
                             pd.read_sql_query(test_query, con)
-                        
+
                         if len(faction_ids) == 1:
                             where_conditions.append(f"FactionID = {faction_ids[0]}")
                         else:
                             faction_list = ", ".join(map(str, faction_ids))
                             where_conditions.append(f"FactionID IN ({faction_list})")
-                    except:
+                    except Exception as e:
                         # FactionID column doesn't exist, skip this filter
-                        pass
+                        self.logger.debug(f"Table '{table_name}' doesn't have FactionID column: {e}")
             
             # Construct final query
             if where_conditions:

@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
+from ui.queries.sql_templates import SQLTemplates
 
 from .base import BaseChart, chart_error_handler
 
@@ -189,11 +190,7 @@ class DistributionCharts(BaseChart):
             query = f"""
                 SELECT
                     COALESCE(b.SubTypeDesc, 'Unknown') AS SubType,
-                    CASE
-                        WHEN b.StatusID = 118 THEN 'התקבלה בקריאה שלישית'
-                        WHEN b.StatusID IN (104, 108, 111, 141, 109, 101, 106, 142, 150, 113, 130, 114) THEN 'קריאה ראשונה'
-                        ELSE 'הופסק/לא פעיל'
-                    END AS Stage,
+                    {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(b.BillID) AS Count
                 FROM KNS_Bill b
                 WHERE b.KnessetNum IS NOT NULL
@@ -212,12 +209,9 @@ class DistributionCharts(BaseChart):
             subtype_totals = df.groupby('SubType')['Count'].sum().sort_values(ascending=False)
             subtypes = subtype_totals.index.tolist()
 
-            stage_order = ['הופסק/לא פעיל', 'קריאה ראשונה', 'התקבלה בקריאה שלישית']
-            stage_colors = {
-                'הופסק/לא פעיל': '#EF553B',
-                'קריאה ראשונה': '#636EFA',
-                'התקבלה בקריאה שלישית': '#00CC96'
-            }
+            # Use centralized stage order and colors from SQLTemplates
+            stage_order = SQLTemplates.BILL_STAGE_ORDER
+            stage_colors = SQLTemplates.BILL_STAGE_COLORS
 
             fig = go.Figure()
 
