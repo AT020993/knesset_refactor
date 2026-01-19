@@ -8,8 +8,9 @@ from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, List, Optional, Any
 
 from src.config.settings import Settings
-from src.config.api import APIConfig, ErrorCategory, CircuitBreakerState
+from src.config.api import APIConfig, CircuitBreakerState
 from src.config.database import DatabaseConfig
+from src.api.error_handling import ErrorCategory
 from src.config.charts import ChartConfig
 
 

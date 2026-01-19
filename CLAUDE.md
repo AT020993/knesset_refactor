@@ -38,6 +38,22 @@ streamlit run src/ui/data_refresh.py --server.port 8501
 | Charts | `src/ui/charts/` | BaseChart-derived visualizations |
 | Queries | `src/ui/queries/` | SQL templates and predefined queries |
 
+## Connection Management
+
+**Always use `get_db_connection()` context manager** - never use `duckdb.connect()` directly:
+```python
+# Correct - enables connection monitoring and leak detection
+from backend.connection_manager import get_db_connection, safe_execute_query
+
+with get_db_connection(db_path, read_only=False, logger_obj=self.logger) as conn:
+    conn.execute("CREATE TABLE ...")
+
+# Wrong - bypasses monitoring
+conn = duckdb.connect(db_path)  # DON'T DO THIS
+```
+
+**Error Handling**: `ErrorCategory` enum is defined in `src/api/error_handling.py` (canonical location). Import from there, not from `config/api.py`.
+
 ## Bill Analytics Rules
 
 ### Status Categories (All Charts)
@@ -68,15 +84,60 @@ To add more: Edit CSV → Run data refresh → Charts auto-update.
 
 ## CAP Annotation System
 
-Password-protected bill classification for democratic erosion research.
+Multi-user bill classification system for democratic erosion research with role-based access control.
 
-**Authentication**: `.streamlit/secrets.toml` → `[cap_annotation] password = "..."`
+### Authentication & User Management
 
-**Tables**:
-- `UserCAPTaxonomy`: Category codes (Government/Civil/Rights → Minor topics)
-- `UserBillCAP`: Annotations (BillID, CAPMinorCode, Direction ±1/0, Confidence, Notes)
+**Multi-User System**: Researchers authenticate with individual accounts (username/password). Passwords are hashed with bcrypt (cost factor 12).
+
+**Roles**:
+- `admin`: Full access including user management panel
+- `researcher`: Can annotate bills, view statistics, export data
+
+**Bootstrap Admin**: On first run, creates admin from `.streamlit/secrets.toml`:
+```toml
+[cap_annotation]
+enabled = true
+bootstrap_admin_username = "admin"
+bootstrap_admin_display_name = "Administrator"
+bootstrap_admin_password = "change-me-immediately"
+```
+
+**Session State Keys**:
+- `cap_authenticated`: Boolean login status
+- `cap_user_id`: Researcher's database ID
+- `cap_user_role`: "admin" or "researcher"
+- `cap_username`: Login username
+- `cap_researcher_name`: Display name (shown in UI, stored in annotations)
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `UserResearchers` | User accounts (ID, username, password hash, role, active status) |
+| `UserCAPTaxonomy` | Category codes (Major/Minor topics with Hebrew/English labels) |
+| `UserBillCAP` | Annotations (BillID, CAPMinorCode, Direction, AssignedBy, Notes) |
 
 **Direction Values**: +1 = strengthens democracy, -1 = weakens, 0 = neutral
+
+### Admin Panel Features
+
+Accessible only to users with `role='admin'`:
+- View all researchers with status (active/inactive, last login)
+- Add new researchers with role assignment
+- Edit display names
+- Reset passwords
+- Change roles (researcher ↔ admin)
+- Deactivate users (soft delete - preserves annotations)
+- Permanently delete users (only if no annotations exist)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/ui/services/cap/user_service.py` | User CRUD, authentication, password hashing |
+| `src/ui/renderers/cap/auth_handler.py` | Login form, session management |
+| `src/ui/renderers/cap/admin_renderer.py` | Admin panel UI |
 
 **Cache**: Call `_clear_query_cache()` after annotation changes to refresh predefined queries.
 
@@ -108,10 +169,12 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **Charts** | `comparison.py`, `time_series.py`, `distribution.py`, `network/*.py` |
 | **Base** | `base.py` (BaseChart, `@chart_error_handler`) |
 | **Queries** | `predefined_queries.py`, `sql_templates.py` |
-| **CAP** | `cap_annotation_page.py`, `cap_service.py`, `cap_api_service.py` |
+| **CAP** | `cap_annotation_page.py`, `cap_service.py`, `cap_api_service.py`, `user_service.py`, `admin_renderer.py` |
 | **UI** | `plots_page.py`, `data_refresh_page.py`, `sidebar_components.py` |
+| **Data Refresh** | `data_refresh_service.py`, `data_refresh_handler.py`, `odata_client.py` |
 | **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/*.csv` |
-| **Config** | `src/config/database.py`, `src/backend/tables.py` |
+| **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
+| **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
 
 ## Streamlit Patterns
 
@@ -164,6 +227,56 @@ if st.button("Start Operation", disabled=is_running):
         st.session_state.operation_running = False
 ```
 
+**Async Code in Streamlit** (🔴 Critical):
+
+Streamlit uses Tornado with its own event loop. `asyncio.run()` fails with "This event loop is already running". Use thread isolation:
+```python
+def run_async_in_streamlit(async_func, *args):
+    """Run async code in Streamlit context."""
+    try:
+        loop = asyncio.get_running_loop()
+        # Streamlit context - run in separate thread
+        import concurrent.futures
+
+        def run_in_thread():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(async_func(*args))
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            return executor.submit(run_in_thread).result(timeout=600)
+    except RuntimeError:
+        # CLI context - no running loop
+        return asyncio.run(async_func(*args))
+```
+
+**tqdm in Streamlit Threads** (🔴 Critical):
+
+`tqdm` causes `BrokenPipeError` when `sys.stderr` isn't connected (thread context). Use dummy progress bars:
+```python
+class _DummyProgressBar:
+    def __init__(self, *args, **kwargs): pass
+    def update(self, n=1): pass
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+
+# Auto-detect context
+if not sys.stderr.isatty():
+    progress = _DummyProgressBar()
+else:
+    progress = tqdm(...)
+```
+
+**Long-Running Operations UI**: Use `st.sidebar.status()` instead of custom progress callbacks (thread-safe):
+```python
+with st.sidebar.status("Processing...", expanded=True) as status:
+    result = long_operation()  # Runs in thread
+    status.update(label="Complete!", state="complete")
+```
+
 ## Test Status
 
-306 passed, 26 skipped, 0 failures. Run fast tests before commits.
+328 passed, 26 skipped, 0 failures. Run fast tests before commits.

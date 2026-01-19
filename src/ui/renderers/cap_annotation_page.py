@@ -5,18 +5,20 @@ This module provides a Streamlit interface for researchers to annotate
 bills according to the Democratic Erosion codebook.
 
 Features:
-- Password-protected access
+- Multi-user authentication with role-based access
 - Bill queue showing uncoded bills
 - Annotation form with CAP code selection
 - Direction coding (+1/-1/0)
 - Progress dashboard
 - Export functionality
+- Admin panel for user management (admin role only)
 
 This is the main orchestrator that coordinates the modular components:
-- CAPAuthHandler: Authentication logic
+- CAPAuthHandler: Authentication logic (multi-user)
 - CAPStatsRenderer: Statistics dashboard
 - CAPFormRenderer: Annotation forms
 - CAPCodedBillsRenderer: View/edit existing annotations
+- CAPAdminRenderer: Admin panel for user management
 """
 
 import logging
@@ -31,6 +33,7 @@ from ui.renderers.cap import (
     CAPStatsRenderer,
     CAPFormRenderer,
     CAPCodedBillsRenderer,
+    CAPAdminRenderer,
 )
 
 
@@ -42,11 +45,13 @@ class CAPAnnotationPageRenderer:
         self.db_path = db_path
         self.logger = logger_obj or logging.getLogger(__name__)
         self._service = None
+        self._auth_handler = None
 
         # Initialize component renderers (lazy)
         self._stats_renderer = None
         self._form_renderer = None
         self._coded_bills_renderer = None
+        self._admin_renderer = None
 
     @property
     def service(self):
@@ -54,6 +59,13 @@ class CAPAnnotationPageRenderer:
         if self._service is None:
             self._service = get_cap_service(self.db_path, self.logger)
         return self._service
+
+    @property
+    def auth_handler(self) -> CAPAuthHandler:
+        """Get or create the auth handler."""
+        if self._auth_handler is None:
+            self._auth_handler = CAPAuthHandler(self.db_path, self.logger)
+        return self._auth_handler
 
     @property
     def stats_renderer(self) -> CAPStatsRenderer:
@@ -84,6 +96,13 @@ class CAPAnnotationPageRenderer:
             )
         return self._coded_bills_renderer
 
+    @property
+    def admin_renderer(self) -> CAPAdminRenderer:
+        """Get admin renderer."""
+        if self._admin_renderer is None:
+            self._admin_renderer = CAPAdminRenderer(self.db_path, self.logger)
+        return self._admin_renderer
+
     @staticmethod
     def _clear_query_cache():
         """Clear query-related caches when annotations change."""
@@ -108,7 +127,7 @@ class CAPAnnotationPageRenderer:
         is_authenticated, researcher_name = CAPAuthHandler.check_authentication()
 
         if not is_authenticated:
-            CAPAuthHandler.render_login_form()
+            self.auth_handler.render_login_form()
             return
 
         # Show researcher info and logout
@@ -126,6 +145,7 @@ class CAPAnnotationPageRenderer:
 
     def _render_tab_navigation(self, researcher_name: str):
         """Render tab navigation and content."""
+        # Base tabs available to all users
         tab_options = [
             "📝 New Annotation",
             "🌐 Fetch from API",
@@ -133,8 +153,17 @@ class CAPAnnotationPageRenderer:
             "📊 Statistics",
         ]
 
+        # Add admin tab for admins
+        is_admin = CAPAuthHandler.is_admin()
+        if is_admin:
+            tab_options.append("👥 Admin")
+
         # Initialize tab state if not exists
         if "cap_active_tab" not in st.session_state:
+            st.session_state.cap_active_tab = tab_options[0]
+
+        # Ensure active tab is valid (in case user was admin and is no longer)
+        if st.session_state.cap_active_tab not in tab_options:
             st.session_state.cap_active_tab = tab_options[0]
 
         # Radio button for tab selection (persists in session state)
@@ -161,6 +190,8 @@ class CAPAnnotationPageRenderer:
             self.coded_bills_renderer.render_coded_bills_view()
         elif selected_tab == "📊 Statistics":
             self.stats_renderer.render_stats_dashboard()
+        elif selected_tab == "👥 Admin" and is_admin:
+            self.admin_renderer.render_admin_panel()
 
     def _render_new_annotation_tab(self, researcher_name: str):
         """Render the new annotation tab."""

@@ -125,7 +125,7 @@ def _render_data_management_section(
         key="ms_tables_to_refresh_widget",
         on_change=handle_multiselect_change,
     )
-    handle_multiselect_change()  # Initialize state correctly
+    # Note: on_change callback handles state sync; no need for manual call
 
     # Disable button while refresh is running to prevent double-clicks
     is_refreshing = st.session_state.get("data_refresh_process_running", False)

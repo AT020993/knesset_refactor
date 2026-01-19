@@ -40,51 +40,106 @@ class CAPFormRenderer:
         """Notify that an annotation was saved."""
         # Set flag to reset coded bills filters so user sees their new annotation
         st.session_state["cap_annotation_just_saved"] = True
+        # Clear category selections so next bill starts fresh
+        self._clear_category_session_state("db_")
+        self._clear_category_session_state("api_")
         if self._on_annotation_saved:
             self._on_annotation_saved()
 
+    def _clear_category_session_state(self, prefix: str = ""):
+        """Clear category session state for a given prefix."""
+        keys_to_clear = [
+            f"{prefix}cap_selected_major",
+            f"{prefix}cap_selected_minor",
+            f"{prefix}cap_selected_minor_label",
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+
     def render_bill_queue(self) -> Optional[tuple]:
         """
-        Render the uncoded bills queue.
+        Render the bills queue with search, recent annotations, and status badges.
 
         Returns:
             Tuple of (bill_id, submission_date) or (None, None)
         """
         st.subheader("📋 Bills Queue")
 
-        # Filters
-        col1, col2 = st.columns(2)
-        with col1:
-            knesset_filter = st.selectbox(
-                "Filter by Knesset",
-                options=[None] + list(range(25, 0, -1)),
-                format_func=lambda x: "All" if x is None else f"Knesset {x}",
-            )
-        with col2:
-            limit = st.selectbox(
-                "Results to Show", options=[25, 50, 100, 200], index=1
-            )
+        # Recently Annotated Panel (collapsible, at top for quick access)
+        self._render_recent_annotations()
 
-        # Get uncoded bills
-        uncoded_bills = self.service.get_uncoded_bills(
-            knesset_num=knesset_filter, limit=limit
+        # Search input (free-text search by Bill ID or Name)
+        search_term = st.text_input(
+            "🔍 Search by Bill ID or Name",
+            placeholder="Enter ID or keywords...",
+            key="cap_bill_search",
         )
 
-        if uncoded_bills.empty:
-            st.success("🎉 No bills to code! All caught up!")
+        # Filters row
+        col1, col2, col3 = st.columns([2, 2, 2])
+        with col1:
+            # Use session state for knesset filter (can be set from coverage dashboard)
+            default_knesset = st.session_state.get("cap_filter_knesset", None)
+            knesset_options = [None] + list(range(25, 0, -1))
+            knesset_index = 0 if default_knesset is None else knesset_options.index(default_knesset)
+            knesset_filter = st.selectbox(
+                "Filter by Knesset",
+                options=knesset_options,
+                index=knesset_index,
+                format_func=lambda x: "All" if x is None else f"Knesset {x}",
+                key="cap_knesset_filter",
+            )
+            # Update session state
+            st.session_state["cap_filter_knesset"] = knesset_filter
+
+        with col2:
+            limit = st.selectbox(
+                "Results to Show", options=[25, 50, 100, 200], index=1,
+                key="cap_limit_filter",
+            )
+
+        with col3:
+            # Toggle to show annotated bills too
+            show_annotated = st.checkbox(
+                "Show annotated bills too",
+                value=False,
+                key="cap_show_annotated",
+            )
+
+        # Get bills with status badges
+        bills = self.service.get_bills_with_status(
+            knesset_num=knesset_filter,
+            limit=limit,
+            search_term=search_term if search_term else None,
+            include_coded=show_annotated,
+        )
+
+        if bills.empty:
+            if search_term:
+                st.warning(f"No bills found matching '{search_term}'")
+            else:
+                st.success("🎉 No bills to code! All caught up!")
             return None, None
 
-        st.info(f"Found {len(uncoded_bills)} bills to code")
+        # Count coded vs uncoded
+        coded_count = bills["IsCoded"].sum() if "IsCoded" in bills.columns else 0
+        uncoded_count = len(bills) - coded_count
+        if show_annotated:
+            st.info(f"Found {len(bills)} bills ({uncoded_count} uncoded, {coded_count} annotated)")
+        else:
+            st.info(f"Found {len(bills)} bills to code")
 
-        # Selection
+        # Selection with status badges
         selected_idx = st.selectbox(
             "Select bill to code",
-            options=range(len(uncoded_bills)),
-            format_func=lambda i: f"{uncoded_bills.iloc[i]['BillID']} - {uncoded_bills.iloc[i]['BillName'][:80]}...",
+            options=range(len(bills)),
+            format_func=lambda i: self._format_bill_option(bills.iloc[i]),
+            key="cap_bill_select",
         )
 
         if selected_idx is not None:
-            selected_bill = uncoded_bills.iloc[selected_idx]
+            selected_bill = bills.iloc[selected_idx]
             self._render_bill_details(selected_bill)
 
             # Return bill ID and publication date
@@ -92,6 +147,38 @@ class CAPFormRenderer:
             return int(selected_bill["BillID"]), pub_date if pub_date else ""
 
         return None, None
+
+    def _render_recent_annotations(self):
+        """Render collapsible panel of recently annotated bills."""
+        recent = self.service.get_recent_annotations(limit=5)
+        if recent.empty:
+            return
+
+        with st.expander("📝 Recently Annotated (last 5)", expanded=False):
+            for _, row in recent.iterrows():
+                direction_emoji = {1: "🟢", -1: "🔴", 0: "⚪"}.get(row["Direction"], "⚪")
+                bill_name = str(row["BillName"])[:50]
+                if len(str(row["BillName"])) > 50:
+                    bill_name += "..."
+                st.markdown(
+                    f"{direction_emoji} **{row['BillID']}** - {bill_name} "
+                    f"[{row['MinorCode']}]"
+                )
+
+    def _format_bill_option(self, bill: pd.Series) -> str:
+        """Format bill option with status badge."""
+        is_coded = bill.get("IsCoded", 0)
+        bill_name = str(bill["BillName"])[:60] if bill["BillName"] else "Unknown"
+        if len(str(bill.get("BillName", ""))) > 60:
+            bill_name += "..."
+
+        if is_coded:
+            # Show ✅ with category code for annotated bills
+            minor_code = bill.get("MinorCode", "")
+            return f"✅ [{minor_code}] {bill['BillID']} - {bill_name}"
+        else:
+            # Show ⭕ for uncoded bills
+            return f"⭕ {bill['BillID']} - {bill_name}"
 
     def _render_bill_details(self, bill: pd.Series):
         """Render bill details section."""
@@ -137,14 +224,15 @@ class CAPFormRenderer:
             st.error("Error loading taxonomy")
             return False
 
+        # Category selections OUTSIDE the form for proper filtering behavior
+        # When major category changes, minor options update immediately
+        selected_major, selected_minor = self._render_category_selectors_outside_form(prefix="db_")
+
+        # Show description for selected category (also outside form)
+        if selected_minor:
+            self._show_category_description(selected_minor)
+
         with st.form("annotation_form"):
-            # Category selections
-            selected_major, selected_minor = self._render_category_selectors()
-
-            # Show description for selected category
-            if selected_minor:
-                self._show_category_description(selected_minor)
-
             # Direction selection
             direction = self._render_direction_selector()
 
@@ -187,8 +275,116 @@ class CAPFormRenderer:
 
         return False
 
+    def _init_category_session_state(self, prefix: str = ""):
+        """Initialize session state for category selectors."""
+        major_key = f"{prefix}cap_selected_major"
+        minor_key = f"{prefix}cap_selected_minor"
+        minor_label_key = f"{prefix}cap_selected_minor_label"
+
+        if major_key not in st.session_state:
+            st.session_state[major_key] = None
+        if minor_key not in st.session_state:
+            st.session_state[minor_key] = None
+        if minor_label_key not in st.session_state:
+            st.session_state[minor_label_key] = None
+
+    def _on_major_category_change(self, prefix: str = ""):
+        """Callback when major category changes - clears minor selection."""
+        minor_key = f"{prefix}cap_selected_minor"
+        minor_label_key = f"{prefix}cap_selected_minor_label"
+        st.session_state[minor_key] = None
+        st.session_state[minor_label_key] = None
+
+    def _render_category_selectors_outside_form(self, prefix: str = "") -> tuple:
+        """
+        Render major and minor category selectors OUTSIDE the form.
+
+        This allows proper filtering of minor categories when major changes,
+        using on_change callbacks that trigger immediate reruns.
+
+        Returns:
+            Tuple of (selected_major_code, selected_minor_code)
+        """
+        self._init_category_session_state(prefix)
+
+        major_key = f"{prefix}cap_selected_major"
+        minor_key = f"{prefix}cap_selected_minor"
+        minor_label_key = f"{prefix}cap_selected_minor_label"
+
+        # Major category selection
+        major_categories = self.service.get_major_categories()
+        major_options = {
+            f"{cat['MajorCode']} - {cat['MajorTopic_HE']} ({cat['MajorTopic_EN']})": cat[
+                "MajorCode"
+            ]
+            for cat in major_categories
+        }
+        major_labels = list(major_options.keys())
+
+        # Find current index based on session state
+        current_major = st.session_state[major_key]
+        current_major_idx = None
+        if current_major is not None:
+            for i, label in enumerate(major_labels):
+                if major_options[label] == current_major:
+                    current_major_idx = i
+                    break
+
+        selected_major_label = st.selectbox(
+            "Major Category *",
+            options=major_labels,
+            index=current_major_idx,
+            placeholder="Select a major category...",
+            key=f"{prefix}major_selector",
+            on_change=self._on_major_category_change,
+            kwargs={"prefix": prefix},
+        )
+
+        # Update session state with selected major
+        selected_major = major_options.get(selected_major_label) if selected_major_label else None
+        st.session_state[major_key] = selected_major
+
+        # Minor category selection (filtered by selected major)
+        minor_categories = self.service.get_minor_categories(selected_major)
+        minor_options = {
+            f"{cat['MinorCode']} - {cat['MinorTopic_HE']} ({cat['MinorTopic_EN']})": cat[
+                "MinorCode"
+            ]
+            for cat in minor_categories
+        }
+        minor_labels = list(minor_options.keys())
+
+        # Find current index based on session state
+        current_minor_label = st.session_state[minor_label_key]
+        current_minor_idx = None
+        if current_minor_label is not None and current_minor_label in minor_labels:
+            current_minor_idx = minor_labels.index(current_minor_label)
+
+        selected_minor_label = st.selectbox(
+            "Minor Category *",
+            options=minor_labels,
+            index=current_minor_idx,
+            placeholder="Select a minor category...",
+            key=f"{prefix}minor_selector",
+        )
+
+        # Update session state with selected minor
+        selected_minor = minor_options.get(selected_minor_label) if selected_minor_label else None
+        st.session_state[minor_key] = selected_minor
+        st.session_state[minor_label_key] = selected_minor_label
+
+        return selected_major, selected_minor
+
     def _render_category_selectors(self, prefix: str = "") -> tuple:
-        """Render major and minor category selectors."""
+        """
+        Render major and minor category selectors.
+
+        DEPRECATED: Use _render_category_selectors_outside_form() instead
+        for proper filtering behavior.
+
+        This method is kept for backward compatibility but may not filter
+        correctly inside st.form() due to Streamlit's form behavior.
+        """
         # Major category selection
         major_categories = self.service.get_major_categories()
         major_options = {
@@ -309,10 +505,14 @@ class CAPFormRenderer:
             st.error("Error loading taxonomy")
             return False
 
-        with st.form("api_annotation_form"):
-            # Category selections with API prefix
-            selected_major, selected_minor = self._render_category_selectors(prefix="api_")
+        # Category selections OUTSIDE the form for proper filtering behavior
+        selected_major, selected_minor = self._render_category_selectors_outside_form(prefix="api_")
 
+        # Show description for selected category (also outside form)
+        if selected_minor:
+            self._show_category_description(selected_minor)
+
+        with st.form("api_annotation_form"):
             # Direction
             direction = self._render_direction_selector(key="api_direction")
 

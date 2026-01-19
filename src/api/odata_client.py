@@ -1,6 +1,8 @@
 """OData API client for Knesset data."""
 
 import asyncio
+import sys
+from contextlib import contextmanager
 from math import ceil
 from typing import List, Optional, Callable, Dict, Any
 import logging
@@ -16,12 +18,56 @@ from .error_handling import categorize_error, ErrorCategory
 from .circuit_breaker import circuit_breaker_manager
 
 
+class _DummyProgressBar:
+    """Dummy progress bar that does nothing (for use when tqdm is disabled)."""
+
+    def __init__(self, *args, **kwargs):
+        self.total = kwargs.get('total', 0)
+        self.n = kwargs.get('initial', 0)
+
+    def update(self, n=1):
+        self.n += n
+
+    def set_postfix_str(self, s):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
 class ODataClient:
     """Client for fetching data from Knesset OData API."""
-    
-    def __init__(self, logger_obj: Optional[logging.Logger] = None):
+
+    def __init__(self, logger_obj: Optional[logging.Logger] = None, disable_progress: bool = False):
         self.logger = logger_obj or logging.getLogger(__name__)
         self.config = APIConfig()
+        self._disable_progress = disable_progress or not self._is_tty_available()
+
+    def _is_tty_available(self) -> bool:
+        """Check if stderr is available for tqdm output."""
+        try:
+            # Check if stderr is a TTY (terminal)
+            if hasattr(sys.stderr, 'isatty') and sys.stderr.isatty():
+                return True
+            # Also try flushing to detect broken pipes early
+            if hasattr(sys.stderr, 'flush'):
+                sys.stderr.flush()
+            return True
+        except (BrokenPipeError, OSError, AttributeError):
+            return False
+
+    def _get_progress_bar(self, desc: str, total: Optional[int] = None, initial: int = 0) -> Any:
+        """Get a progress bar (real or dummy based on context)."""
+        if self._disable_progress:
+            return _DummyProgressBar(total=total, desc=desc, initial=initial)
+        try:
+            return tqdm(total=total, desc=desc, unit="rows", leave=False, initial=initial)
+        except (BrokenPipeError, OSError):
+            self.logger.debug("tqdm unavailable, using dummy progress bar")
+            return _DummyProgressBar(total=total, desc=desc, initial=initial)
     
     def _backoff_handler(self, details: Dict[str, Any]) -> None:
         """Handler for logging backoff attempts with error categorization."""
@@ -99,7 +145,7 @@ class ODataClient:
         
         dfs: List[pd.DataFrame] = []
         
-        with tqdm(desc=f"Fetching {table} (cursor)", unit=" rows", initial=total_rows_fetched, leave=False) as pbar:
+        with self._get_progress_bar(desc=f"Fetching {table} (cursor)", initial=total_rows_fetched) as pbar:
             while True:
                 url = (
                     f"{self.config.BASE_URL}/{entity}"
@@ -147,8 +193,8 @@ class ODataClient:
             return pd.DataFrame()
         
         num_pages = ceil(total_records / self.config.PAGE_SIZE)
-        
-        with tqdm(total=total_records, desc=f"Fetching {table} (skip)", unit="rows", leave=False) as pbar:
+
+        with self._get_progress_bar(desc=f"Fetching {table} (skip)", total=total_records) as pbar:
             semaphore = asyncio.Semaphore(self.config.CONCURRENCY_LIMIT)
             
             async def fetch_page(page_index: int):
@@ -194,7 +240,7 @@ class ODataClient:
         dfs: List[pd.DataFrame] = []
         page_index = 0
         
-        with tqdm(desc=f"Fetching {table_name} (sequential)", unit="rows", leave=False) as pbar:
+        with self._get_progress_bar(desc=f"Fetching {table_name} (sequential)") as pbar:
             while True:
                 skip_val = page_index * self.config.PAGE_SIZE
                 url = f"{self.config.BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={self.config.PAGE_SIZE}"

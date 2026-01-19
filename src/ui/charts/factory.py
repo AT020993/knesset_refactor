@@ -116,13 +116,13 @@ class ChartFactory:
             "distribution": [
                 "query_types_distribution",
                 "agenda_classifications_pie",
-                "query_status_distribution",
+                # "query_status_distribution",  # TODO: Not yet implemented
                 "agenda_status_distribution",
                 "bill_subtype_distribution",
             ],
             "comparison": [
                 "queries_per_faction",
-                "queries_by_coalition_status",
+                # "queries_by_coalition_status",  # TODO: Not yet implemented
                 "queries_by_ministry",
                 "query_status_by_faction",
                 "agendas_per_faction",

@@ -120,7 +120,7 @@ class TestHandleDataRefreshButtonClick:
 
         _handle_data_refresh_button_click(mock_db_path, mock_logger, mock_format_exc_func)
 
-        mock_streamlit.sidebar.warning.assert_called_once_with("No tables selected for refresh.")
+        mock_streamlit.sidebar.warning.assert_called_once_with("⚠️ No tables selected. Please select tables from the dropdown above.")
 
 
 class TestHandleRunQueryButtonClick:

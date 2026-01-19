@@ -55,6 +55,11 @@ pytest-asyncio>=0.21.0            # Async test support
 # mypy>=1.0.0                     # Type checking
 
 # -----------------------------------------------------------------------------
+# SECURITY & AUTHENTICATION
+# -----------------------------------------------------------------------------
+bcrypt>=4.0.0                     # Password hashing for user authentication
+
+# -----------------------------------------------------------------------------
 # SECURITY & MONITORING (Optional - for production)
 # -----------------------------------------------------------------------------
 # safety>=2.3.0                   # Dependency vulnerability scanning

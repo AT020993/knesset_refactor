@@ -133,9 +133,72 @@ class DataRefreshService:
         tables: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None
     ) -> bool:
-        """Synchronous wrapper for refresh_tables."""
+        """Synchronous wrapper for refresh_tables.
+
+        Handles both CLI context (no event loop) and Streamlit context
+        (existing event loop running).
+
+        Note: In Streamlit context (threaded execution), progress callbacks
+        may not work reliably due to thread safety issues with Streamlit components.
+        """
         try:
-            return asyncio.run(self.refresh_tables(tables, progress_callback))
+            # Check if there's already a running event loop (e.g., Streamlit)
+            try:
+                loop = asyncio.get_running_loop()
+                # We're inside an existing event loop (Streamlit context)
+                self.logger.info("Detected existing event loop (Streamlit context)")
+
+                # Use nest_asyncio if available, otherwise create new loop in thread
+                try:
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    self.logger.info("Using nest_asyncio for nested event loop")
+                    return asyncio.run(self.refresh_tables(tables, progress_callback))
+                except ImportError:
+                    # Run in a separate thread with its own event loop
+                    # NOTE: Progress callbacks are disabled in thread context because
+                    # Streamlit components are not thread-safe
+                    import concurrent.futures
+                    self.logger.info("Running async refresh in separate thread (nest_asyncio not available)")
+                    self.logger.info("Progress callbacks disabled in threaded mode for thread safety")
+
+                    # Capture self for thread
+                    service = self
+                    tables_to_refresh = tables
+
+                    # Thread-safe logging callback (just logs, doesn't update UI)
+                    def logging_callback(table_name: str, row_count: int):
+                        service.logger.info(f"Downloaded {table_name}: {row_count:,} rows")
+
+                    def run_in_thread():
+                        service.logger.info("Thread started, creating new event loop")
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            service.logger.info(f"Running refresh_tables for {len(tables_to_refresh or [])} tables")
+                            result = new_loop.run_until_complete(
+                                service.refresh_tables(tables_to_refresh, logging_callback)
+                            )
+                            service.logger.info(f"Thread completed with result: {result}")
+                            return result
+                        except Exception as thread_error:
+                            service.logger.error(f"Error in thread: {thread_error}", exc_info=True)
+                            return False
+                        finally:
+                            new_loop.close()
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        self.logger.info("Submitting task to thread pool")
+                        future = executor.submit(run_in_thread)
+                        result = future.result(timeout=600)  # 10 minute timeout
+                        self.logger.info(f"Thread pool returned: {result}")
+                        return result
+
+            except RuntimeError:
+                # No running loop - we're in CLI context, use asyncio.run()
+                self.logger.info("No existing event loop (CLI context)")
+                return asyncio.run(self.refresh_tables(tables, progress_callback))
+
         except Exception as e:
             self.logger.error(f"Error during synchronous refresh: {e}", exc_info=True)
             return False

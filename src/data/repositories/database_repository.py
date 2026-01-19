@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 import logging
 import pandas as pd
-import duckdb
 
 from config.settings import Settings
 from backend.connection_manager import get_db_connection, safe_execute_query
@@ -25,9 +24,9 @@ class DatabaseRepository:
             return True
         
         try:
-            with duckdb.connect(self.db_path.as_posix()) as con:
+            with get_db_connection(self.db_path, read_only=False, logger_obj=self.logger) as con:
                 con.execute(f'CREATE OR REPLACE TABLE "{table_name}" AS SELECT * FROM df')
-            
+
             self.logger.info(f"Successfully saved {len(df):,} rows for table '{table_name}'")
             return True
             
@@ -119,7 +118,7 @@ class DatabaseRepository:
     def _create_empty_faction_status_table(self) -> bool:
         """Create an empty faction status table."""
         try:
-            with duckdb.connect(self.db_path.as_posix()) as con:
+            with get_db_connection(self.db_path, read_only=False, logger_obj=self.logger) as con:
                 con.execute("""
                     CREATE TABLE IF NOT EXISTS "UserFactionCoalitionStatus" (
                         KnessetNum INTEGER,

@@ -70,3 +70,6 @@ setup_for_researcher.py
 
 # Duplicate/Generated files
 faction_coalition_mapping.csv
+
+# Accidental files (e.g., from pip install typos)
+=*

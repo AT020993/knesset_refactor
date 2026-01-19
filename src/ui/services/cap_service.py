@@ -87,10 +87,11 @@ class CAPAnnotationService:
     # --- CRUD Operations (delegated to CAPAnnotationRepository) ---
 
     def get_uncoded_bills(
-        self, knesset_num: Optional[int] = None, limit: int = 100
+        self, knesset_num: Optional[int] = None, limit: int = 100,
+        search_term: Optional[str] = None
     ) -> pd.DataFrame:
         """Get bills that haven't been coded yet."""
-        return self._repository.get_uncoded_bills(knesset_num, limit)
+        return self._repository.get_uncoded_bills(knesset_num, limit, search_term)
 
     def get_coded_bills(
         self,
@@ -100,6 +101,22 @@ class CAPAnnotationService:
     ) -> pd.DataFrame:
         """Get bills that have been coded."""
         return self._repository.get_coded_bills(knesset_num, cap_code, limit)
+
+    def get_recent_annotations(self, limit: int = 5) -> pd.DataFrame:
+        """Get most recently annotated bills."""
+        return self._repository.get_recent_annotations(limit)
+
+    def get_bills_with_status(
+        self,
+        knesset_num: Optional[int] = None,
+        limit: int = 100,
+        search_term: Optional[str] = None,
+        include_coded: bool = False
+    ) -> pd.DataFrame:
+        """Get bills with their annotation status (coded/uncoded)."""
+        return self._repository.get_bills_with_status(
+            knesset_num, limit, search_term, include_coded
+        )
 
     def get_annotation_by_bill_id(self, bill_id: int) -> Optional[Dict[str, Any]]:
         """Get the full annotation details for a specific bill."""

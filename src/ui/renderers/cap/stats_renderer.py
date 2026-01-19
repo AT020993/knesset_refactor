@@ -6,8 +6,10 @@ Renders annotation statistics and progress dashboard.
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 
 from ui.services.cap_service import CAPAnnotationService
+from config.charts import ChartConfig
 
 
 class CAPStatsRenderer:
@@ -26,8 +28,20 @@ class CAPStatsRenderer:
             return
 
         self._render_summary_metrics(stats)
-        self._render_direction_chart(stats)
-        self._render_category_chart(stats)
+
+        # Render charts side by side: Major Category (left) | Direction (right)
+        # Using spacer columns to make charts narrower and centered
+        spacer_left, col_left, col_right, spacer_right = st.columns([0.5, 2, 2, 0.5])
+
+        with col_left:
+            self._render_category_chart(stats)
+
+        with col_right:
+            self._render_direction_chart(stats)
+
+        # Coverage breakdown by Knesset
+        st.markdown("---")
+        self._render_coverage_breakdown()
 
     def _render_summary_metrics(self, stats: dict):
         """Render summary metric cards."""
@@ -46,24 +60,104 @@ class CAPStatsRenderer:
             st.metric("Coding Progress", f"{pct:.1f}%")
 
     def _render_direction_chart(self, stats: dict):
-        """Render direction distribution chart."""
+        """Render direction distribution chart with semantic colors."""
         if stats.get("by_direction"):
             st.subheader("By Direction")
             direction_data = pd.DataFrame(stats["by_direction"])
             if not direction_data.empty:
-                direction_data["label"] = direction_data["Direction"].map(
-                    {
-                        1: "הרחבה/חיזוק (+1)",
-                        -1: "צמצום/פגיעה (-1)",
-                        0: "אחר (0)",
-                    }
+                # Map direction values to labels and semantic colors
+                direction_labels = {
+                    1: "הרחבה/חיזוק (+1)",
+                    -1: "צמצום/פגיעה (-1)",
+                    0: "אחר (0)",
+                }
+                # Semantic colors: green=strengthens, red=weakens, gray=neutral
+                direction_colors = {
+                    1: "#00CC96",   # Green - strengthens democracy
+                    -1: "#EF553B",  # Red - weakens democracy
+                    0: "#7f7f7f",   # Gray - neutral/other
+                }
+
+                direction_data["label"] = direction_data["Direction"].map(direction_labels)
+                direction_data["color"] = direction_data["Direction"].map(direction_colors)
+
+                # Sort by direction value for consistent order: +1, 0, -1
+                direction_data = direction_data.sort_values("Direction", ascending=False)
+
+                fig = go.Figure(go.Bar(
+                    x=direction_data["count"],
+                    y=direction_data["label"],
+                    orientation="h",
+                    marker_color=direction_data["color"],
+                    text=direction_data["count"],
+                    textposition="auto",
+                ))
+
+                fig.update_layout(
+                    xaxis_title="Count",
+                    yaxis_title="",
+                    showlegend=False,
+                    height=250,
+                    margin=dict(l=20, r=20, t=20, b=40),
                 )
-                st.bar_chart(direction_data.set_index("label")["count"])
+
+                st.plotly_chart(fig, use_container_width=True)
 
     def _render_category_chart(self, stats: dict):
-        """Render category distribution chart."""
+        """Render category distribution chart with distinct colors."""
         if stats.get("by_major_category"):
             st.subheader("By Major Category")
             cat_data = pd.DataFrame(stats["by_major_category"])
             if not cat_data.empty:
-                st.bar_chart(cat_data.set_index("MajorTopic_HE")["count"])
+                # Sort by count descending for better readability
+                cat_data = cat_data.sort_values("count", ascending=True)
+
+                # Assign distinct colors from the Knesset color sequence
+                color_sequence = ChartConfig.KNESSET_COLOR_SEQUENCE
+                num_categories = len(cat_data)
+                colors = [color_sequence[i % len(color_sequence)] for i in range(num_categories)]
+
+                fig = go.Figure(go.Bar(
+                    x=cat_data["count"],
+                    y=cat_data["MajorTopic_HE"],
+                    orientation="h",
+                    marker_color=colors,
+                    text=cat_data["count"],
+                    textposition="auto",
+                ))
+
+                fig.update_layout(
+                    xaxis_title="Count",
+                    yaxis_title="",
+                    showlegend=False,
+                    height=max(250, num_categories * 35),  # Dynamic height based on categories
+                    margin=dict(l=20, r=20, t=20, b=40),
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+    def _render_coverage_breakdown(self):
+        """Render per-Knesset coverage with progress bars."""
+        coverage = self.service.get_coverage_stats()
+        if not coverage or not coverage.get("by_knesset"):
+            return
+
+        st.subheader("📊 Coverage by Knesset")
+
+        for row in coverage["by_knesset"]:
+            knesset = row["KnessetNum"]
+            total = row["total_bills"]
+            coded = row["coded_bills"]
+            pct = row["coverage_pct"] or 0
+
+            col1, col2, col3 = st.columns([1, 4, 1])
+            with col1:
+                st.markdown(f"**K{knesset}**")
+            with col2:
+                # Streamlit progress bar (0.0 to 1.0)
+                st.progress(pct / 100.0, text=f"{coded}/{total} ({pct:.1f}%)")
+            with col3:
+                if st.button(f"View", key=f"coverage_k{knesset}"):
+                    # Set filter to this Knesset and navigate to annotation tab
+                    st.session_state["cap_filter_knesset"] = knesset
+                    st.session_state["cap_active_tab"] = "📝 New Annotation"

@@ -3,16 +3,6 @@
 from enum import Enum
 
 
-class ErrorCategory(Enum):
-    """Categories for different types of API errors."""
-    NETWORK = "network"
-    SERVER = "server"
-    CLIENT = "client"
-    TIMEOUT = "timeout"
-    DATA = "data"
-    UNKNOWN = "unknown"
-
-
 class CircuitBreakerState(Enum):
     """States for the circuit breaker pattern."""
     CLOSED = "closed"

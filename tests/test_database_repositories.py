@@ -41,11 +41,13 @@ class TestDatabaseRepository:
             'KnessetNum': [25, 25, 24]
         })
 
-        with patch('duckdb.connect') as mock_connect:
-            mock_conn = Mock()
-            mock_connect.return_value.__enter__ = Mock(return_value=mock_conn)
-            mock_connect.return_value.__exit__ = Mock(return_value=False)
+        mock_conn = Mock()
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             result = self.repo.store_dataframe(test_df, 'test_persons')
 
             assert result is True
@@ -74,11 +76,13 @@ class TestDatabaseRepository:
             'Description': ["Quote's test", 'Another "quoted" value']
         })
 
-        with patch('duckdb.connect') as mock_connect:
-            mock_conn = Mock()
-            mock_connect.return_value.__enter__ = Mock(return_value=mock_conn)
-            mock_connect.return_value.__exit__ = Mock(return_value=False)
+        mock_conn = Mock()
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             result = self.repo.store_dataframe(test_df, 'test_special_chars')
 
             assert result is True
@@ -88,8 +92,12 @@ class TestDatabaseRepository:
         """Test handling of database connection errors."""
         test_df = pd.DataFrame({'id': [1], 'name': ['test']})
 
-        with patch('duckdb.connect', side_effect=Exception("Connection failed")):
+        @contextmanager
+        def mock_get_db_connection_error(*args, **kwargs):
+            raise Exception("Connection failed")
+            yield  # Never reached, but needed for generator
 
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection_error):
             result = self.repo.store_dataframe(test_df, 'test_table')
 
             assert result is False
@@ -357,11 +365,13 @@ class TestRepositoryEdgeCases:
             'LastName': [None, 'Jones', 'Brown']
         })
 
-        with patch('duckdb.connect') as mock_connect:
-            mock_conn = Mock()
-            mock_connect.return_value.__enter__ = Mock(return_value=mock_conn)
-            mock_connect.return_value.__exit__ = Mock(return_value=False)
+        mock_conn = Mock()
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             result = self.repo.store_dataframe(test_df, 'test_nulls')
 
             assert result is True
@@ -376,11 +386,13 @@ class TestRepositoryEdgeCases:
             'Value': [i * 0.1 for i in range(1, 10001)]
         })
 
-        with patch('duckdb.connect') as mock_connect:
-            mock_conn = Mock()
-            mock_connect.return_value.__enter__ = Mock(return_value=mock_conn)
-            mock_connect.return_value.__exit__ = Mock(return_value=False)
+        mock_conn = Mock()
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             result = self.repo.store_dataframe(large_df, 'large_table')
 
             assert result is True
@@ -392,12 +404,16 @@ class TestRepositoryEdgeCases:
         # In practice, DuckDB handles concurrency at the connection level
 
         test_df = pd.DataFrame({'id': [1], 'name': ['test']})
+        call_count = 0
 
-        with patch('duckdb.connect') as mock_connect:
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
             mock_conn = Mock()
-            mock_connect.return_value.__enter__ = Mock(return_value=mock_conn)
-            mock_connect.return_value.__exit__ = Mock(return_value=False)
+            yield mock_conn
 
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             # Simulate multiple concurrent stores
             results = []
             for i in range(5):
@@ -406,8 +422,8 @@ class TestRepositoryEdgeCases:
 
             # All operations should succeed
             assert all(results)
-            # Should have called connect multiple times (one per operation)
-            assert mock_connect.call_count == 5
+            # Should have called get_db_connection multiple times (one per operation)
+            assert call_count == 5
 
 
 class TestDatabaseRepositoryMethods:

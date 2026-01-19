@@ -85,6 +85,21 @@ class CAPTaxonomyService:
                     )
                 """)
 
+                # Create researchers table for multi-user authentication
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS UserResearchers (
+                        ResearcherID INTEGER PRIMARY KEY,
+                        Username VARCHAR NOT NULL UNIQUE,
+                        DisplayName VARCHAR NOT NULL,
+                        PasswordHash VARCHAR NOT NULL,
+                        Role VARCHAR NOT NULL DEFAULT 'researcher',
+                        IsActive BOOLEAN NOT NULL DEFAULT TRUE,
+                        CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        LastLoginAt TIMESTAMP,
+                        CreatedBy VARCHAR
+                    )
+                """)
+
                 self.logger.info("CAP annotation tables created/verified successfully")
                 return True
 

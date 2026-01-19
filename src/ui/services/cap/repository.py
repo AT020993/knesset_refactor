@@ -28,7 +28,8 @@ class CAPAnnotationRepository:
         self.logger = logger_obj or logging.getLogger(__name__)
 
     def get_uncoded_bills(
-        self, knesset_num: Optional[int] = None, limit: int = 100
+        self, knesset_num: Optional[int] = None, limit: int = 100,
+        search_term: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get bills that haven't been coded yet.
@@ -36,6 +37,7 @@ class CAPAnnotationRepository:
         Args:
             knesset_num: Filter by Knesset number (optional)
             limit: Maximum number of bills to return
+            search_term: Search by Bill ID or name (optional)
 
         Returns:
             DataFrame with uncoded bills
@@ -63,6 +65,13 @@ class CAPAnnotationRepository:
             if knesset_num is not None:
                 query += " AND B.KnessetNum = ?"
                 params.append(knesset_num)
+
+            # Search by Bill ID or Name
+            if search_term:
+                search_term = search_term.strip()
+                query += " AND (CAST(B.BillID AS VARCHAR) LIKE ? OR B.Name LIKE ?)"
+                params.append(f"%{search_term}%")
+                params.append(f"%{search_term}%")
 
             query += f" ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT {limit}"
 
@@ -148,6 +157,116 @@ class CAPAnnotationRepository:
 
         except Exception as e:
             self.logger.error(f"Error getting coded bills: {e}", exc_info=True)
+            return pd.DataFrame()
+
+    def get_recent_annotations(self, limit: int = 5) -> pd.DataFrame:
+        """
+        Get most recently annotated bills.
+
+        Args:
+            limit: Maximum number of recent annotations to return
+
+        Returns:
+            DataFrame with recent annotations
+        """
+        try:
+            query = """
+                SELECT
+                    CAP.BillID,
+                    COALESCE(B.Name, 'Bill #' || CAST(CAP.BillID AS VARCHAR)) AS BillName,
+                    T.MinorCode,
+                    T.MinorTopic_HE,
+                    CAP.Direction,
+                    strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M') AS AssignedDate
+                FROM UserBillCAP CAP
+                LEFT JOIN KNS_Bill B ON CAP.BillID = B.BillID
+                JOIN UserCAPTaxonomy T ON CAP.CAPMinorCode = T.MinorCode
+                ORDER BY CAP.AssignedDate DESC
+                LIMIT ?
+            """
+
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as conn:
+                result = conn.execute(query, [limit]).fetchdf()
+                return result
+
+        except Exception as e:
+            self.logger.error(f"Error getting recent annotations: {e}", exc_info=True)
+            return pd.DataFrame()
+
+    def get_bills_with_status(
+        self,
+        knesset_num: Optional[int] = None,
+        limit: int = 100,
+        search_term: Optional[str] = None,
+        include_coded: bool = False
+    ) -> pd.DataFrame:
+        """
+        Get bills with their annotation status (coded/uncoded).
+
+        Args:
+            knesset_num: Filter by Knesset number (optional)
+            limit: Maximum number of bills to return
+            search_term: Search by Bill ID or name (optional)
+            include_coded: Whether to include already coded bills
+
+        Returns:
+            DataFrame with bills and their annotation status
+        """
+        try:
+            query = """
+                SELECT
+                    B.BillID,
+                    B.KnessetNum,
+                    B.Name AS BillName,
+                    B.SubTypeDesc AS BillType,
+                    strftime(CAST(B.PublicationDate AS TIMESTAMP), '%Y-%m-%d') AS PublicationDate,
+                    S."Desc" AS StatusDesc,
+                    CASE WHEN CAP.BillID IS NOT NULL THEN 1 ELSE 0 END AS IsCoded,
+                    CAP.CAPMinorCode,
+                    T.MinorCode,
+                    T.MinorTopic_HE,
+                    CAP.Direction,
+                    'https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid='
+                        || CAST(B.BillID AS VARCHAR) AS BillURL
+                FROM KNS_Bill B
+                LEFT JOIN KNS_Status S ON B.StatusID = S.StatusID
+                LEFT JOIN UserBillCAP CAP ON B.BillID = CAP.BillID
+                LEFT JOIN UserCAPTaxonomy T ON CAP.CAPMinorCode = T.MinorCode
+                WHERE 1=1
+            """
+
+            params = []
+
+            # If not including coded, only show uncoded
+            if not include_coded:
+                query += " AND CAP.BillID IS NULL"
+
+            if knesset_num is not None:
+                query += " AND B.KnessetNum = ?"
+                params.append(knesset_num)
+
+            # Search by Bill ID or Name
+            if search_term:
+                search_term = search_term.strip()
+                query += " AND (CAST(B.BillID AS VARCHAR) LIKE ? OR B.Name LIKE ?)"
+                params.append(f"%{search_term}%")
+                params.append(f"%{search_term}%")
+
+            query += f" ORDER BY B.KnessetNum DESC, B.BillID DESC LIMIT {limit}"
+
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as conn:
+                if params:
+                    result = conn.execute(query, params).fetchdf()
+                else:
+                    result = conn.execute(query).fetchdf()
+                return result
+
+        except Exception as e:
+            self.logger.error(f"Error getting bills with status: {e}", exc_info=True)
             return pd.DataFrame()
 
     def get_annotation_by_bill_id(self, bill_id: int) -> Optional[Dict[str, Any]]:

@@ -1,17 +1,41 @@
 """
 CAP Authentication Handler
 
-Handles authentication logic for the CAP annotation system.
+Handles multi-user authentication logic for the CAP annotation system.
+Supports role-based access control with 'admin' and 'researcher' roles.
 """
 
 from datetime import datetime
-from typing import Tuple
+from pathlib import Path
+from typing import Tuple, Optional
+import logging
 
 import streamlit as st
 
+from ui.services.cap.user_service import CAPUserService, get_user_service
+
 
 class CAPAuthHandler:
-    """Handles CAP annotation authentication."""
+    """Handles CAP annotation authentication with multi-user support."""
+
+    def __init__(self, db_path: Optional[Path] = None, logger_obj: Optional[logging.Logger] = None):
+        """
+        Initialize the auth handler.
+
+        Args:
+            db_path: Path to database (uses session state default if not provided)
+            logger_obj: Optional logger instance
+        """
+        self._db_path = db_path
+        self._logger = logger_obj or logging.getLogger(__name__)
+        self._user_service: Optional[CAPUserService] = None
+
+    @property
+    def user_service(self) -> Optional[CAPUserService]:
+        """Get or create the user service."""
+        if self._user_service is None and self._db_path is not None:
+            self._user_service = get_user_service(self._db_path, self._logger)
+        return self._user_service
 
     @staticmethod
     def check_authentication() -> Tuple[bool, str]:
@@ -23,7 +47,7 @@ class CAPAuthHandler:
         """
         try:
             # Check if CAP annotation is enabled
-            if not st.secrets["cap_annotation"]["enabled"]:
+            if not st.secrets.get("cap_annotation", {}).get("enabled", False):
                 return False, ""
 
             # Check session state for authentication
@@ -37,39 +61,85 @@ class CAPAuthHandler:
             return False, ""
 
     @staticmethod
-    def render_login_form() -> bool:
+    def get_current_user_role() -> str:
+        """Get the current user's role from session state."""
+        return st.session_state.get("cap_user_role", "researcher")
+
+    @staticmethod
+    def get_current_user_id() -> Optional[int]:
+        """Get the current user's ID from session state."""
+        return st.session_state.get("cap_user_id")
+
+    @staticmethod
+    def is_admin() -> bool:
+        """Check if current user is an admin."""
+        return st.session_state.get("cap_user_role") == CAPUserService.ROLE_ADMIN
+
+    def render_login_form(self) -> bool:
         """
-        Render the login form.
+        Render the multi-user login form with researcher dropdown.
 
         Returns:
             True if login successful, False otherwise
         """
         st.subheader("🔐 Login")
 
+        # Ensure user service is available
+        if self.user_service is None:
+            st.error("Authentication service not available")
+            return False
+
+        # Bootstrap admin if needed (first run)
+        self.user_service.bootstrap_admin_from_secrets()
+
+        # Get active researchers for dropdown
+        researchers = self.user_service.get_active_researchers()
+
+        if not researchers:
+            st.warning("""
+            **No researchers configured**
+
+            The system needs at least one user account.
+            Please contact your administrator or check the bootstrap configuration.
+            """)
+            return False
+
         with st.form("cap_login_form"):
+            # Researcher selection dropdown
+            researcher_options = {r["display_name"]: r["username"] for r in researchers}
+            selected_display = st.selectbox(
+                "Select Researcher",
+                options=list(researcher_options.keys()),
+                help="Select your researcher account",
+            )
+
+            # Password input
             password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login")
+
+            submitted = st.form_submit_button("Login", use_container_width=True)
 
             if submitted:
-                try:
-                    correct_password = st.secrets["cap_annotation"]["password"]
-                    researcher_name = st.secrets["cap_annotation"].get(
-                        "researcher_name", "Researcher"
-                    )
+                if not selected_display or not password:
+                    st.error("Please select a researcher and enter your password")
+                    return False
 
-                    if password == correct_password and correct_password:
-                        st.session_state.cap_authenticated = True
-                        st.session_state.cap_researcher_name = researcher_name
-                        st.session_state.cap_login_time = datetime.now()
-                        st.success(f"Welcome, {researcher_name}!")
-                        st.rerun()
-                        return True
-                    else:
-                        st.error("Incorrect password")
-                        return False
+                username = researcher_options[selected_display]
+                user = self.user_service.authenticate(username, password)
 
-                except Exception as e:
-                    st.error(f"Login error: {e}")
+                if user:
+                    # Set session state
+                    st.session_state.cap_authenticated = True
+                    st.session_state.cap_researcher_name = user["display_name"]
+                    st.session_state.cap_user_id = user["id"]
+                    st.session_state.cap_user_role = user["role"]
+                    st.session_state.cap_username = user["username"]
+                    st.session_state.cap_login_time = datetime.now()
+
+                    st.success(f"Welcome, {user['display_name']}!")
+                    st.rerun()
+                    return True
+                else:
+                    st.error("Incorrect password")
                     return False
 
         return False
@@ -80,23 +150,34 @@ class CAPAuthHandler:
         col1, col2 = st.columns([3, 1])
         with col1:
             login_time = st.session_state.get("cap_login_time")
+            role = st.session_state.get("cap_user_role", "researcher")
+            role_badge = "👑" if role == "admin" else "👤"
+
             if login_time:
                 time_str = login_time.strftime("%H:%M")
-                st.success(f"👤 Logged in as: {researcher_name} (since {time_str})")
+                st.success(f"{role_badge} Logged in as: {researcher_name} (since {time_str})")
             else:
-                st.success(f"👤 Logged in as: {researcher_name}")
+                st.success(f"{role_badge} Logged in as: {researcher_name}")
         with col2:
             if st.button("🚪 Logout"):
-                st.session_state.cap_authenticated = False
-                st.session_state.cap_researcher_name = ""
-                st.session_state.cap_login_time = None
+                CAPAuthHandler.logout()
                 st.rerun()
+
+    @staticmethod
+    def logout():
+        """Clear all authentication session state."""
+        st.session_state.cap_authenticated = False
+        st.session_state.cap_researcher_name = ""
+        st.session_state.cap_user_id = None
+        st.session_state.cap_user_role = ""
+        st.session_state.cap_username = ""
+        st.session_state.cap_login_time = None
 
     @staticmethod
     def is_feature_enabled() -> bool:
         """Check if CAP annotation feature is enabled."""
         try:
-            return st.secrets["cap_annotation"]["enabled"]
+            return st.secrets.get("cap_annotation", {}).get("enabled", False)
         except (KeyError, FileNotFoundError, AttributeError):
             return False
 
@@ -110,7 +191,8 @@ class CAPAuthHandler:
         ```toml
         [cap_annotation]
         enabled = true
-        password = "your-password"
-        researcher_name = "Dr. Your Name"
+        bootstrap_admin_username = "admin"
+        bootstrap_admin_display_name = "Administrator"
+        bootstrap_admin_password = "your-secure-password"
         ```
         """)
