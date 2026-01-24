@@ -337,6 +337,7 @@ class CAPFormRenderer:
                 )
 
                 if api_bills.empty:
+                    st.session_state.api_fetched_bills = pd.DataFrame()  # Clear stale data
                     st.warning("No bills found")
                     return
 
@@ -346,6 +347,7 @@ class CAPFormRenderer:
                 )
 
                 if new_bills.empty:
+                    st.session_state.api_fetched_bills = pd.DataFrame()  # Clear stale data
                     st.success("All bills are already in database or coded by you!")
                     return
 
@@ -353,6 +355,7 @@ class CAPFormRenderer:
                 st.success(f"Found {len(new_bills)} new bills for you to code")
 
             except Exception as e:
+                st.session_state.api_fetched_bills = pd.DataFrame()  # Clear stale data
                 st.error(f"Fetch error: {e}")
                 self.logger.error(f"API fetch error: {e}", exc_info=True)
 
