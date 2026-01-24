@@ -2,6 +2,19 @@
 
 Guidance for Claude Code when working with this Knesset parliamentary data analysis platform.
 
+## Quick Navigation
+
+- [Development Commands](#development-commands) - Setup, tests, launch
+- [Architecture](#architecture) - Data flow, layers
+- [Connection Management](#connection-management) - Database access patterns
+- [DuckDB Patterns](#duckdb-patterns) - Sequences, migrations, gotchas
+- [Bill Analytics Rules](#bill-analytics-rules) - Status categories, date matching
+- [CAP Annotation System](#cap-annotation-system) - Multi-user research annotation
+- [Streamlit Cloud Deployment](#streamlit-cloud-deployment) - GCS, secrets
+- [Streamlit Patterns](#streamlit-patterns) - Performance, widgets, async
+- [Quick Troubleshooting](#quick-troubleshooting) - Common errors
+- [Test Status](#test-status) - Current test coverage
+
 ## Learning System (Auto-Check)
 
 Before starting any debugging, error fixing, or complex task:
@@ -470,6 +483,16 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 **Post-commit code review**: `.git/hooks/post-commit` runs automatic code review after commits with Python changes. Results saved to `.claude/reviews/review_<commit>_<timestamp>.md`.
 
 **MCP servers available**: context7 (docs), Linear (issues), Playwright (browser), Figma (design).
+
+## Quick Troubleshooting
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `MalformedError: missing client_email` | GCS credentials TOML parsing failed | Use `credentials_base64` instead of multi-line private_key |
+| `Table does not have column AssignedBy` | Old schema query | Use `ResearcherID` JOIN to `UserResearchers` |
+| `NOT NULL constraint on ResearcherID` | Missing researcher_id in INSERT | Use `nextval('seq_researcher_id')` explicitly |
+| `This event loop is already running` | asyncio.run() in Streamlit | Use thread isolation pattern (see Streamlit Patterns) |
+| App sluggish on Streamlit Cloud | Free tier resource limits | Use lazy loading pattern (see Streamlit Patterns) |
 
 ## Test Status
 
