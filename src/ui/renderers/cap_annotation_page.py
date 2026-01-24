@@ -207,12 +207,9 @@ class CAPAnnotationPageRenderer:
 
         if bill_id:
             st.markdown("---")
-            success = self.form_renderer.render_annotation_form(
+            self.form_renderer.render_annotation_form(
                 bill_id, researcher_id, submission_date or ""
             )
-            if success:
-                # Clear and refresh
-                st.rerun()
 
 
 def render_cap_page(db_path: Path, logger_obj: Optional[logging.Logger] = None):

@@ -59,8 +59,8 @@ def render_connection_dashboard() -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🔄 Refresh Stats"):
-            st.rerun()
+        # Button click automatically triggers rerun, refreshing stats
+        st.button("🔄 Refresh Stats")
 
     with col2:
         if st.button("📋 Log Connection Details"):

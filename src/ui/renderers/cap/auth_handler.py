@@ -136,7 +136,6 @@ class CAPAuthHandler:
                     st.session_state.cap_login_time = datetime.now()
 
                     st.success(f"Welcome, {user['display_name']}!")
-                    st.rerun()
                     return True
                 else:
                     st.error("Incorrect password")
@@ -161,7 +160,6 @@ class CAPAuthHandler:
         with col2:
             if st.button("🚪 Logout"):
                 CAPAuthHandler.logout()
-                st.rerun()
 
     @staticmethod
     def logout():

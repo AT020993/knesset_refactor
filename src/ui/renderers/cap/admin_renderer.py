@@ -144,7 +144,6 @@ class CAPAdminRenderer:
                 if selected_user_id:
                     st.session_state.admin_edit_user_id = selected_user_id
                     st.session_state.admin_show_edit_dialog = True
-                    st.rerun()
 
         with col2:
             if st.button(
@@ -156,7 +155,6 @@ class CAPAdminRenderer:
                 if selected_user_id:
                     st.session_state.admin_reset_user_id = selected_user_id
                     st.session_state.admin_show_reset_dialog = True
-                    st.rerun()
 
         with col3:
             if is_active:
@@ -176,7 +174,6 @@ class CAPAdminRenderer:
                         else:
                             st.error("Failed to deactivate user")
                         st.session_state.admin_action_running = False
-                        st.rerun()
             else:
                 if st.button(
                     "✅ Reactivate",
@@ -191,7 +188,6 @@ class CAPAdminRenderer:
                         else:
                             st.error("Failed to reactivate user")
                         st.session_state.admin_action_running = False
-                        st.rerun()
 
         with col4:
             disabled = is_self or is_action_running
@@ -207,7 +203,6 @@ class CAPAdminRenderer:
                 if selected_user_id and not is_self:
                     st.session_state.admin_delete_user_id = selected_user_id
                     st.session_state.admin_show_delete_dialog = True
-                    st.rerun()
 
         # Role change section
         if selected_user_info is not None and not is_self:
@@ -225,7 +220,6 @@ class CAPAdminRenderer:
                     if st.button("Update Role", key="btn_update_role"):
                         if self.user_service.update_role(selected_user_id, new_role):
                             st.success(f"Role updated to {new_role}")
-                            st.rerun()
                         else:
                             st.error("Failed to update role")
 
@@ -303,7 +297,6 @@ class CAPAdminRenderer:
 
                         if success:
                             st.success(f"Researcher '{display_name}' created successfully!")
-                            st.rerun()
                         else:
                             st.error("Failed to create researcher. Please check the logs.")
 
@@ -346,7 +339,6 @@ class CAPAdminRenderer:
                             st.success(f"Display name updated to '{new_display_name.strip()}'")
                             st.session_state.admin_show_edit_dialog = False
                             st.session_state.admin_edit_user_id = None
-                            st.rerun()
                         else:
                             st.error("Failed to update display name")
 
@@ -354,7 +346,6 @@ class CAPAdminRenderer:
                 if st.form_submit_button("Cancel", use_container_width=True):
                     st.session_state.admin_show_edit_dialog = False
                     st.session_state.admin_edit_user_id = None
-                    st.rerun()
 
     def _render_password_reset_dialog(self):
         """Render the password reset dialog if triggered."""
@@ -401,7 +392,6 @@ class CAPAdminRenderer:
                             st.success(f"Password reset for {user['display_name']}")
                             st.session_state.admin_show_reset_dialog = False
                             st.session_state.admin_reset_user_id = None
-                            st.rerun()
                         else:
                             st.error("Failed to reset password")
 
@@ -409,7 +399,6 @@ class CAPAdminRenderer:
                 if st.form_submit_button("Cancel", use_container_width=True):
                     st.session_state.admin_show_reset_dialog = False
                     st.session_state.admin_reset_user_id = None
-                    st.rerun()
 
     def _render_delete_confirmation_dialog(self):
         """Render the delete confirmation dialog if triggered."""
@@ -453,14 +442,12 @@ class CAPAdminRenderer:
                         st.success("User deactivated successfully")
                         st.session_state.admin_show_delete_dialog = False
                         st.session_state.admin_delete_user_id = None
-                        st.rerun()
                     else:
                         st.error("Failed to deactivate user")
             with col2:
                 if st.button("Cancel", key="btn_cancel_delete", use_container_width=True):
                     st.session_state.admin_show_delete_dialog = False
                     st.session_state.admin_delete_user_id = None
-                    st.rerun()
         else:
             st.error(f"""
             ⚠️ **This action is permanent and cannot be undone!**
@@ -489,14 +476,12 @@ class CAPAdminRenderer:
                         st.success(f"User '{user['display_name']}' permanently deleted")
                         st.session_state.admin_show_delete_dialog = False
                         st.session_state.admin_delete_user_id = None
-                        st.rerun()
                     else:
                         st.error("Failed to delete user")
             with col2:
                 if st.button("Cancel", key="btn_cancel_hard_delete", use_container_width=True):
                     st.session_state.admin_show_delete_dialog = False
                     st.session_state.admin_delete_user_id = None
-                    st.rerun()
 
 
 def render_admin_panel(db_path: Path, logger_obj: Optional[logging.Logger] = None):
