@@ -75,7 +75,30 @@ if 'cloud_sync_checked' not in st.session_state:
 if not st.session_state.cloud_sync_checked:
     from data.services.storage_sync_service import StorageSyncService
 
+    # Debug: Show secrets info
+    try:
+        secret_sections = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
+        has_storage = 'storage' in st.secrets
+        has_gcp = 'gcp_service_account' in st.secrets
+        bucket_name = st.secrets.get('storage', {}).get('gcs_bucket_name', 'NOT_FOUND')
+        ui_logger.info(f"Secrets debug: sections={secret_sections}, storage={has_storage}, gcp={has_gcp}, bucket={bucket_name}")
+    except Exception as e:
+        ui_logger.error(f"Error reading secrets: {e}")
+        secret_sections = []
+        has_storage = False
+        has_gcp = False
+        bucket_name = "ERROR"
+
     sync_service = StorageSyncService(logger_obj=ui_logger)
+
+    # Debug: Show sync status in UI
+    with st.expander("🔧 Cloud Storage Debug", expanded=False):
+        st.write(f"**Secret sections found:** `{secret_sections}`")
+        st.write(f"**[storage] section:** `{has_storage}`")
+        st.write(f"**[gcp_service_account] section:** `{has_gcp}`")
+        st.write(f"**Bucket name:** `{bucket_name}`")
+        st.write(f"**Sync enabled:** `{sync_service.is_enabled()}`")
+        st.write(f"**DB exists locally:** `{DB_PATH.exists()}`")
 
     if sync_service.is_enabled():
         ui_logger.info("Cloud storage enabled, checking for data sync...")
@@ -102,6 +125,7 @@ if not st.session_state.cloud_sync_checked:
         else:
             ui_logger.info("Local database exists, skipping cloud sync")
     else:
+        st.warning("⚠️ Cloud storage sync is NOT enabled. Check your secrets configuration.")
         ui_logger.info("Cloud storage not enabled")
 
     st.session_state.cloud_sync_checked = True
