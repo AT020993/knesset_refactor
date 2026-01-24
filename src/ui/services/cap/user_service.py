@@ -648,9 +648,21 @@ class CAPUserService:
             if self.get_user_count() > 0:
                 return True  # Already bootstrapped
 
-            # Get bootstrap config from secrets
+            # Get bootstrap config from secrets (handle multiple formats)
             try:
+                # Try standard section format first: [cap_annotation]
                 cap_secrets = st.secrets.get("cap_annotation", {})
+
+                # If empty, try dotted key format: cap_annotation.enabled
+                if not cap_secrets:
+                    # Check if secrets has dotted keys directly
+                    all_secrets = dict(st.secrets)
+                    cap_secrets = {
+                        k.replace("cap_annotation.", ""): v
+                        for k, v in all_secrets.items()
+                        if k.startswith("cap_annotation.")
+                    }
+
                 username = cap_secrets.get("bootstrap_admin_username", "admin")
                 display_name = cap_secrets.get("bootstrap_admin_display_name", "Administrator")
                 password = cap_secrets.get("bootstrap_admin_password")
@@ -661,10 +673,11 @@ class CAPUserService:
 
                 if not password:
                     self.logger.warning("No bootstrap password configured - skipping admin creation")
+                    self.logger.debug(f"Available secrets keys: {list(st.secrets.keys())}")
                     return False
 
-            except Exception:
-                self.logger.warning("Could not read secrets for bootstrap")
+            except Exception as e:
+                self.logger.warning(f"Could not read secrets for bootstrap: {e}")
                 return False
 
             # Create the bootstrap admin

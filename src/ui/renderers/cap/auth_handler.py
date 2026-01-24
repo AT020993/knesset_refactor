@@ -15,6 +15,38 @@ import streamlit as st
 from ui.services.cap.user_service import CAPUserService, get_user_service
 
 
+def _get_cap_secrets() -> dict:
+    """
+    Get CAP annotation secrets, handling multiple TOML formats.
+
+    Supports both:
+    - Section format: [cap_annotation] with keys below
+    - Dotted format: cap_annotation.enabled = true
+
+    Returns:
+        Dictionary with CAP secrets, or empty dict if not found
+    """
+    try:
+        # Try standard section format first: [cap_annotation]
+        cap_secrets = st.secrets.get("cap_annotation", {})
+        if cap_secrets:
+            return dict(cap_secrets)
+
+        # Try dotted key format: cap_annotation.enabled
+        all_secrets = dict(st.secrets)
+        dotted_secrets = {
+            k.replace("cap_annotation.", ""): v
+            for k, v in all_secrets.items()
+            if k.startswith("cap_annotation.")
+        }
+        if dotted_secrets:
+            return dotted_secrets
+
+        return {}
+    except (KeyError, FileNotFoundError, AttributeError):
+        return {}
+
+
 class CAPAuthHandler:
     """Handles CAP annotation authentication with multi-user support."""
 
@@ -47,7 +79,7 @@ class CAPAuthHandler:
         """
         try:
             # Check if CAP annotation is enabled
-            if not st.secrets.get("cap_annotation", {}).get("enabled", False):
+            if not _get_cap_secrets().get("enabled", False):
                 return False, ""
 
             # Check session state for authentication
@@ -174,10 +206,7 @@ class CAPAuthHandler:
     @staticmethod
     def is_feature_enabled() -> bool:
         """Check if CAP annotation feature is enabled."""
-        try:
-            return st.secrets.get("cap_annotation", {}).get("enabled", False)
-        except (KeyError, FileNotFoundError, AttributeError):
-            return False
+        return _get_cap_secrets().get("enabled", False)
 
     @staticmethod
     def render_disabled_message():
