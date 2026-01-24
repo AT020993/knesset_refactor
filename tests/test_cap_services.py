@@ -744,6 +744,131 @@ class TestCAPAnnotationRepository:
         assert coded_r2.iloc[0]['BillID'] == 3
 
 
+class TestCAPAnnotationValidation:
+    """Tests for annotation validation - FK checks before save."""
+
+    def test_save_annotation_rejects_nonexistent_researcher(self, initialized_db, mock_logger):
+        """Verify annotation fails if researcher doesn't exist."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert a valid CAP code so we're only testing researcher validation
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test Major', 'Test Major EN', 100, 'Test Minor', 'Test Minor EN')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        result = repo.save_annotation(
+            bill_id=12345,
+            cap_minor_code=100,
+            direction=0,
+            researcher_id=99999,  # Non-existent researcher
+            confidence="Medium",
+            notes="Test",
+            source="Database",
+        )
+
+        assert result is False, "Should reject non-existent researcher"
+
+    def test_save_annotation_rejects_inactive_researcher(self, initialized_db, mock_logger):
+        """Verify annotation fails if researcher is inactive."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert a valid CAP code
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test Major', 'Test Major EN', 100, 'Test Minor', 'Test Minor EN')
+        """)
+        # Create an inactive researcher
+        conn.execute("""
+            INSERT INTO UserResearchers (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive)
+            VALUES (999, 'inactive_user', 'Inactive User', 'hash', 'researcher', FALSE)
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        result = repo.save_annotation(
+            bill_id=12345,
+            cap_minor_code=100,
+            direction=0,
+            researcher_id=999,  # Inactive researcher
+            confidence="Medium",
+            notes="Test",
+            source="Database",
+        )
+
+        assert result is False, "Should reject inactive researcher"
+
+    def test_save_annotation_rejects_invalid_cap_code(self, initialized_db, mock_logger):
+        """Verify annotation fails if CAP code doesn't exist."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+        taxonomy.load_taxonomy_from_csv()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        result = repo.save_annotation(
+            bill_id=12345,
+            cap_minor_code=99999,  # Non-existent CAP code
+            direction=0,
+            researcher_id=1,  # Valid researcher from initialized_db
+            confidence="Medium",
+            notes="Test",
+            source="Database",
+        )
+
+        assert result is False, "Should reject non-existent CAP code"
+
+    def test_save_annotation_succeeds_with_valid_foreign_keys(self, initialized_db, mock_logger):
+        """Verify annotation succeeds when both researcher and CAP code exist."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert a valid CAP code
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test Major', 'Test Major EN', 100, 'Test Minor', 'Test Minor EN')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        result = repo.save_annotation(
+            bill_id=1,  # Valid bill from initialized_db
+            cap_minor_code=100,  # Valid CAP code
+            direction=0,
+            researcher_id=1,  # Valid, active researcher from initialized_db
+            confidence="Medium",
+            notes="Test",
+            source="Database",
+        )
+
+        assert result is True, "Should succeed with valid foreign keys"
+
+
 class TestCAPStatisticsService:
     """Tests for the CAPStatisticsService class."""
 

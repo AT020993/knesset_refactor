@@ -566,6 +566,28 @@ class CAPAnnotationRepository:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
+                # Validate researcher exists and is active
+                researcher_exists = conn.execute(
+                    "SELECT 1 FROM UserResearchers WHERE ResearcherID = ? AND IsActive = TRUE",
+                    [researcher_id],
+                ).fetchone()
+                if not researcher_exists:
+                    self.logger.error(
+                        f"Researcher ID {researcher_id} not found or inactive. Cannot save annotation."
+                    )
+                    return False
+
+                # Validate CAP minor code exists in taxonomy
+                cap_exists = conn.execute(
+                    "SELECT 1 FROM UserCAPTaxonomy WHERE MinorCode = ?",
+                    [cap_minor_code],
+                ).fetchone()
+                if not cap_exists:
+                    self.logger.error(
+                        f"CAP Minor Code {cap_minor_code} not found in taxonomy. Cannot save annotation."
+                    )
+                    return False
+
                 # Check if THIS researcher already annotated this bill
                 existing = conn.execute(
                     "SELECT AnnotationID FROM UserBillCAP WHERE BillID = ? AND ResearcherID = ?",
