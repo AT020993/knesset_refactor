@@ -214,24 +214,8 @@ class CAPAuthHandler:
     @staticmethod
     def render_disabled_message():
         """Render message when feature is disabled."""
-        # Debug info to help diagnose secrets issues
-        try:
-            all_keys = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
-            cap_secrets = st.secrets.get("cap_annotation", {})
-            cap_keys = list(cap_secrets.keys()) if hasattr(cap_secrets, 'keys') else []
-            enabled_value = cap_secrets.get("enabled", "NOT_FOUND") if cap_secrets else "SECTION_MISSING"
-        except Exception as e:
-            all_keys = [f"ERROR: {e}"]
-            cap_keys = []
-            enabled_value = "ERROR"
-
-        st.warning(f"""
+        st.warning("""
         **Annotation System Not Enabled**
-
-        **Debug info:**
-        - Secret sections found: `{all_keys}`
-        - cap_annotation keys: `{cap_keys}`
-        - enabled value: `{enabled_value}`
 
         To enable, add the following to `.streamlit/secrets.toml`:
         ```toml
