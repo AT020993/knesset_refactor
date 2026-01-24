@@ -75,92 +75,9 @@ if 'cloud_sync_checked' not in st.session_state:
 if not st.session_state.cloud_sync_checked:
     from data.services.storage_sync_service import StorageSyncService
 
-    # Debug: Show secrets info
-    try:
-        secret_sections = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
-        has_storage = 'storage' in st.secrets
-        has_gcp = 'gcp_service_account' in st.secrets
-        bucket_name = st.secrets.get('storage', {}).get('gcs_bucket_name', 'NOT_FOUND')
-        ui_logger.info(f"Secrets debug: sections={secret_sections}, storage={has_storage}, gcp={has_gcp}, bucket={bucket_name}")
-    except Exception as e:
-        ui_logger.error(f"Error reading secrets: {e}")
-        secret_sections = []
-        has_storage = False
-        has_gcp = False
-        bucket_name = "ERROR"
+    sync_service = StorageSyncService(logger_obj=ui_logger)
 
-    # Try to create sync service and capture any errors
-    sync_error = None
-    try:
-        sync_service = StorageSyncService(logger_obj=ui_logger)
-    except Exception as e:
-        sync_error = str(e)
-        sync_service = None
-
-    # Also try to directly create GCS manager to see the actual error
-    gcs_init_error = None
-    gcs_creds_keys = []
-    gcs_creds_source = "none"
-    try:
-        from data.storage.cloud_storage import CloudStorageManager, GCS_AVAILABLE
-        import json
-
-        # Check if GCS library is available
-        if not GCS_AVAILABLE:
-            gcs_init_result = "google-cloud-storage library NOT installed"
-            gcs_init_error = "Missing dependency: pip install google-cloud-storage"
-        else:
-            # Get credentials and show what keys are present
-            if has_gcp:
-                import base64
-                gcp_secrets = st.secrets['gcp_service_account']
-                gcs_creds_keys = list(gcp_secrets.keys()) if hasattr(gcp_secrets, 'keys') else []
-
-                # Try credentials_base64 format first
-                if 'credentials_base64' in gcp_secrets:
-                    gcs_creds_source = "credentials_base64"
-                    decoded = base64.b64decode(gcp_secrets['credentials_base64']).decode('utf-8')
-                    gcs_creds = json.loads(decoded)
-                # Then try credentials_json format
-                elif 'credentials_json' in gcp_secrets:
-                    gcs_creds_source = "credentials_json"
-                    gcs_creds = json.loads(gcp_secrets['credentials_json'])
-                else:
-                    gcs_creds_source = "direct_fields"
-                    gcs_creds = dict(gcp_secrets)
-
-                # Try to create manager directly
-                test_manager = CloudStorageManager(
-                    bucket_name=bucket_name,
-                    credentials_dict=gcs_creds,
-                    logger_obj=ui_logger
-                )
-                gcs_init_result = "Success!" if test_manager else "Returned None"
-            else:
-                gcs_init_result = "No gcp_service_account credentials"
-    except Exception as e:
-        import traceback
-        gcs_init_error = f"{type(e).__name__}: {e}"
-        gcs_init_result = f"Error: {type(e).__name__}"
-
-    # Debug: Show sync status in UI
-    with st.expander("🔧 Cloud Storage Debug", expanded=True):
-        st.write(f"**Secret sections found:** `{secret_sections}`")
-        st.write(f"**[storage] section:** `{has_storage}`")
-        st.write(f"**[gcp_service_account] section:** `{has_gcp}`")
-        st.write(f"**Bucket name:** `{bucket_name}`")
-        st.write(f"**Sync service created:** `{sync_service is not None}`")
-        if sync_error:
-            st.error(f"**Sync service error:** `{sync_error}`")
-        st.write(f"**Sync enabled:** `{sync_service.is_enabled() if sync_service else False}`")
-        st.write(f"**DB exists locally:** `{DB_PATH.exists()}`")
-        st.write(f"**GCS credentials keys:** `{gcs_creds_keys}`")
-        st.write(f"**GCS credentials source:** `{gcs_creds_source}`")
-        st.write(f"**GCS manager init:** `{gcs_init_result}`")
-        if gcs_init_error:
-            st.error(f"**GCS init error:** `{gcs_init_error}`")
-
-    if sync_service and sync_service.is_enabled():
+    if sync_service.is_enabled():
         ui_logger.info("Cloud storage enabled, checking for data sync...")
 
         # Check if local database exists
@@ -185,7 +102,6 @@ if not st.session_state.cloud_sync_checked:
         else:
             ui_logger.info("Local database exists, skipping cloud sync")
     else:
-        st.warning("⚠️ Cloud storage sync is NOT enabled. Check your secrets configuration.")
         ui_logger.info("Cloud storage not enabled")
 
     st.session_state.cloud_sync_checked = True
