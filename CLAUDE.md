@@ -285,6 +285,28 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
 
+## Streamlit Cloud Deployment
+
+**GCS Credentials** (🔴 Critical): Streamlit Cloud's TOML editor breaks multi-line strings. Use base64 encoding:
+```toml
+[gcp_service_account]
+credentials_base64 = "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Ii..."  # base64-encoded JSON
+```
+
+**Code reads it with**:
+```python
+if 'credentials_base64' in gcp_secrets:
+    decoded = base64.b64decode(gcp_secrets['credentials_base64']).decode('utf-8')
+    credentials = json.loads(decoded)
+```
+
+**Data Persistence**: Database files are gitignored. On Streamlit Cloud:
+- Startup: Downloads `warehouse.duckdb` from GCS bucket
+- After annotation: Auto-uploads database to GCS (see `_sync_to_cloud()` in renderers)
+- Without GCS: Data lost on app reboot
+
+**Upload local data to GCS**: `GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json" python upload_to_gcs.py`
+
 ## Streamlit Patterns
 
 **Widget Selection Fix**: Use `on_change` callbacks, not post-render comparison:
