@@ -54,25 +54,44 @@ class CAPUserService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
-                # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
-                # This prevents race conditions when multiple admins create users simultaneously
-                conn.execute("""
-                    CREATE SEQUENCE IF NOT EXISTS seq_researcher_id START 1
-                """)
+                # Check if table already exists (for migration handling)
+                table_exists = conn.execute(
+                    "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserResearchers'"
+                ).fetchone()
 
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS UserResearchers (
-                        ResearcherID INTEGER PRIMARY KEY DEFAULT nextval('seq_researcher_id'),
-                        Username VARCHAR NOT NULL UNIQUE,
-                        DisplayName VARCHAR NOT NULL,
-                        PasswordHash VARCHAR NOT NULL,
-                        Role VARCHAR NOT NULL DEFAULT 'researcher',
-                        IsActive BOOLEAN NOT NULL DEFAULT TRUE,
-                        CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        LastLoginAt TIMESTAMP,
-                        CreatedBy VARCHAR
-                    )
-                """)
+                if table_exists:
+                    # Table exists - ensure sequence exists and is set correctly
+                    seq_exists = conn.execute(
+                        "SELECT 1 FROM duckdb_sequences() WHERE sequence_name = 'seq_researcher_id'"
+                    ).fetchone()
+
+                    if not seq_exists:
+                        # Migration: create sequence starting after max existing ID
+                        max_id = conn.execute(
+                            "SELECT COALESCE(MAX(ResearcherID), 0) FROM UserResearchers"
+                        ).fetchone()[0]
+                        conn.execute(f"CREATE SEQUENCE seq_researcher_id START {max_id + 1}")
+                        self.logger.info(
+                            f"Created seq_researcher_id starting at {max_id + 1} for existing table"
+                        )
+                else:
+                    # New installation - create sequence starting at 1
+                    conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_researcher_id START 1")
+
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS UserResearchers (
+                            ResearcherID INTEGER PRIMARY KEY DEFAULT nextval('seq_researcher_id'),
+                            Username VARCHAR NOT NULL UNIQUE,
+                            DisplayName VARCHAR NOT NULL,
+                            PasswordHash VARCHAR NOT NULL,
+                            Role VARCHAR NOT NULL DEFAULT 'researcher',
+                            IsActive BOOLEAN NOT NULL DEFAULT TRUE,
+                            CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            LastLoginAt TIMESTAMP,
+                            CreatedBy VARCHAR
+                        )
+                    """)
+
                 self._table_ensured = True
                 self.logger.debug("UserResearchers table ensured with sequence")
                 return True
@@ -127,7 +146,11 @@ class CAPUserService:
             User dict with id, username, display_name, role if successful, None otherwise
         """
         self.ensure_table_exists()
+        user_data = None
+        researcher_id = None
+
         try:
+            # First: verify credentials with read-only connection
             with get_db_connection(
                 self.db_path, read_only=True, logger_obj=self.logger
             ) as conn:
@@ -141,16 +164,20 @@ class CAPUserService:
                 ).fetchone()
 
                 if result and self.verify_password(password, result[3]):
-                    # Update last login time
-                    self._update_last_login(result[0])
-                    return {
+                    researcher_id = result[0]
+                    user_data = {
                         "id": result[0],
                         "username": result[1],
                         "display_name": result[2],
                         "role": result[4],
                     }
 
-                return None
+            # Second: update last login AFTER read connection is closed
+            # This avoids DuckDB's "different configuration" error
+            if researcher_id is not None:
+                self._update_last_login(researcher_id)
+
+            return user_data
 
         except Exception as e:
             self.logger.error(f"Authentication error: {e}", exc_info=True)
