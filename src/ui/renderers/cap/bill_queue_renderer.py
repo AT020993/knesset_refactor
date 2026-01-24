@@ -231,23 +231,57 @@ class CAPBillQueueRenderer:
             return f"⭕ {bill['BillID']} - {bill_name}{count_badge}"
 
     def _render_bill_details(self, bill: pd.Series):
-        """Render bill details section."""
-        st.markdown("---")
-        st.markdown(f"### 📄 {bill['BillName']}")
+        """Render bill details section with defensive null checks."""
+        try:
+            # Safely extract all fields with null/NaN protection
+            bill_name = bill.get("BillName", "Unknown Bill")
+            if pd.isna(bill_name) or bill_name == "":
+                bill_name = "Unknown Bill"
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(f"**ID:** {bill['BillID']}")
-            st.markdown(f"**Knesset:** {bill['KnessetNum']}")
-        with col2:
-            st.markdown(f"**Type:** {bill['BillType']}")
-            st.markdown(f"**Status:** {bill['StatusDesc']}")
-        with col3:
-            st.markdown(f"**Publication Date:** {bill.get('PublicationDate', 'N/A')}")
+            bill_id = bill.get("BillID", "?")
+            if pd.isna(bill_id):
+                bill_id = "?"
 
-        # Link to Knesset website
-        if "BillURL" in bill:
-            st.markdown(
-                f'🔗 <a href="{bill["BillURL"]}" target="_blank" rel="noopener noreferrer">View on Knesset Website</a>',
-                unsafe_allow_html=True,
-            )
+            knesset_num = bill.get("KnessetNum", "?")
+            if pd.isna(knesset_num):
+                knesset_num = "?"
+
+            bill_type = bill.get("BillType", "Unknown")
+            if pd.isna(bill_type) or bill_type == "":
+                bill_type = "Unknown"
+
+            status_desc = bill.get("StatusDesc", "Unknown")
+            if pd.isna(status_desc) or status_desc == "":
+                status_desc = "Unknown"
+
+            pub_date = bill.get("PublicationDate", "N/A")
+            if pd.isna(pub_date) or pub_date == "":
+                pub_date = "N/A"
+
+            bill_url = bill.get("BillURL")
+            if pd.isna(bill_url) or bill_url == "":
+                bill_url = None
+
+            # Render with safe values
+            st.markdown("---")
+            st.markdown(f"### 📄 {bill_name}")
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f"**ID:** {bill_id}")
+                st.markdown(f"**Knesset:** {knesset_num}")
+            with col2:
+                st.markdown(f"**Type:** {bill_type}")
+                st.markdown(f"**Status:** {status_desc}")
+            with col3:
+                st.markdown(f"**Publication Date:** {pub_date}")
+
+            # Link to Knesset website (only if URL is valid)
+            if bill_url:
+                st.markdown(
+                    f'🔗 <a href="{bill_url}" target="_blank" rel="noopener noreferrer">View on Knesset Website</a>',
+                    unsafe_allow_html=True,
+                )
+        except Exception as e:
+            self.logger.warning(f"Error rendering bill details: {e}")
+            st.warning("Could not display bill details")
