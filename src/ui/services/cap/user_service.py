@@ -74,6 +74,9 @@ class CAPUserService:
                         self.logger.info(
                             f"Created seq_researcher_id starting at {max_id + 1} for existing table"
                         )
+                    # Note: We don't try to ALTER TABLE to add DEFAULT because DuckDB
+                    # doesn't allow altering tables with FK dependencies. Instead,
+                    # create_user() explicitly uses nextval('seq_researcher_id').
                 else:
                     # New installation - create sequence starting at 1
                     conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_researcher_id START 1")
@@ -342,13 +345,13 @@ class CAPUserService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
-                # Let the sequence handle ID generation via DEFAULT nextval('seq_researcher_id')
-                # This is thread-safe and prevents race conditions
+                # Explicitly use nextval() for ResearcherID since we can't ALTER existing
+                # tables with FK dependencies to add DEFAULT clause
                 conn.execute(
                     """
                     INSERT INTO UserResearchers
-                    (Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
-                    VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                    (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
+                    VALUES (nextval('seq_researcher_id'), ?, ?, ?, ?, TRUE, ?, ?)
                     """,
                     [username, display_name, password_hash, role, datetime.now(), created_by],
                 )

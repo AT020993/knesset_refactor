@@ -77,6 +77,12 @@ CREATE TABLE MyTable (
 INSERT INTO MyTable (Name, ...) VALUES (?, ...);
 ```
 
+**🔴 FK Dependency Limitation**: DuckDB can't ALTER a column's DEFAULT when other tables have FK references to it. For existing tables with FK dependencies, explicitly use `nextval()` in INSERT:
+```sql
+-- When DEFAULT can't be added due to FK dependencies
+INSERT INTO MyTable (ID, Name, ...) VALUES (nextval('seq_my_id'), ?, ...);
+```
+
 **Schema Migration Pattern** (safe table swap):
 ```python
 # 1. Create sequence
@@ -416,9 +422,9 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 ## Test Status
 
-367 passed, 26 skipped, 0 failures. Run fast tests before commits.
+387 passed, 26 skipped, 0 failures. Run fast tests before commits.
 
-**CAP Multi-Annotator Tests** (35 tests in `test_cap_services.py`):
+**CAP Multi-Annotator Tests** (48 tests in `test_cap_services.py` + 13 in `test_cap_integration.py`):
 - Taxonomy service operations (5 tests)
 - Repository CRUD with `researcher_id` (17 tests)
 - Statistics with `COUNT(DISTINCT BillID)` (4 tests)

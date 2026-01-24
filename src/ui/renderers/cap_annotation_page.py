@@ -127,7 +127,10 @@ class CAPAnnotationPageRenderer:
         is_authenticated, researcher_name = CAPAuthHandler.check_authentication()
 
         if not is_authenticated:
-            self.auth_handler.render_login_form()
+            # render_login_form() returns True on successful login
+            # We need to rerun to show the authenticated view
+            if self.auth_handler.render_login_form():
+                st.rerun()
             return
 
         # Show researcher info and logout
