@@ -54,6 +54,58 @@ conn = duckdb.connect(db_path)  # DON'T DO THIS
 
 **Error Handling**: `ErrorCategory` enum is defined in `src/api/error_handling.py` (canonical location). Import from there, not from `config/api.py`.
 
+## DuckDB Patterns
+
+**Auto-Increment Primary Keys** (🔴 Critical):
+
+Unlike SQLite, DuckDB does NOT auto-increment `INTEGER PRIMARY KEY`. Use sequences:
+```sql
+-- Create sequence (idempotent)
+CREATE SEQUENCE IF NOT EXISTS seq_my_id START 1;
+
+-- Use in table definition
+CREATE TABLE MyTable (
+    ID INTEGER PRIMARY KEY DEFAULT nextval('seq_my_id'),
+    ...
+);
+
+-- INSERT without ID - sequence handles it
+INSERT INTO MyTable (Name, ...) VALUES (?, ...);
+```
+
+**Schema Migration Pattern** (safe table swap):
+```python
+# 1. Create sequence
+conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_id START 1")
+
+# 2. Create new table with proper schema
+conn.execute("CREATE TABLE MyTable_new (...)")
+
+# 3. Migrate data with JOINs for lookups
+conn.execute("INSERT INTO MyTable_new (...) SELECT ... FROM MyTable old LEFT JOIN ...")
+
+# 4. Verify count matches before swap
+old_count = conn.execute("SELECT COUNT(*) FROM MyTable").fetchone()[0]
+new_count = conn.execute("SELECT COUNT(*) FROM MyTable_new").fetchone()[0]
+assert old_count == new_count
+
+# 5. Swap tables
+conn.execute("DROP TABLE MyTable")
+conn.execute("ALTER TABLE MyTable_new RENAME TO MyTable")
+```
+
+**Division by Zero Protection** (for percentage calculations):
+```sql
+-- Wrong - can cause division by zero
+ROUND(100.0 * coded_count / total_count, 1) AS coverage_pct
+
+-- Correct - NULLIF returns NULL if divisor is 0, COALESCE converts to 0.0
+COALESCE(
+    ROUND(100.0 * coded_count / NULLIF(total_count, 0), 1),
+    0.0
+) AS coverage_pct
+```
+
 ## Bill Analytics Rules
 
 ### Status Categories (All Charts)
@@ -84,7 +136,17 @@ To add more: Edit CSV → Run data refresh → Charts auto-update.
 
 ## CAP Annotation System
 
-Multi-user bill classification system for democratic erosion research with role-based access control.
+Multi-user bill classification system for democratic erosion research with role-based access control and **multi-annotator support** for inter-rater reliability.
+
+### Multi-Annotator Mode
+
+Multiple researchers can independently annotate the same bill. This enables:
+- **Inter-rater reliability analysis**: Compare annotations across researchers
+- **Independent queues**: Bills remain in a researcher's queue until THEY annotate it
+- **Annotation count badges**: UI shows 👥 badges when multiple researchers annotated a bill
+- **Other annotations view**: Expandable section shows other researchers' annotations for comparison
+
+**Key Behavior**: A bill annotated by Researcher A still appears in Researcher B's queue until B annotates it.
 
 ### Authentication & User Management
 
@@ -105,10 +167,22 @@ bootstrap_admin_password = "change-me-immediately"
 
 **Session State Keys**:
 - `cap_authenticated`: Boolean login status
-- `cap_user_id`: Researcher's database ID
+- `cap_user_id`: Researcher's database ID (used for all annotation operations)
 - `cap_user_role`: "admin" or "researcher"
 - `cap_username`: Login username
-- `cap_researcher_name`: Display name (shown in UI, stored in annotations)
+- `cap_researcher_name`: Display name (shown in UI)
+
+**🔴 Critical - Always Use `cap_user_id` for Operations**:
+```python
+# Correct - pass researcher_id (int) to service methods
+researcher_id = st.session_state.get("cap_user_id")
+self.service.save_annotation(bill_id, code, direction, researcher_id=researcher_id)
+
+# Wrong - passing researcher_name (string) where int is expected
+researcher_name = st.session_state.get("cap_researcher_name")
+self.service.save_annotation(bill_id, code, direction, researcher_id=researcher_name)  # BUG!
+```
+The `cap_user_id` is the database primary key used for all annotation operations. The `cap_researcher_name` is only for UI display.
 
 ### Database Tables
 
@@ -116,7 +190,24 @@ bootstrap_admin_password = "change-me-immediately"
 |-------|---------|
 | `UserResearchers` | User accounts (ID, username, password hash, role, active status) |
 | `UserCAPTaxonomy` | Category codes (Major/Minor topics with Hebrew/English labels) |
-| `UserBillCAP` | Annotations (BillID, CAPMinorCode, Direction, AssignedBy, Notes) |
+| `UserBillCAP` | Annotations with multi-annotator support (see schema below) |
+
+**UserBillCAP Schema** (multi-annotator):
+```sql
+CREATE TABLE UserBillCAP (
+    AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+    BillID INTEGER NOT NULL,
+    ResearcherID INTEGER NOT NULL,  -- FK to UserResearchers
+    CAPMinorCode INTEGER NOT NULL,
+    Direction INTEGER NOT NULL DEFAULT 0,
+    AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Confidence VARCHAR DEFAULT 'Medium',
+    Notes VARCHAR,
+    Source VARCHAR DEFAULT 'Database',
+    SubmissionDate VARCHAR,
+    UNIQUE(BillID, ResearcherID)  -- One annotation per researcher per bill
+);
+```
 
 **Direction Values**: +1 = strengthens democracy, -1 = weakens, 0 = neutral
 
@@ -135,7 +226,12 @@ Accessible only to users with `role='admin'`:
 
 | File | Purpose |
 |------|---------|
+| `src/ui/services/cap/taxonomy.py` | Table creation, schema migration, taxonomy loading |
+| `src/ui/services/cap/repository.py` | CRUD operations with researcher_id filtering |
+| `src/ui/services/cap/statistics.py` | Analytics (uses COUNT(DISTINCT BillID) for accuracy) |
 | `src/ui/services/cap/user_service.py` | User CRUD, authentication, password hashing |
+| `src/ui/renderers/cap/form_renderer.py` | Bill queue, annotation form, other annotations view |
+| `src/ui/renderers/cap/coded_bills_renderer.py` | Coded bills list with annotation counts |
 | `src/ui/renderers/cap/auth_handler.py` | Login form, session management |
 | `src/ui/renderers/cap/admin_renderer.py` | Admin panel UI |
 
@@ -202,7 +298,10 @@ tab1, tab2 = st.tabs(["A", "B"])
 
 **Avoid Redundant `st.rerun()`**: Form submissions and `on_click` callbacks auto-rerun. Extra `st.rerun()` calls can reset UI state.
 
-**Double-Click Button Prevention**:
+**Double-Click Button Prevention** (🔴 Critical):
+
+`st.button()` and `st.form_submit_button()` automatically trigger reruns. Adding `st.rerun()` after them causes double-click issues.
+
 ```python
 # Wrong - causes double execution
 if st.button("Action"):
@@ -215,6 +314,8 @@ if st.button("Action"):
     # No st.rerun() needed - state is already updated for next render
 ```
 
+**When st.rerun() IS needed**: Only after operations that don't naturally trigger reruns (e.g., after `st.cache_data.clear()` in a non-button context, or after programmatic state changes outside widget callbacks).
+
 **Disable Buttons During Long Operations**:
 ```python
 # Correct - prevents double-clicks during async operations
@@ -225,6 +326,23 @@ if st.button("Start Operation", disabled=is_running):
         await long_operation()
     finally:
         st.session_state.operation_running = False
+```
+
+**Safe DataFrame Row Access** (for iterating over query results):
+```python
+# Wrong - fails if column doesn't exist
+for _, row in df.iterrows():
+    value = row["ColumnName"]  # KeyError if column missing
+
+# Correct - use .get() with defaults and wrap in try/except
+for _, row in df.iterrows():
+    try:
+        value = row.get("ColumnName", "default")
+        other = row.get("OtherColumn", 0)
+        # ... use values
+    except Exception as e:
+        logger.warning(f"Error processing row: {e}")
+        continue
 ```
 
 **Async Code in Streamlit** (🔴 Critical):
@@ -279,4 +397,22 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 ## Test Status
 
-328 passed, 26 skipped, 0 failures. Run fast tests before commits.
+367 passed, 26 skipped, 0 failures. Run fast tests before commits.
+
+**CAP Multi-Annotator Tests** (35 tests in `test_cap_services.py`):
+- Taxonomy service operations (5 tests)
+- Repository CRUD with `researcher_id` (17 tests)
+- Statistics with `COUNT(DISTINCT BillID)` (4 tests)
+- Service facade delegation (4 tests)
+- User service annotation counts (2 tests)
+- Statistics edge cases: empty DB, division by zero, CSV export (3 tests)
+
+Key behaviors tested:
+- Multi-researcher same-bill annotation
+- Upsert behavior (re-annotation updates, not duplicates)
+- Researcher-specific uncoded bills queue
+- `get_all_annotations_for_bill()` for inter-rater comparison
+- Annotation count per bill (`AnnotationCount` column)
+- `get_user_annotation_count()` uses `ResearcherID` (not legacy `AssignedBy`)
+- Division by zero protection in coverage statistics
+- CSV export with multi-annotator researcher info
