@@ -145,6 +145,9 @@ class CAPAnnotationPageRenderer:
 
     def _render_tab_navigation(self, researcher_name: str):
         """Render tab navigation and content."""
+        # Get researcher_id from session state (used for all annotation operations)
+        researcher_id = st.session_state.get("cap_user_id")
+
         # Base tabs available to all users
         tab_options = [
             "📝 New Annotation",
@@ -181,27 +184,31 @@ class CAPAnnotationPageRenderer:
 
         st.markdown("---")
 
-        # Render selected tab content
+        # Render selected tab content (pass researcher_id, not researcher_name)
         if selected_tab == "📝 New Annotation":
-            self._render_new_annotation_tab(researcher_name)
+            self._render_new_annotation_tab(researcher_id)
         elif selected_tab == "🌐 Fetch from API":
-            self.form_renderer.render_api_fetch_section(researcher_name)
+            self.form_renderer.render_api_fetch_section(researcher_id)
         elif selected_tab == "📚 View Coded":
-            self.coded_bills_renderer.render_coded_bills_view()
+            self.coded_bills_renderer.render_coded_bills_view(researcher_id)
         elif selected_tab == "📊 Statistics":
             self.stats_renderer.render_stats_dashboard()
         elif selected_tab == "👥 Admin" and is_admin:
             self.admin_renderer.render_admin_panel()
 
-    def _render_new_annotation_tab(self, researcher_name: str):
-        """Render the new annotation tab."""
-        # Bill queue and annotation form
-        bill_id, submission_date = self.form_renderer.render_bill_queue()
+    def _render_new_annotation_tab(self, researcher_id: int):
+        """Render the new annotation tab.
+
+        Args:
+            researcher_id: The current researcher's database ID
+        """
+        # Bill queue and annotation form (pass researcher_id for filtering)
+        bill_id, submission_date = self.form_renderer.render_bill_queue(researcher_id)
 
         if bill_id:
             st.markdown("---")
             success = self.form_renderer.render_annotation_form(
-                bill_id, researcher_name, submission_date or ""
+                bill_id, researcher_id, submission_date or ""
             )
             if success:
                 # Clear and refresh

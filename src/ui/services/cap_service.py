@@ -88,72 +88,96 @@ class CAPAnnotationService:
 
     def get_uncoded_bills(
         self, knesset_num: Optional[int] = None, limit: int = 100,
-        search_term: Optional[str] = None
+        search_term: Optional[str] = None,
+        researcher_id: Optional[int] = None
     ) -> pd.DataFrame:
-        """Get bills that haven't been coded yet."""
-        return self._repository.get_uncoded_bills(knesset_num, limit, search_term)
+        """Get bills that haven't been coded by the specified researcher."""
+        return self._repository.get_uncoded_bills(
+            knesset_num, limit, search_term, researcher_id
+        )
 
     def get_coded_bills(
         self,
         knesset_num: Optional[int] = None,
         cap_code: Optional[int] = None,
         limit: int = 100,
+        researcher_id: Optional[int] = None,
     ) -> pd.DataFrame:
         """Get bills that have been coded."""
-        return self._repository.get_coded_bills(knesset_num, cap_code, limit)
+        return self._repository.get_coded_bills(
+            knesset_num, cap_code, limit, researcher_id
+        )
 
-    def get_recent_annotations(self, limit: int = 5) -> pd.DataFrame:
+    def get_recent_annotations(
+        self, limit: int = 5, researcher_id: Optional[int] = None
+    ) -> pd.DataFrame:
         """Get most recently annotated bills."""
-        return self._repository.get_recent_annotations(limit)
+        return self._repository.get_recent_annotations(limit, researcher_id)
 
     def get_bills_with_status(
         self,
         knesset_num: Optional[int] = None,
         limit: int = 100,
         search_term: Optional[str] = None,
-        include_coded: bool = False
+        include_coded: bool = False,
+        researcher_id: Optional[int] = None
     ) -> pd.DataFrame:
-        """Get bills with their annotation status (coded/uncoded)."""
+        """Get bills with their annotation status (coded/uncoded) for a researcher."""
         return self._repository.get_bills_with_status(
-            knesset_num, limit, search_term, include_coded
+            knesset_num, limit, search_term, include_coded, researcher_id
         )
 
-    def get_annotation_by_bill_id(self, bill_id: int) -> Optional[Dict[str, Any]]:
+    def get_annotation_by_bill_id(
+        self, bill_id: int, researcher_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         """Get the full annotation details for a specific bill."""
-        return self._repository.get_annotation_by_bill_id(bill_id)
+        return self._repository.get_annotation_by_bill_id(bill_id, researcher_id)
+
+    def get_all_annotations_for_bill(self, bill_id: int) -> pd.DataFrame:
+        """Get all annotations for a bill from all researchers."""
+        return self._repository.get_all_annotations_for_bill(bill_id)
 
     def save_annotation(
         self,
         bill_id: int,
         cap_minor_code: int,
         direction: int,
-        assigned_by: str,
+        researcher_id: int,
         confidence: str = "Medium",
         notes: str = "",
         source: str = "Database",
         submission_date: str = "",
     ) -> bool:
-        """Save a bill annotation."""
+        """Save a bill annotation for a specific researcher."""
         return self._repository.save_annotation(
             bill_id=bill_id,
             cap_minor_code=cap_minor_code,
             direction=direction,
-            assigned_by=assigned_by,
+            researcher_id=researcher_id,
             confidence=confidence,
             notes=notes,
             source=source,
             submission_date=submission_date,
         )
 
-    def delete_annotation(self, bill_id: int) -> bool:
+    def delete_annotation(
+        self, bill_id: int, researcher_id: Optional[int] = None
+    ) -> bool:
         """Delete an annotation for a bill."""
-        return self._repository.delete_annotation(bill_id)
+        return self._repository.delete_annotation(bill_id, researcher_id)
 
     def get_bills_not_in_database(
-        self, api_bills: pd.DataFrame, limit: int = 100
+        self, api_bills: pd.DataFrame, limit: int = 100,
+        researcher_id: Optional[int] = None
     ) -> pd.DataFrame:
         """Filter API bills to only those not in the local database."""
-        return self._repository.get_bills_not_in_database(api_bills, limit)
+        return self._repository.get_bills_not_in_database(
+            api_bills, limit, researcher_id
+        )
+
+    def get_bill_documents(self, bill_id: int) -> pd.DataFrame:
+        """Get documents for a bill, prioritized by type (Published Law first)."""
+        return self._repository.get_bill_documents(bill_id)
 
     # --- Statistics Operations (delegated to CAPStatisticsService) ---
 

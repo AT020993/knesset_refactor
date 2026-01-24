@@ -549,9 +549,7 @@ class CAPUserService:
                 result = conn.execute(
                     """
                     SELECT COUNT(*) FROM UserBillCAP
-                    WHERE AssignedBy = (
-                        SELECT DisplayName FROM UserResearchers WHERE ResearcherID = ?
-                    )
+                    WHERE ResearcherID = ?
                     """,
                     [researcher_id],
                 ).fetchone()

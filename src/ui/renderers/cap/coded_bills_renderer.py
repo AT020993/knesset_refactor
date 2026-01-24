@@ -2,6 +2,7 @@
 CAP Coded Bills Renderer
 
 Handles viewing and editing existing annotations.
+Supports multi-annotator mode where multiple researchers can annotate the same bill.
 """
 
 import logging
@@ -39,9 +40,10 @@ class CAPCodedBillsRenderer:
         if self._on_annotation_changed:
             self._on_annotation_changed()
 
-    def _handle_confirm_delete(self, bill_id: int):
+    def _handle_confirm_delete(self, bill_id: int, researcher_id: int):
         """Callback for confirming annotation deletion."""
-        success = self.service.delete_annotation(bill_id)
+        # Delete only this researcher's annotation
+        success = self.service.delete_annotation(bill_id, researcher_id)
         if success:
             self._notify_annotation_changed()
         # Clear confirmation state
@@ -55,22 +57,40 @@ class CAPCodedBillsRenderer:
         if f"confirm_delete_{bill_id}" in st.session_state:
             del st.session_state[f"confirm_delete_{bill_id}"]
 
-    def render_coded_bills_view(self):
-        """Render view of already coded bills with edit capability."""
+    def render_coded_bills_view(self, researcher_id: Optional[int] = None):
+        """
+        Render view of already coded bills with edit capability.
+
+        Args:
+            researcher_id: Filter to show only this researcher's annotations.
+                          If None, shows all annotations (admin view).
+        """
         st.subheader("📚 Coded Bills")
 
         # Filters
-        knesset_filter, cap_filter = self._render_filters()
+        knesset_filter, cap_filter, show_all = self._render_filters(researcher_id)
+
+        # Determine researcher filter
+        filter_researcher_id = None if show_all else researcher_id
 
         coded_bills = self.service.get_coded_bills(
-            knesset_num=knesset_filter, cap_code=cap_filter, limit=100
+            knesset_num=knesset_filter, cap_code=cap_filter, limit=100,
+            researcher_id=filter_researcher_id
         )
 
         if coded_bills.empty:
-            st.info("No coded bills found")
+            if filter_researcher_id:
+                st.info("You haven't coded any bills yet")
+            else:
+                st.info("No coded bills found")
             return
 
-        st.info(f"Found {len(coded_bills)} annotated bills")
+        # Count info
+        unique_bills = coded_bills["BillID"].nunique() if "BillID" in coded_bills.columns else len(coded_bills)
+        if filter_researcher_id:
+            st.info(f"Found {len(coded_bills)} of your annotations ({unique_bills} unique bills)")
+        else:
+            st.info(f"Found {len(coded_bills)} annotations ({unique_bills} unique bills)")
 
         # Display
         self._render_bills_table(coded_bills)
@@ -79,14 +99,22 @@ class CAPCodedBillsRenderer:
         st.markdown("---")
         st.subheader("✏️ Edit Annotation")
 
-        self._render_edit_section(coded_bills)
+        self._render_edit_section(coded_bills, researcher_id)
 
         # Export button
         st.markdown("---")
         self._render_export_section()
 
-    def _render_filters(self) -> tuple:
-        """Render filter controls."""
+    def _render_filters(self, researcher_id: Optional[int] = None) -> tuple:
+        """
+        Render filter controls.
+
+        Args:
+            researcher_id: Current researcher's ID for filtering options
+
+        Returns:
+            Tuple of (knesset_filter, cap_filter, show_all_researchers)
+        """
         # Check if we need to reset filters (after a new annotation)
         if st.session_state.pop("cap_annotation_just_saved", False):
             # Reset filter keys to show all results (user will see their new annotation)
@@ -96,7 +124,7 @@ class CAPCodedBillsRenderer:
                 del st.session_state["coded_cap_filter"]
             st.info("✨ Filters reset to show your newly coded bill!")
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([2, 2, 2])
         with col1:
             knesset_filter = st.selectbox(
                 "Filter by Knesset",
@@ -119,47 +147,76 @@ class CAPCodedBillsRenderer:
                 key="coded_cap_filter",
             )
 
-        return knesset_filter, cap_filter
+        with col3:
+            # Option to show all researchers' annotations
+            show_all = st.checkbox(
+                "Show all researchers",
+                value=False,
+                key="coded_show_all_researchers",
+                help="Show annotations from all researchers, not just yours"
+            )
+
+        return knesset_filter, cap_filter, show_all
 
     def _render_bills_table(self, coded_bills):
-        """Render the coded bills data table."""
-        display_cols = [
-            "BillID",
-            "KnessetNum",
-            "BillName",
-            "CAPTopic_HE",
-            "Direction",
-            "AssignedDate",
-        ]
+        """Render the coded bills data table with annotation count."""
+        # Build display columns (some may not exist in older schemas)
+        display_cols = ["BillID", "KnessetNum", "BillName", "CAPTopic_HE", "Direction"]
+        col_names = ["ID", "Knesset", "Bill Name", "Category", "Direction"]
+
+        # Add researcher name if available
+        if "AssignedBy" in coded_bills.columns:
+            display_cols.append("AssignedBy")
+            col_names.append("Researcher")
+
+        # Add annotation count if available
+        if "AnnotationCount" in coded_bills.columns:
+            display_cols.append("AnnotationCount")
+            col_names.append("👥 Count")
+
+        display_cols.append("AssignedDate")
+        col_names.append("Annotation Date")
+
         display_df = coded_bills[display_cols].copy()
-        display_df.columns = [
-            "ID",
-            "Knesset",
-            "Bill Name",
-            "Category",
-            "Direction",
-            "Annotation Date",
-        ]
+        display_df.columns = col_names
         display_df["Direction"] = display_df["Direction"].map({1: "+1", -1: "-1", 0: "0"})
 
         st.dataframe(display_df, use_container_width=True)
 
-    def _render_edit_section(self, coded_bills):
-        """Render bill selection and edit form."""
+    def _render_edit_section(self, coded_bills, researcher_id: Optional[int] = None):
+        """
+        Render bill selection and edit form.
+
+        Args:
+            coded_bills: DataFrame of coded bills
+            researcher_id: Current researcher's ID for edits
+        """
         # Bill selection for editing
         edit_idx = st.selectbox(
-            "Select bill to edit",
+            "Select annotation to edit",
             options=range(len(coded_bills)),
-            format_func=lambda i: f"{coded_bills.iloc[i]['BillID']} - {coded_bills.iloc[i]['BillName'][:60]}...",
+            format_func=lambda i: self._format_edit_option(coded_bills.iloc[i]),
             key="edit_bill_select",
         )
 
         if edit_idx is not None:
             selected_bill = coded_bills.iloc[edit_idx]
             bill_id = int(selected_bill["BillID"])
+            # Get researcher ID from the selected annotation (in case viewing all)
+            # Prioritize the annotation's ResearcherID, then fall back to current user
+            annotation_researcher_id_raw = selected_bill.get("ResearcherID")
+            if annotation_researcher_id_raw is not None:
+                annotation_researcher_id = int(annotation_researcher_id_raw)
+            elif researcher_id is not None:
+                annotation_researcher_id = int(researcher_id)
+            else:
+                st.error("❌ Unable to identify researcher. Please log in again.")
+                self.logger.error("Both ResearcherID and researcher_id are None")
+                return
 
             # Show current annotation details
-            st.markdown(f"**Current Annotation for Bill {bill_id}:**")
+            researcher_name = selected_bill.get("AssignedBy", "Unknown")
+            st.markdown(f"**Current Annotation for Bill {bill_id}** (by {researcher_name}):")
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.write(f"📁 Category: {selected_bill['CAPTopic_HE']}")
@@ -175,17 +232,42 @@ class CAPCodedBillsRenderer:
             with col3:
                 st.write(f"📅 Date: {selected_bill['AssignedDate']}")
 
-            # Get full annotation details
-            current_annotation = self.service.get_annotation_by_bill_id(bill_id)
+            # Get full annotation details (for this researcher's annotation)
+            current_annotation = self.service.get_annotation_by_bill_id(
+                bill_id, annotation_researcher_id
+            )
 
             # Render edit form
             if current_annotation:
-                self._render_edit_form(bill_id, current_annotation)
+                self._render_edit_form(bill_id, current_annotation, annotation_researcher_id)
             else:
                 st.warning("Could not load annotation details for editing")
 
-    def _render_edit_form(self, bill_id: int, current_annotation: dict) -> bool:
-        """Render the edit form for an existing annotation."""
+    def _format_edit_option(self, bill) -> str:
+        """Format bill option for edit selection with researcher info."""
+        bill_name = str(bill["BillName"])[:50] if bill.get("BillName") else "Unknown"
+        if len(str(bill.get("BillName", ""))) > 50:
+            bill_name += "..."
+
+        researcher = bill.get("AssignedBy", "")
+        ann_count = bill.get("AnnotationCount", 1)
+
+        badge = f" 👥{ann_count}" if ann_count > 1 else ""
+        researcher_badge = f" [{researcher}]" if researcher else ""
+
+        return f"{bill['BillID']} - {bill_name}{researcher_badge}{badge}"
+
+    def _render_edit_form(
+        self, bill_id: int, current_annotation: dict, researcher_id: int
+    ) -> bool:
+        """
+        Render the edit form for an existing annotation.
+
+        Args:
+            bill_id: The bill ID
+            current_annotation: Current annotation data
+            researcher_id: The researcher ID who owns this annotation
+        """
         # Get taxonomy
         taxonomy = self.service.get_taxonomy()
         if taxonomy.empty:
@@ -304,14 +386,14 @@ class CAPCodedBillsRenderer:
                 delete = st.form_submit_button("🗑️ Delete Annotation", type="secondary")
 
             if submitted:
-                researcher_name = st.session_state.get("cap_researcher_name", "Unknown")
                 submission_date = current_annotation.get("SubmissionDate", "")
 
+                # Use researcher_id for the update
                 success = self.service.save_annotation(
                     bill_id=bill_id,
                     cap_minor_code=selected_minor,
                     direction=direction,
-                    assigned_by=researcher_name,
+                    researcher_id=researcher_id,
                     confidence=confidence,
                     notes=notes,
                     source=current_annotation.get("Source", "Database"),
@@ -328,6 +410,8 @@ class CAPCodedBillsRenderer:
 
             if delete:
                 st.session_state[f"confirm_delete_{bill_id}"] = True
+                # Store researcher_id for the delete callback
+                st.session_state[f"delete_researcher_{bill_id}"] = researcher_id
 
         # Handle delete result from callback
         delete_result = st.session_state.pop(f"delete_result_{bill_id}", None)
@@ -339,16 +423,19 @@ class CAPCodedBillsRenderer:
         # Handle delete confirmation outside the form
         if st.session_state.get(f"confirm_delete_{bill_id}", False):
             st.warning(
-                f"⚠️ Are you sure you want to delete the annotation for Bill {bill_id}?"
+                f"⚠️ Are you sure you want to delete your annotation for Bill {bill_id}?"
             )
             col1, col2 = st.columns(2)
             with col1:
+                delete_researcher_id = st.session_state.get(
+                    f"delete_researcher_{bill_id}", researcher_id
+                )
                 st.button(
                     "Yes, Delete",
                     key=f"confirm_del_{bill_id}",
                     type="primary",
                     on_click=self._handle_confirm_delete,
-                    args=(bill_id,),
+                    args=(bill_id, delete_researcher_id),
                 )
             with col2:
                 st.button(

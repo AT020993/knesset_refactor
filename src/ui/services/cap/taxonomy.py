@@ -46,7 +46,8 @@ class CAPTaxonomyService:
 
         Tables created:
         - UserCAPTaxonomy: The codebook taxonomy
-        - UserBillCAP: Bill annotations
+        - UserBillCAP: Bill annotations (supports multiple annotations per bill)
+        - UserResearchers: Researcher accounts
 
         Returns:
             True if successful, False otherwise
@@ -69,23 +70,8 @@ class CAPTaxonomyService:
                     )
                 """)
 
-                # Create bill annotations table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS UserBillCAP (
-                        BillID INTEGER PRIMARY KEY,
-                        CAPMinorCode INTEGER NOT NULL,
-                        Direction INTEGER NOT NULL DEFAULT 0,
-                        AssignedBy VARCHAR NOT NULL,
-                        AssignedDate TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        Confidence VARCHAR DEFAULT 'Medium',
-                        Notes VARCHAR,
-                        Source VARCHAR DEFAULT 'Database',
-                        SubmissionDate VARCHAR,
-                        FOREIGN KEY (CAPMinorCode) REFERENCES UserCAPTaxonomy(MinorCode)
-                    )
-                """)
-
                 # Create researchers table for multi-user authentication
+                # (Must exist before UserBillCAP for FK reference)
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS UserResearchers (
                         ResearcherID INTEGER PRIMARY KEY,
@@ -100,12 +86,199 @@ class CAPTaxonomyService:
                     )
                 """)
 
+                # Check if we need to migrate from old schema
+                self._migrate_to_multi_annotator(conn)
+
+                # Create performance indexes
+                self._ensure_indexes(conn)
+
                 self.logger.info("CAP annotation tables created/verified successfully")
                 return True
 
         except Exception as e:
             self.logger.error(f"Error creating CAP tables: {e}", exc_info=True)
             return False
+
+    def _ensure_indexes(self, conn) -> None:
+        """
+        Ensure performance indexes exist on UserBillCAP table.
+
+        Idempotent - IF NOT EXISTS handles already-created indexes.
+        These indexes significantly speed up queries that filter by:
+        - BillID (single bill lookups)
+        - ResearcherID (researcher-specific queries)
+        - BillID + ResearcherID (unique constraint queries)
+        - AssignedDate (sorting by recency)
+        """
+        indexes = [
+            ("idx_userbillcap_billid", "CREATE INDEX IF NOT EXISTS idx_userbillcap_billid ON UserBillCAP(BillID)"),
+            ("idx_userbillcap_researcherid", "CREATE INDEX IF NOT EXISTS idx_userbillcap_researcherid ON UserBillCAP(ResearcherID)"),
+            ("idx_userbillcap_bill_researcher", "CREATE INDEX IF NOT EXISTS idx_userbillcap_bill_researcher ON UserBillCAP(BillID, ResearcherID)"),
+            ("idx_userbillcap_assigneddate", "CREATE INDEX IF NOT EXISTS idx_userbillcap_assigneddate ON UserBillCAP(AssignedDate DESC)"),
+        ]
+
+        for index_name, create_sql in indexes:
+            try:
+                conn.execute(create_sql)
+                self.logger.debug(f"Ensured index: {index_name}")
+            except Exception as e:
+                self.logger.warning(f"Could not create index {index_name}: {e}")
+
+    def _migrate_to_multi_annotator(self, conn) -> None:
+        """
+        Migrate existing annotations to multi-annotator schema.
+
+        Old schema: BillID as PRIMARY KEY (one annotation per bill)
+        New schema: AnnotationID as PRIMARY KEY, UNIQUE(BillID, ResearcherID)
+                    allowing multiple researchers to annotate the same bill.
+
+        Args:
+            conn: Active DuckDB connection
+        """
+        # Check if UserBillCAP table exists
+        tables = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
+        ).fetchdf()
+
+        if tables.empty:
+            # Table doesn't exist, create with new schema
+            self.logger.info("Creating UserBillCAP table with multi-annotator schema")
+            # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
+            conn.execute("""
+                CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1
+            """)
+            conn.execute("""
+                CREATE TABLE UserBillCAP (
+                    AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                    BillID INTEGER NOT NULL,
+                    ResearcherID INTEGER NOT NULL,
+                    CAPMinorCode INTEGER NOT NULL,
+                    Direction INTEGER NOT NULL DEFAULT 0,
+                    AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    Confidence VARCHAR DEFAULT 'Medium',
+                    Notes VARCHAR,
+                    Source VARCHAR DEFAULT 'Database',
+                    SubmissionDate VARCHAR,
+                    FOREIGN KEY (CAPMinorCode) REFERENCES UserCAPTaxonomy(MinorCode),
+                    FOREIGN KEY (ResearcherID) REFERENCES UserResearchers(ResearcherID),
+                    UNIQUE(BillID, ResearcherID)
+                )
+            """)
+            return
+
+        # Check if migration is needed (look for ResearcherID column)
+        columns = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'UserBillCAP'"
+        ).fetchdf()
+
+        column_names = columns["column_name"].str.lower().tolist()
+
+        if "researcherid" in column_names:
+            self.logger.debug("UserBillCAP already has multi-annotator schema")
+            return
+
+        # Migration needed: AssignedBy (string) -> ResearcherID (FK)
+        self.logger.info("Migrating UserBillCAP to multi-annotator schema...")
+
+        # Check if there's any existing data
+        existing_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM UserBillCAP"
+        ).fetchone()[0]
+
+        if existing_count == 0:
+            # No data, just drop and recreate
+            self.logger.info("No existing annotations, recreating table with new schema")
+            conn.execute("DROP TABLE UserBillCAP")
+            # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
+            conn.execute("""
+                CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1
+            """)
+            conn.execute("""
+                CREATE TABLE UserBillCAP (
+                    AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                    BillID INTEGER NOT NULL,
+                    ResearcherID INTEGER NOT NULL,
+                    CAPMinorCode INTEGER NOT NULL,
+                    Direction INTEGER NOT NULL DEFAULT 0,
+                    AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    Confidence VARCHAR DEFAULT 'Medium',
+                    Notes VARCHAR,
+                    Source VARCHAR DEFAULT 'Database',
+                    SubmissionDate VARCHAR,
+                    FOREIGN KEY (CAPMinorCode) REFERENCES UserCAPTaxonomy(MinorCode),
+                    FOREIGN KEY (ResearcherID) REFERENCES UserResearchers(ResearcherID),
+                    UNIQUE(BillID, ResearcherID)
+                )
+            """)
+            return
+
+        # Has existing data - migrate carefully
+        self.logger.info(f"Migrating {existing_count} existing annotations...")
+
+        # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
+        conn.execute("""
+            CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1
+        """)
+
+        # Create new table with proper schema
+        conn.execute("""
+            CREATE TABLE UserBillCAP_new (
+                AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                BillID INTEGER NOT NULL,
+                ResearcherID INTEGER NOT NULL,
+                CAPMinorCode INTEGER NOT NULL,
+                Direction INTEGER NOT NULL DEFAULT 0,
+                AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                Confidence VARCHAR DEFAULT 'Medium',
+                Notes VARCHAR,
+                Source VARCHAR DEFAULT 'Database',
+                SubmissionDate VARCHAR,
+                FOREIGN KEY (CAPMinorCode) REFERENCES UserCAPTaxonomy(MinorCode),
+                FOREIGN KEY (ResearcherID) REFERENCES UserResearchers(ResearcherID),
+                UNIQUE(BillID, ResearcherID)
+            )
+        """)
+
+        # Migrate data: lookup ResearcherID from AssignedBy display name
+        # If no match found, use the first admin (ID 1) as fallback
+        conn.execute("""
+            INSERT INTO UserBillCAP_new
+            (BillID, ResearcherID, CAPMinorCode, Direction, AssignedDate,
+             Confidence, Notes, Source, SubmissionDate)
+            SELECT
+                old.BillID,
+                COALESCE(r.ResearcherID, 1) AS ResearcherID,
+                old.CAPMinorCode,
+                COALESCE(old.Direction, 0),
+                old.AssignedDate,
+                COALESCE(old.Confidence, 'Medium'),
+                old.Notes,
+                COALESCE(old.Source, 'Database'),
+                old.SubmissionDate
+            FROM UserBillCAP old
+            LEFT JOIN UserResearchers r ON old.AssignedBy = r.DisplayName
+        """)
+
+        # Verify migration
+        new_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM UserBillCAP_new"
+        ).fetchone()[0]
+
+        if new_count != existing_count:
+            # Rollback
+            conn.execute("DROP TABLE UserBillCAP_new")
+            raise RuntimeError(
+                f"Migration verification failed: expected {existing_count}, got {new_count}"
+            )
+
+        # Swap tables
+        conn.execute("DROP TABLE UserBillCAP")
+        conn.execute("ALTER TABLE UserBillCAP_new RENAME TO UserBillCAP")
+
+        self.logger.info(
+            f"Successfully migrated {new_count} annotations to multi-annotator schema"
+        )
 
     def load_taxonomy_from_csv(self) -> bool:
         """

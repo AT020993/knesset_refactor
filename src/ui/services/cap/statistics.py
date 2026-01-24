@@ -25,13 +25,20 @@ class CAPStatisticsService:
         """
         Get statistics about annotations.
 
+        In multi-annotator mode, counts unique bills (not total annotations).
+        For example, if 2 researchers annotated the same bill, that counts as
+        1 coded bill, not 2.
+
         Returns:
             Dictionary with annotation statistics including:
-            - total_coded: Number of annotated bills
+            - total_coded: Number of unique annotated bills
+            - total_annotations: Total annotation records (may be > total_coded)
             - total_bills: Total bills in database
-            - by_major_category: Breakdown by major category
-            - by_direction: Breakdown by direction
-            - by_knesset: Breakdown by Knesset number
+            - total_researchers: Number of researchers with annotations
+            - by_major_category: Breakdown by major category (unique bills)
+            - by_direction: Breakdown by direction (all annotations)
+            - by_knesset: Breakdown by Knesset number (unique bills)
+            - by_researcher: Breakdown by researcher
         """
         try:
             with get_db_connection(
@@ -39,11 +46,17 @@ class CAPStatisticsService:
             ) as conn:
                 stats = {}
 
-                # Total coded
+                # Total unique coded bills
+                result = conn.execute(
+                    "SELECT COUNT(DISTINCT BillID) as count FROM UserBillCAP"
+                ).fetchone()
+                stats["total_coded"] = result[0] if result else 0
+
+                # Total annotations (may be > unique bills in multi-annotator mode)
                 result = conn.execute(
                     "SELECT COUNT(*) as count FROM UserBillCAP"
                 ).fetchone()
-                stats["total_coded"] = result[0] if result else 0
+                stats["total_annotations"] = result[0] if result else 0
 
                 # Total bills
                 result = conn.execute(
@@ -51,9 +64,15 @@ class CAPStatisticsService:
                 ).fetchone()
                 stats["total_bills"] = result[0] if result else 0
 
-                # By major category
+                # Total unique researchers with annotations
+                result = conn.execute(
+                    "SELECT COUNT(DISTINCT ResearcherID) as count FROM UserBillCAP"
+                ).fetchone()
+                stats["total_researchers"] = result[0] if result else 0
+
+                # By major category (count unique bills, not annotations)
                 by_major = conn.execute("""
-                    SELECT T.MajorTopic_HE, COUNT(*) as count
+                    SELECT T.MajorTopic_HE, COUNT(DISTINCT CAP.BillID) as count
                     FROM UserBillCAP CAP
                     JOIN UserCAPTaxonomy T ON CAP.CAPMinorCode = T.MinorCode
                     GROUP BY T.MajorCode, T.MajorTopic_HE
@@ -61,7 +80,7 @@ class CAPStatisticsService:
                 """).fetchdf()
                 stats["by_major_category"] = by_major.to_dict("records")
 
-                # By direction
+                # By direction (count all annotations to show researcher perspectives)
                 by_direction = conn.execute("""
                     SELECT Direction, COUNT(*) as count
                     FROM UserBillCAP
@@ -69,15 +88,28 @@ class CAPStatisticsService:
                 """).fetchdf()
                 stats["by_direction"] = by_direction.to_dict("records")
 
-                # By Knesset
+                # By Knesset (count unique bills)
                 by_knesset = conn.execute("""
-                    SELECT B.KnessetNum, COUNT(*) as count
+                    SELECT B.KnessetNum, COUNT(DISTINCT CAP.BillID) as count
                     FROM UserBillCAP CAP
                     JOIN KNS_Bill B ON CAP.BillID = B.BillID
                     GROUP BY B.KnessetNum
                     ORDER BY B.KnessetNum DESC
                 """).fetchdf()
                 stats["by_knesset"] = by_knesset.to_dict("records")
+
+                # By researcher (annotation count per researcher)
+                by_researcher = conn.execute("""
+                    SELECT
+                        R.DisplayName as researcher_name,
+                        COUNT(*) as annotation_count,
+                        COUNT(DISTINCT CAP.BillID) as unique_bills
+                    FROM UserBillCAP CAP
+                    JOIN UserResearchers R ON CAP.ResearcherID = R.ResearcherID
+                    GROUP BY CAP.ResearcherID, R.DisplayName
+                    ORDER BY annotation_count DESC
+                """).fetchdf()
+                stats["by_researcher"] = by_researcher.to_dict("records")
 
                 return stats
 
@@ -89,6 +121,9 @@ class CAPStatisticsService:
         """
         Export all annotations to CSV.
 
+        In multi-annotator mode, each annotation is a separate row, including
+        the researcher who made it. This allows analysis of inter-rater reliability.
+
         Args:
             output_path: Path to save the CSV file
 
@@ -98,6 +133,7 @@ class CAPStatisticsService:
         try:
             query = """
                 SELECT
+                    CAP.AnnotationID,
                     B.BillID,
                     B.KnessetNum,
                     B.Name AS BillName,
@@ -116,7 +152,9 @@ class CAPStatisticsService:
                         WHEN -1 THEN 'צמצום/פגיעה'
                         ELSE 'אחר'
                     END AS Direction_HE,
-                    CAP.AssignedBy,
+                    CAP.ResearcherID,
+                    R.DisplayName AS ResearcherName,
+                    R.Username AS ResearcherUsername,
                     strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M:%S') AS AssignedDate,
                     CAP.Confidence,
                     CAP.Notes,
@@ -125,7 +163,8 @@ class CAPStatisticsService:
                 FROM UserBillCAP CAP
                 JOIN KNS_Bill B ON CAP.BillID = B.BillID
                 JOIN UserCAPTaxonomy T ON CAP.CAPMinorCode = T.MinorCode
-                ORDER BY B.KnessetNum DESC, B.BillID DESC
+                LEFT JOIN UserResearchers R ON CAP.ResearcherID = R.ResearcherID
+                ORDER BY B.KnessetNum DESC, B.BillID DESC, CAP.ResearcherID
             """
 
             with get_db_connection(
@@ -153,15 +192,19 @@ class CAPStatisticsService:
             ) as conn:
                 stats = {}
 
-                # Coverage by Knesset
+                # Coverage by Knesset (using NULLIF to prevent division by zero)
                 coverage = conn.execute("""
                     SELECT
                         B.KnessetNum,
                         COUNT(DISTINCT B.BillID) AS total_bills,
                         COUNT(DISTINCT CAP.BillID) AS coded_bills,
-                        ROUND(
-                            100.0 * COUNT(DISTINCT CAP.BillID) / COUNT(DISTINCT B.BillID),
-                            1
+                        COALESCE(
+                            ROUND(
+                                100.0 * COUNT(DISTINCT CAP.BillID) /
+                                NULLIF(COUNT(DISTINCT B.BillID), 0),
+                                1
+                            ),
+                            0.0
                         ) AS coverage_pct
                     FROM KNS_Bill B
                     LEFT JOIN UserBillCAP CAP ON B.BillID = CAP.BillID

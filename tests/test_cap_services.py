@@ -53,6 +53,20 @@ def initialized_db(temp_db_path):
         )
     """)
 
+    # Create UserResearchers table for multi-annotator support
+    conn.execute("""
+        CREATE TABLE UserResearchers (
+            ResearcherID INTEGER PRIMARY KEY,
+            Username VARCHAR UNIQUE NOT NULL,
+            DisplayName VARCHAR NOT NULL,
+            PasswordHash VARCHAR NOT NULL,
+            Role VARCHAR DEFAULT 'researcher',
+            IsActive BOOLEAN DEFAULT TRUE,
+            CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            LastLogin TIMESTAMP
+        )
+    """)
+
     # Insert sample bills
     conn.execute("""
         INSERT INTO KNS_Bill VALUES
@@ -68,12 +82,41 @@ def initialized_db(temp_db_path):
         (104, 'First Reading')
     """)
 
+    # Insert test researchers
+    conn.execute("""
+        INSERT INTO UserResearchers (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive)
+        VALUES
+        (1, 'researcher1', 'Test Researcher 1', 'hash1', 'researcher', TRUE),
+        (2, 'researcher2', 'Test Researcher 2', 'hash2', 'researcher', TRUE),
+        (3, 'admin', 'Admin User', 'hash3', 'admin', TRUE)
+    """)
+
     conn.close()
     return temp_db_path
 
 
 class TestCAPTaxonomyService:
     """Tests for the CAPTaxonomyService class."""
+
+    def test_indexes_created_on_userbillcap(self, temp_db_path, mock_logger):
+        """Test that performance indexes are created on UserBillCAP table."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+
+        service = CAPTaxonomyService(temp_db_path, mock_logger)
+        service.ensure_tables_exist()
+
+        import duckdb
+        conn = duckdb.connect(str(temp_db_path))
+        indexes = conn.execute("""
+            SELECT index_name FROM duckdb_indexes()
+            WHERE table_name = 'UserBillCAP'
+        """).fetchall()
+        index_names = [idx[0] for idx in indexes]
+        conn.close()
+
+        assert 'idx_userbillcap_billid' in index_names
+        assert 'idx_userbillcap_researcherid' in index_names
+        assert 'idx_userbillcap_bill_researcher' in index_names
 
     def test_ensure_tables_exist_creates_tables(self, temp_db_path, mock_logger):
         """Test that ensure_tables_exist creates the CAP tables."""
@@ -135,6 +178,78 @@ class TestCAPTaxonomyService:
 
 class TestCAPAnnotationRepository:
     """Tests for the CAPAnnotationRepository class."""
+
+    def test_save_annotation_rejects_string_researcher_id(self, initialized_db, mock_logger):
+        """Test that save_annotation rejects string researcher_id with clear error."""
+        from ui.services.cap.repository import CAPAnnotationRepository
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+
+        # Setup
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        import duckdb
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test Major', 'Test Major EN', 101, 'Test Minor', 'Test Minor EN')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Should fail with string (common mistake: passing cap_researcher_name)
+        result = repo.save_annotation(
+            bill_id=1,
+            cap_minor_code=101,
+            direction=1,
+            researcher_id="John Doe",  # Wrong! Should be int
+        )
+
+        assert result is False
+        # Verify error was logged with helpful message about the type confusion
+        error_calls = [str(call) for call in mock_logger.error.call_args_list]
+        assert any("researcher_id" in str(call) and ("str" in str(call) or "int" in str(call)) for call in error_calls), \
+            f"Expected error message about researcher_id type, got: {error_calls}"
+
+    def test_save_annotation_rejects_invalid_researcher_id(self, initialized_db, mock_logger):
+        """Test that save_annotation rejects zero or negative researcher_id."""
+        from ui.services.cap.repository import CAPAnnotationRepository
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+
+        # Setup
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        import duckdb
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test Major', 'Test Major EN', 101, 'Test Minor', 'Test Minor EN')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Should fail with zero
+        result_zero = repo.save_annotation(
+            bill_id=1,
+            cap_minor_code=101,
+            direction=1,
+            researcher_id=0,
+        )
+        assert result_zero is False
+
+        # Should fail with negative
+        result_negative = repo.save_annotation(
+            bill_id=1,
+            cap_minor_code=101,
+            direction=1,
+            researcher_id=-1,
+        )
+        assert result_negative is False
 
     def test_get_uncoded_bills_returns_dataframe(self, initialized_db, mock_logger):
         """Test that get_uncoded_bills returns a DataFrame."""
@@ -217,7 +332,7 @@ class TestCAPAnnotationRepository:
             bill_id=1,
             cap_minor_code=101,
             direction=1,
-            assigned_by="test@example.com",
+            researcher_id=1,  # Use researcher_id instead of assigned_by
             confidence="High",
             notes="Test annotation"
         )
@@ -251,10 +366,10 @@ class TestCAPAnnotationRepository:
             bill_id=1,
             cap_minor_code=101,
             direction=-1,
-            assigned_by="researcher@test.com"
+            researcher_id=1  # Use researcher_id instead of assigned_by
         )
 
-        annotation = repo.get_annotation_by_bill_id(1)
+        annotation = repo.get_annotation_by_bill_id(1, researcher_id=1)
 
         assert annotation is not None
         assert annotation['BillID'] == 1
@@ -279,17 +394,354 @@ class TestCAPAnnotationRepository:
         conn.close()
 
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=0, assigned_by="test")
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=0, researcher_id=1)
 
         # Verify annotation exists
-        assert repo.get_annotation_by_bill_id(1) is not None
+        assert repo.get_annotation_by_bill_id(1, researcher_id=1) is not None
 
-        # Delete annotation
-        result = repo.delete_annotation(1)
+        # Delete annotation (must specify researcher_id in multi-annotator mode)
+        result = repo.delete_annotation(1, researcher_id=1)
         assert result is True
 
         # Verify annotation is gone
-        assert repo.get_annotation_by_bill_id(1) is None
+        assert repo.get_annotation_by_bill_id(1, researcher_id=1) is None
+
+    def test_multiple_researchers_annotate_same_bill(self, initialized_db, mock_logger):
+        """Test that multiple researchers can annotate the same bill independently."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts'),
+                   (1, 'מוסדות שלטון', 'Government Institutions', 102, 'ממשלה', 'Government')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Researcher 1 annotates bill 1 with code 101 and direction +1
+        result1 = repo.save_annotation(
+            bill_id=1, cap_minor_code=101, direction=1, researcher_id=1
+        )
+        assert result1 is True
+
+        # Researcher 2 annotates the SAME bill with different code and direction
+        result2 = repo.save_annotation(
+            bill_id=1, cap_minor_code=102, direction=-1, researcher_id=2
+        )
+        assert result2 is True
+
+        # Both annotations should exist
+        ann1 = repo.get_annotation_by_bill_id(1, researcher_id=1)
+        ann2 = repo.get_annotation_by_bill_id(1, researcher_id=2)
+
+        assert ann1 is not None
+        assert ann2 is not None
+        assert ann1['CAPMinorCode'] == 101
+        assert ann1['Direction'] == 1
+        assert ann2['CAPMinorCode'] == 102
+        assert ann2['Direction'] == -1
+
+    def test_get_all_annotations_for_bill(self, initialized_db, mock_logger):
+        """Test retrieving all annotations for a bill from all researchers."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Two researchers annotate the same bill
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+
+        # Get all annotations
+        all_annotations = repo.get_all_annotations_for_bill(1)
+
+        assert len(all_annotations) == 2
+        assert set(all_annotations['ResearcherID'].tolist()) == {1, 2}
+
+    def test_get_uncoded_bills_filters_by_researcher(self, initialized_db, mock_logger):
+        """Test that get_uncoded_bills only shows bills not annotated by specific researcher."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Researcher 1 annotates bill 1
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+
+        # Researcher 1 should see 2 uncoded bills (bills 2 and 3)
+        uncoded_r1 = repo.get_uncoded_bills(researcher_id=1)
+        assert len(uncoded_r1) == 2
+        assert 1 not in uncoded_r1['BillID'].tolist()
+
+        # Researcher 2 should see all 3 uncoded bills (hasn't annotated any)
+        uncoded_r2 = repo.get_uncoded_bills(researcher_id=2)
+        assert len(uncoded_r2) == 3
+
+    def test_save_annotation_upsert_updates_existing(self, initialized_db, mock_logger):
+        """Test that save_annotation updates when researcher re-annotates same bill."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy entries
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts'),
+                   (1, 'מוסדות שלטון', 'Government Institutions', 102, 'ממשלה', 'Government')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # First annotation
+        result1 = repo.save_annotation(
+            bill_id=1, cap_minor_code=101, direction=1, researcher_id=1,
+            notes="First annotation"
+        )
+        assert result1 is True
+
+        # Same researcher updates their annotation on the same bill
+        result2 = repo.save_annotation(
+            bill_id=1, cap_minor_code=102, direction=-1, researcher_id=1,
+            notes="Updated annotation"
+        )
+        assert result2 is True
+
+        # Should only have ONE annotation for this researcher/bill pair
+        annotation = repo.get_annotation_by_bill_id(1, researcher_id=1)
+        assert annotation is not None
+        assert annotation['CAPMinorCode'] == 102  # Updated value
+        assert annotation['Direction'] == -1  # Updated value
+        assert annotation['Notes'] == "Updated annotation"  # Updated value
+
+        # Verify only one annotation exists (not two)
+        all_annotations = repo.get_all_annotations_for_bill(1)
+        assert len(all_annotations) == 1
+
+    def test_unique_constraint_prevents_duplicate_researcher_bill(self, initialized_db, mock_logger):
+        """Test that UNIQUE(BillID, ResearcherID) constraint is enforced via upsert."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Both annotations should succeed (upsert handles duplicates)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=1)
+
+        # Verify database integrity - only one annotation per researcher per bill
+        all_for_bill = repo.get_all_annotations_for_bill(1)
+        researcher_1_annotations = all_for_bill[all_for_bill['ResearcherID'] == 1]
+        assert len(researcher_1_annotations) == 1
+
+    def test_get_coded_bills_shows_annotation_count(self, initialized_db, mock_logger):
+        """Test that get_coded_bills shows annotation count per bill.
+
+        Note: get_coded_bills() returns one row per ANNOTATION (not per bill).
+        In multi-annotator mode, a bill with 2 annotations returns 2 rows.
+        The AnnotationCount column shows the total annotations for that bill.
+        """
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Bill 1: annotated by 2 researchers
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+
+        # Bill 2: annotated by 1 researcher
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=0, researcher_id=1)
+
+        coded_bills = repo.get_coded_bills()
+
+        # get_coded_bills returns one row per annotation, not per unique bill
+        # Bill 1 has 2 annotations, Bill 2 has 1 annotation = 3 total rows
+        assert len(coded_bills) == 3
+
+        # Verify 2 unique bills are represented
+        unique_bills = coded_bills['BillID'].unique()
+        assert len(unique_bills) == 2
+
+        # Check annotation counts - each row for bill 1 should show count=2
+        if 'AnnotationCount' in coded_bills.columns:
+            bill1_rows = coded_bills[coded_bills['BillID'] == 1]
+            bill2_rows = coded_bills[coded_bills['BillID'] == 2]
+
+            # Bill 1 has 2 annotations
+            assert len(bill1_rows) == 2
+            assert all(bill1_rows['AnnotationCount'] == 2)
+
+            # Bill 2 has 1 annotation
+            assert len(bill2_rows) == 1
+            assert bill2_rows.iloc[0]['AnnotationCount'] == 1
+
+    def test_get_bills_with_status_researcher_specific(self, initialized_db, mock_logger):
+        """Test that get_bills_with_status correctly shows coded status per researcher."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Researcher 1 annotates bill 1
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+
+        # Get bills with status for researcher 1 (include coded)
+        bills_r1 = repo.get_bills_with_status(include_coded=True, researcher_id=1)
+        bill1_r1 = bills_r1[bills_r1['BillID'] == 1]
+        assert len(bill1_r1) == 1
+        assert bill1_r1.iloc[0]['IsCoded'] == 1  # Coded BY researcher 1
+
+        # Get bills with status for researcher 2 (include coded)
+        bills_r2 = repo.get_bills_with_status(include_coded=True, researcher_id=2)
+        bill1_r2 = bills_r2[bills_r2['BillID'] == 1]
+        assert len(bill1_r2) == 1
+        assert bill1_r2.iloc[0]['IsCoded'] == 0  # NOT coded by researcher 2
+
+    def test_get_recent_annotations(self, initialized_db, mock_logger):
+        """Test that get_recent_annotations returns the most recent annotations."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Create several annotations
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+
+        # Get recent annotations (limit 2)
+        recent = repo.get_recent_annotations(limit=2)
+        assert len(recent) == 2
+
+        # Get recent for researcher 1 only
+        recent_r1 = repo.get_recent_annotations(limit=5, researcher_id=1)
+        assert len(recent_r1) == 2
+        assert all(recent_r1['ResearcherID'] == 1)
+
+    def test_get_coded_bills_filters_by_researcher(self, initialized_db, mock_logger):
+        """Test that get_coded_bills can filter by specific researcher."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Researcher 1 annotates bills 1 and 2
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+
+        # Researcher 2 annotates bill 3
+        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+
+        # Get all coded bills
+        all_coded = repo.get_coded_bills()
+        assert len(all_coded) == 3
+
+        # Get only researcher 1's coded bills
+        coded_r1 = repo.get_coded_bills(researcher_id=1)
+        assert len(coded_r1) == 2
+        assert set(coded_r1['BillID'].tolist()) == {1, 2}
+
+        # Get only researcher 2's coded bills
+        coded_r2 = repo.get_coded_bills(researcher_id=2)
+        assert len(coded_r2) == 1
+        assert coded_r2.iloc[0]['BillID'] == 3
 
 
 class TestCAPStatisticsService:
@@ -328,10 +780,10 @@ class TestCAPStatisticsService:
         """)
         conn.close()
 
-        # Add annotations
+        # Add annotations from researcher 1
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, assigned_by="test")
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, assigned_by="test")
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
 
         stats_service = CAPStatisticsService(initialized_db, mock_logger)
         result = stats_service.get_annotation_stats()
@@ -351,6 +803,310 @@ class TestCAPStatisticsService:
         result = stats_service.get_coverage_stats()
 
         assert isinstance(result, dict)
+
+    def test_statistics_counts_distinct_bills_not_annotations(self, initialized_db, mock_logger):
+        """Test that statistics count distinct bills, not individual annotations.
+
+        When multiple researchers annotate the same bill, statistics should
+        report the bill as coded ONCE, not multiple times.
+        """
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+        from ui.services.cap.statistics import CAPStatisticsService
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Add taxonomy entry
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Bill 1: annotated by 3 different researchers (should count as 1 bill)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=0, researcher_id=3)
+
+        # Bill 2: annotated by 1 researcher (should count as 1 bill)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=1, researcher_id=1)
+
+        stats_service = CAPStatisticsService(initialized_db, mock_logger)
+        result = stats_service.get_annotation_stats()
+
+        # Should count 2 coded bills, NOT 4 annotations
+        assert result['total_coded'] == 2
+        assert result['total_bills'] == 3  # 3 bills in test data
+
+
+class TestCAPUserService:
+    """Tests for the CAPUserService class."""
+
+    def test_get_user_annotation_count_uses_researcher_id(self, initialized_db, mock_logger):
+        """Test that get_user_annotation_count uses ResearcherID column (not AssignedBy).
+
+        This test verifies Bug 3 fix - the query should use ResearcherID directly,
+        not a subquery lookup on AssignedBy/DisplayName.
+        """
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+        from ui.services.cap.user_service import CAPUserService
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        # Create annotations for researcher 1 (ID=1)
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+
+        # Create annotation for researcher 2 (ID=2)
+        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # Researcher 1 should have 2 annotations
+        count_r1 = user_service.get_user_annotation_count(1)
+        assert count_r1 == 2
+
+        # Researcher 2 should have 1 annotation
+        count_r2 = user_service.get_user_annotation_count(2)
+        assert count_r2 == 1
+
+        # Non-existent researcher should have 0 annotations
+        count_r99 = user_service.get_user_annotation_count(99)
+        assert count_r99 == 0
+
+    def test_get_user_annotation_count_no_annotations_table(self, temp_db_path, mock_logger):
+        """Test get_user_annotation_count returns 0 when UserBillCAP table doesn't exist."""
+        from ui.services.cap.user_service import CAPUserService
+
+        # Create just the UserResearchers table
+        user_service = CAPUserService(temp_db_path, mock_logger)
+        user_service.ensure_table_exists()
+
+        # Should return 0, not raise an error
+        count = user_service.get_user_annotation_count(1)
+        assert count == 0
+
+
+class TestCAPStatisticsServiceAdditional:
+    """Additional tests for CAPStatisticsService edge cases."""
+
+    def test_get_annotation_stats_empty_database(self, initialized_db, mock_logger):
+        """Test get_annotation_stats handles empty annotations gracefully."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.statistics import CAPStatisticsService
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        stats_service = CAPStatisticsService(initialized_db, mock_logger)
+        result = stats_service.get_annotation_stats()
+
+        assert isinstance(result, dict)
+        assert result['total_coded'] == 0
+        assert result['total_annotations'] == 0
+        assert result['total_bills'] == 3  # From initialized_db fixture
+        assert result['total_researchers'] == 0
+        assert result['by_major_category'] == []
+        assert result['by_direction'] == []
+        assert result['by_researcher'] == []
+
+    def test_get_coverage_stats_no_division_by_zero(self, temp_db_path, mock_logger):
+        """Test get_coverage_stats handles Knessets with zero bills gracefully.
+
+        This test verifies Bug 7 fix - NULLIF prevents division by zero.
+        """
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.statistics import CAPStatisticsService
+
+        # Create minimal tables without any bills
+        conn = duckdb.connect(str(temp_db_path))
+        conn.execute("""
+            CREATE TABLE KNS_Bill (
+                BillID INTEGER PRIMARY KEY,
+                KnessetNum INTEGER,
+                Name VARCHAR
+            )
+        """)
+        conn.close()
+
+        taxonomy = CAPTaxonomyService(temp_db_path, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        stats_service = CAPStatisticsService(temp_db_path, mock_logger)
+
+        # Should not raise division by zero error
+        result = stats_service.get_coverage_stats()
+        assert isinstance(result, dict)
+        assert 'by_knesset' in result
+        # Empty result because no bills exist
+        assert result['by_knesset'] == []
+
+    def test_export_annotations_creates_csv(self, initialized_db, mock_logger, tmp_path):
+        """Test that export_annotations creates a valid CSV file."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+        from ui.services.cap.statistics import CAPStatisticsService
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        # Create annotations
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1, notes="Test note")
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+
+        # Export
+        stats_service = CAPStatisticsService(initialized_db, mock_logger)
+        export_path = tmp_path / "test_export.csv"
+        result = stats_service.export_annotations(export_path)
+
+        assert result is True
+        assert export_path.exists()
+
+        # Verify CSV content
+        exported_df = pd.read_csv(export_path)
+        assert len(exported_df) == 2  # Two annotations
+        assert 'BillID' in exported_df.columns
+        assert 'ResearcherID' in exported_df.columns
+        assert 'ResearcherName' in exported_df.columns
+        assert 'Direction' in exported_df.columns
+        assert set(exported_df['BillID'].tolist()) == {1}  # Both annotations for bill 1
+        assert set(exported_df['ResearcherID'].tolist()) == {1, 2}  # Two researchers
+
+
+class TestCAPAnnotationCountsCache:
+    """Tests for annotation counts caching."""
+
+    def test_get_annotation_counts_returns_dict(self, initialized_db, mock_logger):
+        """Test that get_annotation_counts returns a dictionary."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+        counts = repo.get_annotation_counts()
+
+        assert isinstance(counts, dict)
+
+    def test_get_annotation_counts_correct_values(self, initialized_db, mock_logger):
+        """Test that get_annotation_counts returns correct values."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository, clear_annotation_counts_cache
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'Test', 'Test EN', 101, 'Test Minor', 'Test Minor EN')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Clear cache first
+        clear_annotation_counts_cache()
+
+        # Add annotations
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=0, researcher_id=1)
+
+        counts = repo.get_annotation_counts()
+
+        assert counts.get(1) == 2  # Bill 1 has 2 annotations
+        assert counts.get(2) == 1  # Bill 2 has 1 annotation
+        assert counts.get(999) is None  # Bill 999 doesn't exist
+
+    def test_clear_annotation_counts_cache(self, initialized_db, mock_logger):
+        """Test that cache clearing works."""
+        from ui.services.cap.repository import clear_annotation_counts_cache
+
+        # Should not raise an error
+        clear_annotation_counts_cache()
+
+
+class TestCAPRepositoryAdditional:
+    """Additional tests for CAPAnnotationRepository edge cases."""
+
+    def test_get_bills_not_in_database_with_researcher_filter(self, initialized_db, mock_logger):
+        """Test that get_bills_not_in_database correctly filters by researcher.
+
+        Bills that are in the database AND already annotated by the researcher
+        should be excluded from the API fetch results.
+        """
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from ui.services.cap.repository import CAPAnnotationRepository
+
+        taxonomy = CAPTaxonomyService(initialized_db, mock_logger)
+        taxonomy.ensure_tables_exist()
+
+        # Insert taxonomy
+        conn = duckdb.connect(str(initialized_db))
+        conn.execute("""
+            INSERT INTO UserCAPTaxonomy
+            (MajorCode, MajorTopic_HE, MajorTopic_EN, MinorCode, MinorTopic_HE, MinorTopic_EN)
+            VALUES (1, 'מוסדות שלטון', 'Government Institutions', 101, 'בתי משפט', 'Courts')
+        """)
+        conn.close()
+
+        repo = CAPAnnotationRepository(initialized_db, mock_logger)
+
+        # Researcher 1 annotates bill 1
+        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+
+        # Simulate API bills DataFrame (bills 1, 2, and a new bill 999)
+        api_bills = pd.DataFrame({
+            'BillID': [1, 2, 999],  # 1 is in DB and coded by R1, 2 is in DB but not coded, 999 is new
+            'Name': ['Bill 1', 'Bill 2', 'New Bill'],
+            'KnessetNum': [25, 25, 25],
+        })
+
+        # For researcher 1: should exclude bill 1 (already coded by them)
+        # Bills 2 (in DB, not coded by R1) and 999 (not in DB) should be included
+        result_r1 = repo.get_bills_not_in_database(api_bills, limit=100, researcher_id=1)
+
+        # Bill 1 is in DB AND coded by R1 -> excluded
+        # Bill 2 is in DB but not coded by R1 -> depends on implementation
+        # Bill 999 is not in DB -> included
+        assert 999 in result_r1['BillID'].tolist()
+        assert 1 not in result_r1['BillID'].tolist()
+
+        # For researcher 2: bill 1 was coded by R1, not R2
+        # So R2 should see bill 999 (not in DB)
+        result_r2 = repo.get_bills_not_in_database(api_bills, limit=100, researcher_id=2)
+        assert 999 in result_r2['BillID'].tolist()
 
 
 class TestCAPServiceFacade:

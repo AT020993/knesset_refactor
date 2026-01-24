@@ -128,18 +128,31 @@ class CAPAdminRenderer:
         is_self = selected_user_id == current_user_id
         is_active = selected_user_info["IsActive"] if selected_user_info is not None else True
 
+        # Track if an action is in progress (prevents double-clicks)
+        is_action_running = st.session_state.get("admin_action_running", False)
+
         # Action buttons in columns
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✏️ Edit Name", key="btn_edit", use_container_width=True):
+            if st.button(
+                "✏️ Edit Name",
+                key="btn_edit",
+                use_container_width=True,
+                disabled=is_action_running,
+            ):
                 if selected_user_id:
                     st.session_state.admin_edit_user_id = selected_user_id
                     st.session_state.admin_show_edit_dialog = True
                     st.rerun()
 
         with col2:
-            if st.button("🔑 Reset Password", key="btn_reset_pwd", use_container_width=True):
+            if st.button(
+                "🔑 Reset Password",
+                key="btn_reset_pwd",
+                use_container_width=True,
+                disabled=is_action_running,
+            ):
                 if selected_user_id:
                     st.session_state.admin_reset_user_id = selected_user_id
                     st.session_state.admin_show_reset_dialog = True
@@ -147,7 +160,7 @@ class CAPAdminRenderer:
 
         with col3:
             if is_active:
-                disabled = is_self
+                disabled = is_self or is_action_running
                 help_text = "Cannot deactivate yourself" if is_self else "Deactivate this user"
                 if st.button(
                     "🚫 Deactivate",
@@ -157,22 +170,31 @@ class CAPAdminRenderer:
                     use_container_width=True,
                 ):
                     if selected_user_id and not is_self:
+                        st.session_state.admin_action_running = True
                         if self.user_service.delete_user(selected_user_id):
                             st.success("User deactivated successfully")
-                            st.rerun()
                         else:
                             st.error("Failed to deactivate user")
+                        st.session_state.admin_action_running = False
+                        st.rerun()
             else:
-                if st.button("✅ Reactivate", key="btn_reactivate", use_container_width=True):
+                if st.button(
+                    "✅ Reactivate",
+                    key="btn_reactivate",
+                    use_container_width=True,
+                    disabled=is_action_running,
+                ):
                     if selected_user_id:
+                        st.session_state.admin_action_running = True
                         if self.user_service.reactivate_user(selected_user_id):
                             st.success("User reactivated successfully")
-                            st.rerun()
                         else:
                             st.error("Failed to reactivate user")
+                        st.session_state.admin_action_running = False
+                        st.rerun()
 
         with col4:
-            disabled = is_self
+            disabled = is_self or is_action_running
             help_text = "Cannot delete yourself" if is_self else "Permanently delete this user"
             if st.button(
                 "🗑️ Delete",
