@@ -402,6 +402,18 @@ with st.sidebar.status("Processing...", expanded=True) as status:
     status.update(label="Complete!", state="complete")
 ```
 
+## Claude Code Automations
+
+**Local config** (gitignored in `.claude/`):
+- `.claude/settings.json` - Hooks: auto-format (black/isort), block .env edits
+- `.claude/agents/code-reviewer.md` - Code review agent definition
+- `.claude/skills/cap-annotate/` - CAP annotation utilities skill
+- `.claude/reviews/` - Auto-generated code review results
+
+**Post-commit code review**: `.git/hooks/post-commit` runs automatic code review after commits with Python changes. Results saved to `.claude/reviews/review_<commit>_<timestamp>.md`.
+
+**MCP servers available**: context7 (docs), Linear (issues), Playwright (browser), Figma (design).
+
 ## Test Status
 
 367 passed, 26 skipped, 0 failures. Run fast tests before commits.
