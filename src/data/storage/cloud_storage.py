@@ -393,8 +393,19 @@ def create_gcs_manager_from_streamlit_secrets(
         if 'gcp_service_account' in st.secrets:
             gcp_secrets = st.secrets['gcp_service_account']
 
-            # Format 1: Check for JSON string in 'credentials_json' field
-            if 'credentials_json' in gcp_secrets:
+            # Format 1: Check for base64 encoded JSON in 'credentials_base64' field
+            if 'credentials_base64' in gcp_secrets:
+                import json
+                import base64
+                try:
+                    decoded = base64.b64decode(gcp_secrets['credentials_base64']).decode('utf-8')
+                    config['credentials'] = json.loads(decoded)
+                    logger.info("Loaded GCP credentials from credentials_base64 field")
+                except Exception as e:
+                    logger.error(f"Failed to parse credentials_base64: {e}")
+
+            # Format 2: Check for JSON string in 'credentials_json' field
+            elif 'credentials_json' in gcp_secrets:
                 import json
                 try:
                     config['credentials'] = json.loads(gcp_secrets['credentials_json'])
@@ -402,16 +413,16 @@ def create_gcs_manager_from_streamlit_secrets(
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse credentials_json: {e}")
 
-            # Format 2: Direct fields in gcp_service_account section
+            # Format 3: Direct fields in gcp_service_account section
             elif 'client_email' in gcp_secrets and 'private_key' in gcp_secrets:
                 config['credentials'] = dict(gcp_secrets)
                 logger.info("Loaded GCP credentials from direct fields")
 
-            # Format 3: Partial fields - log warning
+            # Format 4: Partial fields - log warning
             else:
                 available_keys = list(gcp_secrets.keys()) if hasattr(gcp_secrets, 'keys') else []
                 logger.warning(f"GCP credentials incomplete. Found keys: {available_keys}. "
-                              f"Need 'client_email' and 'private_key', or use 'credentials_json' format.")
+                              f"Need 'credentials_base64', 'credentials_json', or direct fields.")
 
         return create_gcs_manager_from_config(config, logger)
 

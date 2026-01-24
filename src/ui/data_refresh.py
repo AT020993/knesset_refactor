@@ -112,11 +112,17 @@ if not st.session_state.cloud_sync_checked:
         else:
             # Get credentials and show what keys are present
             if has_gcp:
+                import base64
                 gcp_secrets = st.secrets['gcp_service_account']
                 gcs_creds_keys = list(gcp_secrets.keys()) if hasattr(gcp_secrets, 'keys') else []
 
-                # Try credentials_json format first
-                if 'credentials_json' in gcp_secrets:
+                # Try credentials_base64 format first
+                if 'credentials_base64' in gcp_secrets:
+                    gcs_creds_source = "credentials_base64"
+                    decoded = base64.b64decode(gcp_secrets['credentials_base64']).decode('utf-8')
+                    gcs_creds = json.loads(decoded)
+                # Then try credentials_json format
+                elif 'credentials_json' in gcp_secrets:
                     gcs_creds_source = "credentials_json"
                     gcs_creds = json.loads(gcp_secrets['credentials_json'])
                 else:
