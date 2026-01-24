@@ -309,6 +309,35 @@ if 'credentials_base64' in gcp_secrets:
 
 ## Streamlit Patterns
 
+**Lazy Loading for Performance** (Streamlit Cloud Free Tier):
+
+The free tier has ~1GB RAM and shared CPU. The entire script re-runs on every interaction, so use section-based lazy loading:
+```python
+# Define sections with tab-like navigation
+SECTIONS = ["📊 Data Explorer", "📈 Visualizations", "🏷️ CAP Annotation"]
+
+# Store active section in session state
+if "active_section" not in st.session_state:
+    st.session_state.active_section = SECTIONS[0]
+
+selected = st.radio("Navigate:", SECTIONS, horizontal=True, label_visibility="collapsed")
+st.session_state.active_section = selected
+
+# Only render the active section (skip 60-70% of code per interaction)
+if selected == "📊 Data Explorer":
+    # Store renderer in session_state to preserve internal caches
+    if "data_renderer" not in st.session_state:
+        st.session_state.data_renderer = DataRenderer(db_path)
+    st.session_state.data_renderer.render()
+elif selected == "📈 Visualizations":
+    # ... same pattern
+```
+
+**Key principles:**
+- Store renderers in `st.session_state` to preserve caches across reruns
+- Use `@st.cache_data(ttl=3600)` for expensive computations
+- Only instantiate components when their section is accessed
+
 **Widget Selection Fix**: Use `on_change` callbacks, not post-render comparison:
 ```python
 # Correct
