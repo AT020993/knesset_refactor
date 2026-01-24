@@ -106,14 +106,31 @@ if not st.session_state.cloud_sync_checked:
 
     st.session_state.cloud_sync_checked = True
 
-knesset_nums_options_global, factions_options_df_global = (
-    ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
-)
-faction_display_map_global = {
-    f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
-    for _, row in factions_options_df_global.iterrows()
-}
+# --- Lazy-loaded filter options (only computed when first accessed) ---
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_cached_filter_options():
+    """Lazily load and cache filter options."""
+    knesset_nums, factions_df = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
+    faction_map = {
+        f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
+        for _, row in factions_df.iterrows()
+    }
+    return knesset_nums, factions_df, faction_map
 
+
+def _get_filter_options():
+    """Get filter options (uses cache)."""
+    knesset_nums, factions_df, _ = _get_cached_filter_options()
+    return knesset_nums, factions_df
+
+
+def _get_faction_display_map():
+    """Get faction display map (uses cache)."""
+    _, _, faction_map = _get_cached_filter_options()
+    return faction_map
+
+
+# --- Sidebar (uses lazy-loaded options) ---
 sc.display_sidebar(
     db_path_arg=DB_PATH,
     exports_arg=PREDEFINED_QUERIES,
@@ -126,46 +143,69 @@ sc.display_sidebar(
     get_table_columns_func_arg=lambda table_name: ui_utils.get_table_columns(
         DB_PATH, table_name, _logger_obj=ui_logger
     ),
-    get_filter_options_func_arg=lambda: (
-        knesset_nums_options_global,
-        factions_options_df_global,
-    ),
-    faction_display_map_arg=faction_display_map_global,
+    get_filter_options_func_arg=_get_filter_options,
+    faction_display_map_arg=_get_faction_display_map(),
     ui_logger_arg=ui_logger,
     format_exc_func_arg=ui_utils.format_exception_for_ui,
 )
 
-# Initialize page renderers
-data_refresh_renderer = DataRefreshPageRenderer(DB_PATH, ui_logger)
-plots_renderer = PlotsPageRenderer(DB_PATH, ui_logger)
-cap_annotation_renderer = CAPAnnotationPageRenderer(DB_PATH, ui_logger)
+# --- Section Navigation (lazy loading) ---
+SECTIONS = ["📊 Data Explorer", "📈 Visualizations", "🏷️ CAP Annotation"]
 
-# Render main page header
-data_refresh_renderer.render_page_header()
+# Initialize active section in session state
+if "active_main_section" not in st.session_state:
+    st.session_state.active_main_section = SECTIONS[0]
 
-# Main content sections
-data_refresh_renderer.render_query_results_section()
-data_refresh_renderer.render_table_explorer_section()
+# Section selector - horizontal radio buttons for tab-like behavior
+selected_section = st.radio(
+    "Navigate to:",
+    options=SECTIONS,
+    index=SECTIONS.index(st.session_state.active_main_section),
+    horizontal=True,
+    key="main_section_selector",
+    label_visibility="collapsed",
+)
+st.session_state.active_main_section = selected_section
 
-# Render plots/visualizations section
-try:
-    plots_renderer.render_plots_section(
-        available_plots=pg.get_available_plots(),
-        knesset_options=knesset_nums_options_global,
-        faction_display_map=faction_display_map_global,
-        connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
-    )
-except Exception as e:
-    st.error(f"Error loading visualizations section: {e}")
-    ui_logger.error(f"Error in plots section: {e}", exc_info=True)
+st.markdown("---")
 
-# Render CAP Bill Annotation section (password-protected)
-try:
-    st.markdown("---")
-    cap_annotation_renderer.render_cap_annotation_section()
-except Exception as e:
-    st.error(f"Error loading CAP annotation section: {e}")
-    ui_logger.error(f"Error in CAP annotation section: {e}", exc_info=True)
+# --- Lazy render only the active section ---
+if selected_section == "📊 Data Explorer":
+    # Initialize renderer only when needed
+    if "data_refresh_renderer" not in st.session_state:
+        st.session_state.data_refresh_renderer = DataRefreshPageRenderer(DB_PATH, ui_logger)
+
+    data_renderer = st.session_state.data_refresh_renderer
+    data_renderer.render_page_header()
+    data_renderer.render_query_results_section()
+    data_renderer.render_table_explorer_section()
+
+elif selected_section == "📈 Visualizations":
+    # Initialize renderer only when needed
+    if "plots_renderer" not in st.session_state:
+        st.session_state.plots_renderer = PlotsPageRenderer(DB_PATH, ui_logger)
+
+    try:
+        st.session_state.plots_renderer.render_plots_section(
+            available_plots=pg.get_available_plots(),
+            knesset_options=_get_cached_filter_options()[0],
+            faction_display_map=_get_faction_display_map(),
+            connect_func=lambda read_only=True: ui_utils.connect_db(DB_PATH, read_only, _logger_obj=ui_logger)
+        )
+    except Exception as e:
+        st.error(f"Error loading visualizations section: {e}")
+        ui_logger.error(f"Error in plots section: {e}", exc_info=True)
+
+elif selected_section == "🏷️ CAP Annotation":
+    # Initialize renderer only when needed
+    if "cap_annotation_renderer" not in st.session_state:
+        st.session_state.cap_annotation_renderer = CAPAnnotationPageRenderer(DB_PATH, ui_logger)
+
+    try:
+        st.session_state.cap_annotation_renderer.render_cap_annotation_section()
+    except Exception as e:
+        st.error(f"Error loading CAP annotation section: {e}")
+        ui_logger.error(f"Error in CAP annotation section: {e}", exc_info=True)
 
 
 ui_logger.info("--- data_refresh.py script finished loading UI components ---")
