@@ -2,6 +2,7 @@
 CAP Annotation Renderers Package
 
 Provides modular components for the CAP annotation system.
+Refactored for better separation of concerns and maintainability.
 
 Components:
 - CAPAuthHandler: Authentication and session management
