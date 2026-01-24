@@ -16,6 +16,10 @@ Prioritize lessons with:
 ## Development Commands
 
 ```bash
+# Setup (first time)
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
 # Fast unit tests (~10s)
 pytest tests/ --ignore=tests/test_api_integration.py --ignore=tests/test_e2e.py --ignore=tests/test_data_pipeline_integration.py --ignore=tests/test_connection_leaks.py --tb=short -q
 
@@ -230,7 +234,10 @@ Accessible only to users with `role='admin'`:
 | `src/ui/services/cap/repository.py` | CRUD operations with researcher_id filtering |
 | `src/ui/services/cap/statistics.py` | Analytics (uses COUNT(DISTINCT BillID) for accuracy) |
 | `src/ui/services/cap/user_service.py` | User CRUD, authentication, password hashing |
-| `src/ui/renderers/cap/form_renderer.py` | Bill queue, annotation form, other annotations view |
+| `src/ui/renderers/cap/form_renderer.py` | Annotation form rendering, delegates to sub-components |
+| `src/ui/renderers/cap/bill_queue_renderer.py` | Bill queue UI with search, filters, status badges |
+| `src/ui/renderers/cap/pdf_viewer.py` | Embedded PDF document viewing |
+| `src/ui/renderers/cap/category_selector.py` | Hierarchical CAP category selection UI |
 | `src/ui/renderers/cap/coded_bills_renderer.py` | Coded bills list with annotation counts |
 | `src/ui/renderers/cap/auth_handler.py` | Login form, session management |
 | `src/ui/renderers/cap/admin_renderer.py` | Admin panel UI |
