@@ -491,7 +491,7 @@ SELECT
         ELSE NULL
     END AS CAPDirectionLabel,
     cap.Confidence AS CAPConfidence,
-    cap.AssignedBy AS CAPAnnotator,
+    capr.DisplayName AS CAPAnnotator,
     strftime(cap.AssignedDate, '%Y-%m-%d') AS CAPAnnotationDate,
     cap.Notes AS CAPNotes
 
@@ -518,6 +518,7 @@ LEFT JOIN BillDocuments bd ON B.BillID = bd.BillID
 LEFT JOIN BillFirstSubmission bfs ON B.BillID = bfs.BillID
 LEFT JOIN UserBillCAP cap ON B.BillID = cap.BillID
 LEFT JOIN UserCAPTaxonomy capt ON cap.CAPMinorCode = capt.MinorCode
+LEFT JOIN UserResearchers capr ON cap.ResearcherID = capr.ResearcherID
 
 GROUP BY 
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
@@ -538,7 +539,7 @@ GROUP BY
     bd.EarlyDiscussionCount, bd.OtherDocCount,
     bfs.FirstSubmissionDate,
     cap.CAPMinorCode, capt.MajorTopic_HE, capt.MinorTopic_HE,
-    cap.Direction, cap.Confidence, cap.AssignedBy, cap.AssignedDate, cap.Notes
+    cap.Direction, cap.Confidence, capr.DisplayName, cap.AssignedDate, cap.Notes
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
 LIMIT 1000;
