@@ -1143,3 +1143,92 @@ class TestCAPServiceFacade:
         assert CAPAnnotationService.DIRECTION_STRENGTHENING == 1
         assert CAPAnnotationService.DIRECTION_WEAKENING == -1
         assert CAPAnnotationService.DIRECTION_NEUTRAL == 0
+
+
+class TestCAPUserServiceSequence:
+    """Tests for user service with proper DuckDB sequences.
+
+    These tests verify that user ID generation uses sequences instead of
+    MAX()+1, which prevents race conditions when multiple admins create
+    users simultaneously.
+    """
+
+    def test_create_user_uses_sequence(self, temp_db_path, mock_logger):
+        """Verify user creation uses sequence, not MAX()+1."""
+        from ui.services.cap.user_service import CAPUserService
+        from backend.connection_manager import get_db_connection
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Create first user
+        success = user_service.create_user(
+            username="seq_test_1",
+            display_name="Seq Test 1",
+            password="password123",
+            role="researcher",
+        )
+        assert success, "Failed to create first user"
+
+        # Check sequence exists (use duckdb_sequences() function, not information_schema)
+        with get_db_connection(temp_db_path, read_only=True) as conn:
+            result = conn.execute(
+                "SELECT sequence_name FROM duckdb_sequences() "
+                "WHERE sequence_name = 'seq_researcher_id'"
+            ).fetchone()
+            assert result is not None, "Sequence seq_researcher_id should exist"
+
+    def test_create_multiple_users_no_id_collision(self, temp_db_path, mock_logger):
+        """Verify multiple users get unique IDs via sequence."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Create multiple users
+        for i in range(5):
+            success = user_service.create_user(
+                username=f"multi_user_{i}",
+                display_name=f"Multi User {i}",
+                password="password123",
+                role="researcher",
+            )
+            assert success, f"Failed to create user {i}"
+
+        users_df = user_service.get_all_users()
+        multi_users = users_df[users_df["Username"].str.startswith("multi_user_")]
+        ids = multi_users["ResearcherID"].tolist()
+
+        # All IDs should be unique
+        assert len(ids) == len(set(ids)), f"Duplicate IDs found: {ids}"
+        assert len(ids) == 5, f"Expected 5 users, got {len(ids)}"
+
+    def test_sequence_continues_after_delete(self, temp_db_path, mock_logger):
+        """Verify sequence doesn't reset after deleting users."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Create user and get their ID
+        user_service.create_user(
+            username="user_to_delete",
+            display_name="Delete Me",
+            password="password123",
+            role="researcher",
+        )
+        users_df = user_service.get_all_users()
+        first_id = users_df[users_df["Username"] == "user_to_delete"]["ResearcherID"].iloc[0]
+
+        # Hard delete the user (soft delete won't affect this test)
+        user_service.hard_delete_user(first_id)
+
+        # Create another user
+        user_service.create_user(
+            username="user_after_delete",
+            display_name="After Delete",
+            password="password123",
+            role="researcher",
+        )
+        users_df = user_service.get_all_users()
+        second_id = users_df[users_df["Username"] == "user_after_delete"]["ResearcherID"].iloc[0]
+
+        # New user should have a higher ID, not reuse the deleted one
+        assert second_id > first_id, f"ID should continue from sequence, got {second_id} after {first_id}"

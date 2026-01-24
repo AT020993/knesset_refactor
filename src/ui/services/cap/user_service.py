@@ -35,10 +35,14 @@ class CAPUserService:
 
     def ensure_table_exists(self) -> bool:
         """
-        Ensure the UserResearchers table exists.
+        Ensure the UserResearchers table exists with proper sequence for ID generation.
 
         This is called automatically before any database queries to handle
         the case where the table hasn't been created yet.
+
+        Note: Uses a DuckDB sequence for thread-safe ID generation instead of
+        MAX()+1, which prevents race conditions when multiple admins create
+        users simultaneously.
 
         Returns:
             True if table exists or was created, False on error
@@ -50,9 +54,15 @@ class CAPUserService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
+                # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
+                # This prevents race conditions when multiple admins create users simultaneously
+                conn.execute("""
+                    CREATE SEQUENCE IF NOT EXISTS seq_researcher_id START 1
+                """)
+
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS UserResearchers (
-                        ResearcherID INTEGER PRIMARY KEY,
+                        ResearcherID INTEGER PRIMARY KEY DEFAULT nextval('seq_researcher_id'),
                         Username VARCHAR NOT NULL UNIQUE,
                         DisplayName VARCHAR NOT NULL,
                         PasswordHash VARCHAR NOT NULL,
@@ -64,7 +74,7 @@ class CAPUserService:
                     )
                 """)
                 self._table_ensured = True
-                self.logger.debug("UserResearchers table ensured")
+                self.logger.debug("UserResearchers table ensured with sequence")
                 return True
 
         except Exception as e:
@@ -305,15 +315,13 @@ class CAPUserService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
-                # DuckDB doesn't auto-increment INTEGER PRIMARY KEY, so we compute next ID
+                # Let the sequence handle ID generation via DEFAULT nextval('seq_researcher_id')
+                # This is thread-safe and prevents race conditions
                 conn.execute(
                     """
                     INSERT INTO UserResearchers
-                    (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
-                    VALUES (
-                        (SELECT COALESCE(MAX(ResearcherID), 0) + 1 FROM UserResearchers),
-                        ?, ?, ?, ?, TRUE, ?, ?
-                    )
+                    (Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
+                    VALUES (?, ?, ?, ?, TRUE, ?, ?)
                     """,
                     [username, display_name, password_hash, role, datetime.now(), created_by],
                 )
