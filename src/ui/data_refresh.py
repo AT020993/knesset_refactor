@@ -99,17 +99,32 @@ if not st.session_state.cloud_sync_checked:
 
     # Also try to directly create GCS manager to see the actual error
     gcs_init_error = None
+    gcs_creds_keys = []
     try:
-        from data.storage.cloud_storage import create_gcs_manager_from_config
-        test_config = {
-            'bucket_name': bucket_name,
-            'credentials': dict(st.secrets['gcp_service_account']) if has_gcp else None
-        }
-        test_manager = create_gcs_manager_from_config(test_config, ui_logger)
-        gcs_init_result = "Success" if test_manager else "Returned None"
+        from data.storage.cloud_storage import CloudStorageManager, GCS_AVAILABLE
+
+        # Check if GCS library is available
+        if not GCS_AVAILABLE:
+            gcs_init_result = "google-cloud-storage library NOT installed"
+            gcs_init_error = "Missing dependency: pip install google-cloud-storage"
+        else:
+            # Get credentials and show what keys are present
+            if has_gcp:
+                gcs_creds = dict(st.secrets['gcp_service_account'])
+                gcs_creds_keys = list(gcs_creds.keys())
+                # Try to create manager directly
+                test_manager = CloudStorageManager(
+                    bucket_name=bucket_name,
+                    credentials_dict=gcs_creds,
+                    logger_obj=ui_logger
+                )
+                gcs_init_result = "Success!" if test_manager else "Returned None"
+            else:
+                gcs_init_result = "No gcp_service_account credentials"
     except Exception as e:
-        gcs_init_error = str(e)
-        gcs_init_result = f"Error: {e}"
+        import traceback
+        gcs_init_error = f"{type(e).__name__}: {e}"
+        gcs_init_result = f"Error: {type(e).__name__}"
 
     # Debug: Show sync status in UI
     with st.expander("🔧 Cloud Storage Debug", expanded=True):
@@ -122,6 +137,7 @@ if not st.session_state.cloud_sync_checked:
             st.error(f"**Sync service error:** `{sync_error}`")
         st.write(f"**Sync enabled:** `{sync_service.is_enabled() if sync_service else False}`")
         st.write(f"**DB exists locally:** `{DB_PATH.exists()}`")
+        st.write(f"**GCS credentials keys:** `{gcs_creds_keys}`")
         st.write(f"**GCS manager init:** `{gcs_init_result}`")
         if gcs_init_error:
             st.error(f"**GCS init error:** `{gcs_init_error}`")
