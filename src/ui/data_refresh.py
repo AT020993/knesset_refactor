@@ -89,18 +89,44 @@ if not st.session_state.cloud_sync_checked:
         has_gcp = False
         bucket_name = "ERROR"
 
-    sync_service = StorageSyncService(logger_obj=ui_logger)
+    # Try to create sync service and capture any errors
+    sync_error = None
+    try:
+        sync_service = StorageSyncService(logger_obj=ui_logger)
+    except Exception as e:
+        sync_error = str(e)
+        sync_service = None
+
+    # Also try to directly create GCS manager to see the actual error
+    gcs_init_error = None
+    try:
+        from data.storage.cloud_storage import create_gcs_manager_from_config
+        test_config = {
+            'bucket_name': bucket_name,
+            'credentials': dict(st.secrets['gcp_service_account']) if has_gcp else None
+        }
+        test_manager = create_gcs_manager_from_config(test_config, ui_logger)
+        gcs_init_result = "Success" if test_manager else "Returned None"
+    except Exception as e:
+        gcs_init_error = str(e)
+        gcs_init_result = f"Error: {e}"
 
     # Debug: Show sync status in UI
-    with st.expander("🔧 Cloud Storage Debug", expanded=False):
+    with st.expander("🔧 Cloud Storage Debug", expanded=True):
         st.write(f"**Secret sections found:** `{secret_sections}`")
         st.write(f"**[storage] section:** `{has_storage}`")
         st.write(f"**[gcp_service_account] section:** `{has_gcp}`")
         st.write(f"**Bucket name:** `{bucket_name}`")
-        st.write(f"**Sync enabled:** `{sync_service.is_enabled()}`")
+        st.write(f"**Sync service created:** `{sync_service is not None}`")
+        if sync_error:
+            st.error(f"**Sync service error:** `{sync_error}`")
+        st.write(f"**Sync enabled:** `{sync_service.is_enabled() if sync_service else False}`")
         st.write(f"**DB exists locally:** `{DB_PATH.exists()}`")
+        st.write(f"**GCS manager init:** `{gcs_init_result}`")
+        if gcs_init_error:
+            st.error(f"**GCS init error:** `{gcs_init_error}`")
 
-    if sync_service.is_enabled():
+    if sync_service and sync_service.is_enabled():
         ui_logger.info("Cloud storage enabled, checking for data sync...")
 
         # Check if local database exists
