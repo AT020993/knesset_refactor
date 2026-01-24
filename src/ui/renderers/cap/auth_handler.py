@@ -17,33 +17,36 @@ from ui.services.cap.user_service import CAPUserService, get_user_service
 
 def _get_cap_secrets() -> dict:
     """
-    Get CAP annotation secrets, handling multiple TOML formats.
+    Get CAP annotation secrets from Streamlit secrets.
 
-    Supports both:
-    - Section format: [cap_annotation] with keys below
-    - Dotted format: cap_annotation.enabled = true
+    Expected format in secrets.toml:
+        [cap_annotation]
+        enabled = true
+        bootstrap_admin_username = "admin"
+        bootstrap_admin_display_name = "Administrator"
+        bootstrap_admin_password = "your-password"
 
     Returns:
         Dictionary with CAP secrets, or empty dict if not found
     """
     try:
-        # Try standard section format first: [cap_annotation]
+        # Debug: Show all available secret keys (not values!)
+        all_keys = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
+        logging.getLogger(__name__).info(f"Available secret sections: {all_keys}")
+
+        # Get cap_annotation section
         cap_secrets = st.secrets.get("cap_annotation", {})
+
         if cap_secrets:
+            # Debug: Show which keys are present (not values!)
+            cap_keys = list(cap_secrets.keys()) if hasattr(cap_secrets, 'keys') else []
+            logging.getLogger(__name__).info(f"CAP secrets keys found: {cap_keys}")
             return dict(cap_secrets)
 
-        # Try dotted key format: cap_annotation.enabled
-        all_secrets = dict(st.secrets)
-        dotted_secrets = {
-            k.replace("cap_annotation.", ""): v
-            for k, v in all_secrets.items()
-            if k.startswith("cap_annotation.")
-        }
-        if dotted_secrets:
-            return dotted_secrets
-
+        logging.getLogger(__name__).warning("cap_annotation section not found in secrets")
         return {}
-    except (KeyError, FileNotFoundError, AttributeError):
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Error reading CAP secrets: {e}")
         return {}
 
 
@@ -211,8 +214,24 @@ class CAPAuthHandler:
     @staticmethod
     def render_disabled_message():
         """Render message when feature is disabled."""
-        st.warning("""
+        # Debug info to help diagnose secrets issues
+        try:
+            all_keys = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
+            cap_secrets = st.secrets.get("cap_annotation", {})
+            cap_keys = list(cap_secrets.keys()) if hasattr(cap_secrets, 'keys') else []
+            enabled_value = cap_secrets.get("enabled", "NOT_FOUND") if cap_secrets else "SECTION_MISSING"
+        except Exception as e:
+            all_keys = [f"ERROR: {e}"]
+            cap_keys = []
+            enabled_value = "ERROR"
+
+        st.warning(f"""
         **Annotation System Not Enabled**
+
+        **Debug info:**
+        - Secret sections found: `{all_keys}`
+        - cap_annotation keys: `{cap_keys}`
+        - enabled value: `{enabled_value}`
 
         To enable, add the following to `.streamlit/secrets.toml`:
         ```toml
