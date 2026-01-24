@@ -61,7 +61,8 @@ class CAPFormRenderer:
         PDF document viewing on top.
 
         Args:
-            researcher_id: The current researcher's database ID
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                IMPORTANT: Must be int, NOT cap_researcher_name string!
 
         Returns:
             Tuple of (bill_id, submission_date) or (None, "")
@@ -83,7 +84,8 @@ class CAPFormRenderer:
 
         Args:
             bill_id: The bill ID to annotate
-            researcher_id: The researcher's database ID
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                IMPORTANT: Must be int, NOT cap_researcher_name string!
             submission_date: Pre-filled submission date from database
 
         Returns:
@@ -207,7 +209,15 @@ class CAPFormRenderer:
     def render_api_annotation_form(
         self, bill_id: int, researcher_id: int, submission_date: str = ""
     ) -> bool:
-        """Render annotation form for API-fetched bill."""
+        """
+        Render annotation form for API-fetched bill.
+
+        Args:
+            bill_id: The bill ID to annotate
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                IMPORTANT: Must be int, NOT cap_researcher_name string!
+            submission_date: Pre-filled submission date from API
+        """
         st.subheader("✏️ Annotation Form (from API)")
 
         taxonomy = self.service.get_taxonomy()
@@ -271,8 +281,13 @@ class CAPFormRenderer:
 
         return False
 
-    def render_api_fetch_section(self, researcher_id: int):
-        """Render section for fetching bills from API."""
+    def render_api_fetch_section(self, researcher_id: int) -> None:
+        """
+        Render section for fetching bills from API.
+
+        Args:
+            researcher_id: The researcher's database ID (int from cap_user_id).
+        """
         st.subheader("🌐 Fetch Bills from API")
 
         st.info(
@@ -305,8 +320,15 @@ class CAPFormRenderer:
         ):
             self._render_api_bills_list(researcher_id)
 
-    def _fetch_api_bills(self, knesset_num: int, limit: int, researcher_id: int):
-        """Fetch bills from API."""
+    def _fetch_api_bills(self, knesset_num: int, limit: int, researcher_id: int) -> None:
+        """
+        Fetch bills from API.
+
+        Args:
+            knesset_num: The Knesset number to fetch bills from
+            limit: Maximum number of bills to fetch
+            researcher_id: The researcher's database ID (int from cap_user_id).
+        """
         with st.spinner("Fetching from API..."):
             try:
                 api_service = get_cap_api_service(self.logger)
@@ -334,8 +356,13 @@ class CAPFormRenderer:
                 st.error(f"Fetch error: {e}")
                 self.logger.error(f"API fetch error: {e}", exc_info=True)
 
-    def _render_api_bills_list(self, researcher_id: int):
-        """Render list of API-fetched bills."""
+    def _render_api_bills_list(self, researcher_id: int) -> None:
+        """
+        Render list of API-fetched bills.
+
+        Args:
+            researcher_id: The researcher's database ID (int from cap_user_id).
+        """
         api_bills = st.session_state.api_fetched_bills
 
         st.markdown("---")

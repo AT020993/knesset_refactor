@@ -91,7 +91,12 @@ class CAPAnnotationService:
         search_term: Optional[str] = None,
         researcher_id: Optional[int] = None
     ) -> pd.DataFrame:
-        """Get bills that haven't been coded by the specified researcher."""
+        """
+        Get bills that haven't been coded by the specified researcher.
+
+        Args:
+            researcher_id: The researcher's database ID (int from cap_user_id).
+        """
         return self._repository.get_uncoded_bills(
             knesset_num, limit, search_term, researcher_id
         )
@@ -148,7 +153,13 @@ class CAPAnnotationService:
         source: str = "Database",
         submission_date: str = "",
     ) -> bool:
-        """Save a bill annotation for a specific researcher."""
+        """
+        Save a bill annotation for a specific researcher.
+
+        Args:
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                IMPORTANT: Must be int, NOT cap_researcher_name string!
+        """
         return self._repository.save_annotation(
             bill_id=bill_id,
             cap_minor_code=cap_minor_code,
@@ -163,7 +174,13 @@ class CAPAnnotationService:
     def delete_annotation(
         self, bill_id: int, researcher_id: Optional[int] = None
     ) -> bool:
-        """Delete an annotation for a bill."""
+        """
+        Delete an annotation for a bill.
+
+        Args:
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                Pass None to delete all annotations for the bill (admin action).
+        """
         return self._repository.delete_annotation(bill_id, researcher_id)
 
     def get_bills_not_in_database(

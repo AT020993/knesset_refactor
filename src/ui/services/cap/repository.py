@@ -113,7 +113,8 @@ class CAPAnnotationRepository:
             knesset_num: Filter by Knesset number (optional)
             limit: Maximum number of bills to return
             search_term: Search by Bill ID or name (optional)
-            researcher_id: Filter by researcher (required for accurate filtering)
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                Required for accurate filtering. Pass None to get all uncoded bills.
 
         Returns:
             DataFrame with uncoded bills for this researcher
@@ -540,7 +541,8 @@ class CAPAnnotationRepository:
             bill_id: The bill ID to annotate
             cap_minor_code: The CAP minor code (e.g., 101, 201, 301)
             direction: Direction code (+1, -1, or 0)
-            researcher_id: The researcher's database ID
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                IMPORTANT: Must be int, NOT cap_researcher_name string!
             confidence: Confidence level (High, Medium, Low)
             notes: Optional notes
             source: Source of the bill (Database or API)
@@ -548,6 +550,9 @@ class CAPAnnotationRepository:
 
         Returns:
             True if successful, False otherwise
+
+        Raises:
+            Returns False if researcher_id is not a positive integer.
         """
         # Validate researcher_id is an integer (not string display name)
         # This catches the common mistake of passing cap_researcher_name instead of cap_user_id
@@ -667,7 +672,9 @@ class CAPAnnotationRepository:
 
         Args:
             bill_id: The bill ID
-            researcher_id: Delete only this researcher's annotation (recommended)
+            researcher_id: The researcher's database ID (int from cap_user_id).
+                Deletes only this researcher's annotation. Pass None to delete
+                all annotations for the bill (admin action, use with caution).
 
         Returns:
             True if successful, False otherwise
