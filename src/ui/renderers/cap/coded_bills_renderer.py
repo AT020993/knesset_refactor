@@ -40,12 +40,34 @@ class CAPCodedBillsRenderer:
         if self._on_annotation_changed:
             self._on_annotation_changed()
 
+    def _sync_to_cloud(self):
+        """Sync database to cloud storage after annotation change."""
+        try:
+            from data.services.storage_sync_service import StorageSyncService
+
+            sync_service = StorageSyncService(logger_obj=self.logger)
+            if sync_service.is_enabled():
+                # Upload just the database file
+                from config.settings import Settings
+                success = sync_service.gcs_manager.upload_file(
+                    Settings.DEFAULT_DB_PATH,
+                    "data/warehouse.duckdb"
+                )
+                if success:
+                    self.logger.info("Database synced to cloud storage after annotation change")
+                else:
+                    self.logger.warning("Failed to sync database to cloud storage")
+        except Exception as e:
+            # Don't fail the operation if cloud sync fails
+            self.logger.warning(f"Cloud sync after annotation change failed: {e}")
+
     def _handle_confirm_delete(self, bill_id: int, researcher_id: int):
         """Callback for confirming annotation deletion."""
         # Delete only this researcher's annotation
         success = self.service.delete_annotation(bill_id, researcher_id)
         if success:
             self._notify_annotation_changed()
+            self._sync_to_cloud()
         # Clear confirmation state
         if f"confirm_delete_{bill_id}" in st.session_state:
             del st.session_state[f"confirm_delete_{bill_id}"]
@@ -403,6 +425,7 @@ class CAPCodedBillsRenderer:
                 if success:
                     st.success("✅ Annotation updated successfully!")
                     self._notify_annotation_changed()
+                    self._sync_to_cloud()
                     return True
                 else:
                     st.error("❌ Error updating annotation")

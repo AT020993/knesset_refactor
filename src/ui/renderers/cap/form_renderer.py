@@ -53,6 +53,27 @@ class CAPFormRenderer:
         if self._on_annotation_saved:
             self._on_annotation_saved()
 
+    def _sync_to_cloud(self):
+        """Sync database to cloud storage after annotation save."""
+        try:
+            from data.services.storage_sync_service import StorageSyncService
+
+            sync_service = StorageSyncService(logger_obj=self.logger)
+            if sync_service.is_enabled():
+                # Upload just the database file (fastest)
+                from config.settings import Settings
+                success = sync_service.gcs_manager.upload_file(
+                    Settings.DEFAULT_DB_PATH,
+                    "data/warehouse.duckdb"
+                )
+                if success:
+                    self.logger.info("Database synced to cloud storage after annotation")
+                else:
+                    self.logger.warning("Failed to sync database to cloud storage")
+        except Exception as e:
+            # Don't fail the annotation save if cloud sync fails
+            self.logger.warning(f"Cloud sync after annotation failed: {e}")
+
     def render_bill_queue(self, researcher_id: int) -> Tuple[Optional[int], str]:
         """
         Render the bills queue with search, recent annotations, and status badges.
@@ -201,6 +222,8 @@ class CAPFormRenderer:
         if success:
             st.success("✅ Annotation saved successfully!")
             self._notify_annotation_saved()
+            # Sync database to cloud storage so other researchers can see the annotation
+            self._sync_to_cloud()
             return True
         else:
             st.error("❌ Error saving annotation")
