@@ -100,8 +100,10 @@ if not st.session_state.cloud_sync_checked:
     # Also try to directly create GCS manager to see the actual error
     gcs_init_error = None
     gcs_creds_keys = []
+    gcs_creds_source = "none"
     try:
         from data.storage.cloud_storage import CloudStorageManager, GCS_AVAILABLE
+        import json
 
         # Check if GCS library is available
         if not GCS_AVAILABLE:
@@ -110,8 +112,17 @@ if not st.session_state.cloud_sync_checked:
         else:
             # Get credentials and show what keys are present
             if has_gcp:
-                gcs_creds = dict(st.secrets['gcp_service_account'])
-                gcs_creds_keys = list(gcs_creds.keys())
+                gcp_secrets = st.secrets['gcp_service_account']
+                gcs_creds_keys = list(gcp_secrets.keys()) if hasattr(gcp_secrets, 'keys') else []
+
+                # Try credentials_json format first
+                if 'credentials_json' in gcp_secrets:
+                    gcs_creds_source = "credentials_json"
+                    gcs_creds = json.loads(gcp_secrets['credentials_json'])
+                else:
+                    gcs_creds_source = "direct_fields"
+                    gcs_creds = dict(gcp_secrets)
+
                 # Try to create manager directly
                 test_manager = CloudStorageManager(
                     bucket_name=bucket_name,
@@ -138,6 +149,7 @@ if not st.session_state.cloud_sync_checked:
         st.write(f"**Sync enabled:** `{sync_service.is_enabled() if sync_service else False}`")
         st.write(f"**DB exists locally:** `{DB_PATH.exists()}`")
         st.write(f"**GCS credentials keys:** `{gcs_creds_keys}`")
+        st.write(f"**GCS credentials source:** `{gcs_creds_source}`")
         st.write(f"**GCS manager init:** `{gcs_init_result}`")
         if gcs_init_error:
             st.error(f"**GCS init error:** `{gcs_init_error}`")

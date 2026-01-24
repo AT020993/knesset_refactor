@@ -389,8 +389,29 @@ def create_gcs_manager_from_streamlit_secrets(
             'bucket_name': st.secrets['storage']['gcs_bucket_name']
         }
 
+        # Try multiple formats for GCP credentials
         if 'gcp_service_account' in st.secrets:
-            config['credentials'] = dict(st.secrets['gcp_service_account'])
+            gcp_secrets = st.secrets['gcp_service_account']
+
+            # Format 1: Check for JSON string in 'credentials_json' field
+            if 'credentials_json' in gcp_secrets:
+                import json
+                try:
+                    config['credentials'] = json.loads(gcp_secrets['credentials_json'])
+                    logger.info("Loaded GCP credentials from credentials_json field")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse credentials_json: {e}")
+
+            # Format 2: Direct fields in gcp_service_account section
+            elif 'client_email' in gcp_secrets and 'private_key' in gcp_secrets:
+                config['credentials'] = dict(gcp_secrets)
+                logger.info("Loaded GCP credentials from direct fields")
+
+            # Format 3: Partial fields - log warning
+            else:
+                available_keys = list(gcp_secrets.keys()) if hasattr(gcp_secrets, 'keys') else []
+                logger.warning(f"GCP credentials incomplete. Found keys: {available_keys}. "
+                              f"Need 'client_email' and 'private_key', or use 'credentials_json' format.")
 
         return create_gcs_manager_from_config(config, logger)
 
