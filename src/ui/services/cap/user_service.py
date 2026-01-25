@@ -572,6 +572,21 @@ class CAPUserService:
                     self.logger.warning(f"User {researcher_id} does not exist")
                     return False
 
+                # Check for and fix corrupted FK constraints before delete
+                # The UserBillCAP_new error happens because there's a dangling FK
+                try:
+                    # List all constraints that might reference UserResearchers
+                    self.logger.info("Checking for corrupted FK constraints...")
+
+                    # Drop UserBillCAP_new if it somehow exists
+                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
+
+                    # Force checkpoint to clean catalog
+                    conn.execute("CHECKPOINT")
+
+                except Exception as cleanup_e:
+                    self.logger.warning(f"FK cleanup warning (non-fatal): {cleanup_e}")
+
                 # Try to delete
                 conn.execute(
                     "DELETE FROM UserResearchers WHERE ResearcherID = ?",
@@ -595,21 +610,56 @@ class CAPUserService:
                 error_str = str(inner_e)
                 self.logger.error(f"Error during delete operation: {error_str}")
 
-                # If it's the UserBillCAP_new error, the user table itself is fine
-                # Try a direct delete without FK checks
+                # If it's the UserBillCAP_new error, try rebuilding UserBillCAP table
                 if "UserBillCAP_new" in error_str:
-                    self.logger.warning("UserBillCAP_new error detected, trying PRAGMA disable FK")
+                    self.logger.warning("UserBillCAP_new FK error - attempting table rebuild")
                     try:
-                        # DuckDB: disable FK checks temporarily
-                        conn.execute("SET enable_external_access = false")
+                        # Nuclear option: rebuild UserBillCAP to fix corrupted catalog
+                        self.logger.info("Backing up UserBillCAP...")
+                        conn.execute("CREATE TABLE IF NOT EXISTS UserBillCAP_backup AS SELECT * FROM UserBillCAP")
+
+                        self.logger.info("Dropping corrupted UserBillCAP...")
+                        conn.execute("DROP TABLE IF EXISTS UserBillCAP CASCADE")
+                        conn.execute("DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
+
+                        self.logger.info("Recreating UserBillCAP...")
+                        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1")
+                        conn.execute("""
+                            CREATE TABLE UserBillCAP (
+                                AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                                BillID INTEGER NOT NULL,
+                                ResearcherID INTEGER NOT NULL,
+                                CAPMinorCode INTEGER NOT NULL,
+                                Direction INTEGER NOT NULL DEFAULT 0,
+                                AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                Confidence VARCHAR DEFAULT 'Medium',
+                                Notes VARCHAR,
+                                Source VARCHAR DEFAULT 'Database',
+                                SubmissionDate VARCHAR,
+                                UNIQUE(BillID, ResearcherID)
+                            )
+                        """)
+
+                        self.logger.info("Restoring data...")
+                        conn.execute("""
+                            INSERT INTO UserBillCAP
+                            SELECT * FROM UserBillCAP_backup
+                        """)
+                        conn.execute("DROP TABLE UserBillCAP_backup")
+
+                        conn.execute("CHECKPOINT")
+                        self.logger.info("UserBillCAP rebuilt successfully")
+
+                        # Now retry the delete
                         conn.execute(
                             "DELETE FROM UserResearchers WHERE ResearcherID = ?",
                             [researcher_id],
                         )
-                        self.logger.info(f"Deleted user {researcher_id} (FK check bypassed)")
+                        self.logger.info(f"Deleted user {researcher_id} after table rebuild")
                         return True
-                    except Exception as bypass_e:
-                        self.logger.error(f"Bypass also failed: {bypass_e}")
+
+                    except Exception as rebuild_e:
+                        self.logger.error(f"Table rebuild failed: {rebuild_e}")
 
                 return False
             finally:
