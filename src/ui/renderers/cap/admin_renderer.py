@@ -556,10 +556,23 @@ class CAPAdminRenderer:
                 "Use these tools to fix database issues. "
                 "Only use if you're experiencing errors."
             )
-            st.caption("_Code version: 2026-01-25-v3_")
+            st.caption("_Code version: 2026-01-25-v4_")
 
             if st.button("🩺 Run Database Repair", key="btn_db_repair"):
                 self._run_database_repair()
+
+                # Clear cached services to force fresh connections
+                self._user_service = None
+
+                # Clear any session state that might hold stale references
+                keys_to_clear = [k for k in list(st.session_state.keys())
+                               if 'cap_' in k.lower() and 'user' not in k.lower()
+                               and 'authenticated' not in k.lower()]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+                st.info("🔄 Services reset. Please try your operation again.")
 
     def _run_database_repair(self):
         """Run database repair operations to fix migration artifacts."""
@@ -696,6 +709,89 @@ class CAPAdminRenderer:
                     fixes_applied.append(f"Objects matching UserBillCAP: {all_objects}")
                 except Exception as e:
                     fixes_applied.append(f"Could not list UserBillCAP objects: {e}")
+
+                # 13. Force full checkpoint to flush all changes to disk
+                try:
+                    conn.execute("FORCE CHECKPOINT")
+                    fixes_applied.append("FORCE CHECKPOINT completed")
+                except Exception as e:
+                    fixes_applied.append(f"FORCE CHECKPOINT: {e}")
+
+                # 14. NUCLEAR OPTION: Rebuild UserBillCAP table to force catalog rebuild
+                # This exports data, drops table, recreates with clean schema, reimports
+                try:
+                    # Check if table exists
+                    table_exists = conn.execute(
+                        "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
+                    ).fetchone()
+
+                    if table_exists:
+                        # Check if table has data
+                        row_count = conn.execute("SELECT COUNT(*) FROM UserBillCAP").fetchone()[0]
+                        has_data = row_count > 0
+
+                        if has_data:
+                            # Export to temp table
+                            conn.execute("CREATE TABLE UserBillCAP_backup AS SELECT * FROM UserBillCAP")
+                            fixes_applied.append(f"Backed up UserBillCAP data ({row_count} rows)")
+
+                        # Drop and recreate with explicit schema (forces catalog rebuild)
+                        conn.execute("DROP TABLE IF EXISTS UserBillCAP CASCADE")
+
+                        # Ensure sequence exists
+                        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1")
+
+                        # Recreate table with proper schema
+                        conn.execute("""
+                            CREATE TABLE UserBillCAP (
+                                AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                                BillID INTEGER NOT NULL,
+                                ResearcherID INTEGER NOT NULL,
+                                CAPMinorCode INTEGER NOT NULL,
+                                Direction INTEGER NOT NULL DEFAULT 0,
+                                AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                Confidence VARCHAR DEFAULT 'Medium',
+                                Notes VARCHAR,
+                                Source VARCHAR DEFAULT 'Database',
+                                SubmissionDate VARCHAR,
+                                UNIQUE(BillID, ResearcherID)
+                            )
+                        """)
+
+                        if has_data:
+                            # Restore data
+                            conn.execute("""
+                                INSERT INTO UserBillCAP
+                                (AnnotationID, BillID, ResearcherID, CAPMinorCode, Direction,
+                                 AssignedDate, Confidence, Notes, Source, SubmissionDate)
+                                SELECT AnnotationID, BillID, ResearcherID, CAPMinorCode, Direction,
+                                       AssignedDate, Confidence, Notes, Source, SubmissionDate
+                                FROM UserBillCAP_backup
+                            """)
+                            conn.execute("DROP TABLE UserBillCAP_backup")
+                            fixes_applied.append(f"✅ Rebuilt UserBillCAP table with {row_count} rows restored")
+                        else:
+                            fixes_applied.append("✅ Rebuilt empty UserBillCAP table")
+
+                        # Final checkpoint after rebuild
+                        conn.execute("FORCE CHECKPOINT")
+                        fixes_applied.append("Final CHECKPOINT after rebuild")
+                    else:
+                        fixes_applied.append("UserBillCAP table does not exist - nothing to rebuild")
+
+                except Exception as e:
+                    import traceback
+                    fixes_applied.append(f"❌ Table rebuild failed: {e}")
+                    fixes_applied.append(f"Traceback: {traceback.format_exc()[:500]}")
+
+                # 15. Final test query after rebuild
+                try:
+                    count = conn.execute(
+                        "SELECT COUNT(*) FROM UserBillCAP WHERE ResearcherID = 999"
+                    ).fetchone()[0]
+                    fixes_applied.append(f"✅ Final test query after rebuild succeeded (count={count})")
+                except Exception as e:
+                    issues_found.append(f"❌ Final test query FAILED after rebuild: {e}")
 
             finally:
                 conn.close()
