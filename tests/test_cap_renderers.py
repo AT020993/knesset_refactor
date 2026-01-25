@@ -404,6 +404,79 @@ class TestCAPAuthHandler:
 
         assert SESSION_TIMEOUT_HOURS == 2
 
+    def test_check_authentication_validates_user_still_active(self):
+        """Test that check_authentication logs out a deactivated user.
+
+        When an admin deactivates a user, that user should be logged out
+        on their next request (not continue working indefinitely).
+        """
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime, timedelta
+        import streamlit as st
+
+        # Setup: authenticated user with valid (non-expired) session
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_user_id = 42
+        st.session_state.cap_researcher_name = "Test User"
+        st.session_state.cap_username = "testuser"
+        st.session_state.cap_user_role = "researcher"
+        st.session_state.cap_login_time = datetime.now() - timedelta(minutes=30)
+
+        # Create mock user service that says user is NOT active
+        mock_user_service = mock.MagicMock()
+        mock_user_service.is_user_active.return_value = False
+
+        # Mock _get_cap_secrets to return enabled=True
+        with mock.patch("ui.renderers.cap.auth_handler._get_cap_secrets") as mock_secrets:
+            mock_secrets.return_value = {"enabled": True}
+
+            # Call check_authentication with user_service parameter
+            is_auth, name = CAPAuthHandler.check_authentication(user_service=mock_user_service)
+
+        # Should return not authenticated because user was deactivated
+        assert is_auth is False
+        assert name == ""
+
+        # User service should have been called to check active status
+        mock_user_service.is_user_active.assert_called_once_with(42)
+
+        # Session should be cleared
+        assert st.session_state.get("cap_authenticated") is False
+        assert st.session_state.get("cap_user_id") is None
+
+    def test_check_authentication_backward_compatible_without_user_service(self):
+        """Test that check_authentication works without user_service parameter.
+
+        For backward compatibility, check_authentication should work without
+        the optional user_service parameter - it just won't check active status.
+        """
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime, timedelta
+        import streamlit as st
+
+        # Setup: authenticated user with valid session
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_user_id = 42
+        st.session_state.cap_researcher_name = "Test User"
+        st.session_state.cap_login_time = datetime.now() - timedelta(minutes=30)
+
+        # Mock _get_cap_secrets to return enabled=True
+        with mock.patch("ui.renderers.cap.auth_handler._get_cap_secrets") as mock_secrets:
+            mock_secrets.return_value = {"enabled": True}
+
+            # Call without user_service parameter (backward compatible)
+            is_auth, name = CAPAuthHandler.check_authentication()
+
+        # Should return authenticated (no active status check without user_service)
+        assert is_auth is True
+        assert name == "Test User"
+
+        # Cleanup
+        st.session_state.pop("cap_authenticated", None)
+        st.session_state.pop("cap_user_id", None)
+        st.session_state.pop("cap_researcher_name", None)
+        st.session_state.pop("cap_login_time", None)
+
 
 class TestCAPBillQueueRendererIntegration:
     """Integration tests for CAPBillQueueRenderer with mock service."""

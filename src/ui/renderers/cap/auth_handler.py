@@ -114,12 +114,18 @@ class CAPAuthHandler:
         st.session_state.cap_login_time = None
 
     @staticmethod
-    def check_authentication() -> Tuple[bool, str]:
+    def check_authentication(user_service: Optional["CAPUserService"] = None) -> Tuple[bool, str]:
         """
         Check if the user is authenticated for CAP annotation.
 
-        Also validates session timeout - sessions older than SESSION_TIMEOUT_HOURS
-        are automatically invalidated.
+        Also validates:
+        - Session timeout - sessions older than SESSION_TIMEOUT_HOURS are invalidated
+        - Active user status - deactivated users are logged out (if user_service provided)
+
+        Args:
+            user_service: Optional CAPUserService instance for checking active status.
+                         If provided, validates that the user hasn't been deactivated.
+                         If not provided (backward compatible), skips active status check.
 
         Returns:
             Tuple of (is_authenticated, researcher_name)
@@ -136,6 +142,18 @@ class CAPAuthHandler:
                     CAPAuthHandler._clear_session()
                     st.warning("⏰ Your session has expired. Please log in again.")
                     return False, ""
+
+                # Check if user is still active (only if user_service provided)
+                # Note: This is a per-request check. If a user is deactivated between
+                # requests, they will be logged out on their next action. Real-time
+                # session invalidation would require WebSocket or polling.
+                if user_service is not None:
+                    user_id = st.session_state.get("cap_user_id")
+                    if user_id is not None and not user_service.is_user_active(user_id):
+                        CAPAuthHandler._clear_session()
+                        st.warning("🚫 Your account has been deactivated. Please contact an administrator.")
+                        return False, ""
+
                 return True, st.session_state.get("cap_researcher_name", "Unknown")
 
             return False, ""

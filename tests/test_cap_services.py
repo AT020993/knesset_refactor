@@ -1270,6 +1270,76 @@ class TestCAPServiceFacade:
         assert CAPAnnotationService.DIRECTION_NEUTRAL == 0
 
 
+class TestCAPUserServiceActiveStatus:
+    """Tests for user active status checking.
+
+    These tests verify the is_user_active() method that allows checking
+    if a user is currently active (not deactivated by admin).
+    """
+
+    def test_is_user_active_returns_true_for_active_user(self, initialized_db, mock_logger):
+        """Test that is_user_active returns True for an active user."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # Researcher 1 is active in initialized_db fixture
+        result = user_service.is_user_active(1)
+
+        assert result is True
+
+    def test_is_user_active_returns_false_for_deactivated_user(self, initialized_db, mock_logger):
+        """Test that is_user_active returns False for a deactivated user."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # Deactivate researcher 1
+        user_service.delete_user(1)  # soft delete sets IsActive=FALSE
+
+        result = user_service.is_user_active(1)
+
+        assert result is False
+
+    def test_is_user_active_returns_false_for_nonexistent_user(self, initialized_db, mock_logger):
+        """Test that is_user_active returns False for a user that doesn't exist."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # User ID 99999 doesn't exist
+        result = user_service.is_user_active(99999)
+
+        assert result is False
+
+    def test_is_user_active_returns_false_on_database_error(self, temp_db_path, mock_logger):
+        """Test that is_user_active returns False on database errors (fail secure)."""
+        from ui.services.cap.user_service import CAPUserService
+
+        # Create user service with a path that doesn't have the table
+        user_service = CAPUserService(temp_db_path, mock_logger)
+        # Don't call ensure_table_exists() - table doesn't exist
+
+        # Should return False (fail secure), not raise an error
+        result = user_service.is_user_active(1)
+
+        assert result is False
+
+    def test_is_user_active_handles_invalid_user_id_types(self, initialized_db, mock_logger):
+        """Test that is_user_active handles invalid user_id types gracefully (fail secure)."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # Should return False (fail secure) for invalid types, not crash
+        # None should be handled gracefully
+        assert user_service.is_user_active(None) is False
+        # Zero is technically valid but no user has ID 0
+        assert user_service.is_user_active(0) is False
+        # Negative IDs don't exist
+        assert user_service.is_user_active(-1) is False
+
+
 class TestCAPUserServiceSequence:
     """Tests for user service with proper DuckDB sequences.
 

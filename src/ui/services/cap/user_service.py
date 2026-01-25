@@ -617,6 +617,44 @@ class CAPUserService:
             self.logger.error(f"Error checking user existence: {e}", exc_info=True)
             return False
 
+    def is_user_active(self, user_id: int) -> bool:
+        """
+        Check if a user is currently active.
+
+        This is used to validate that a logged-in user hasn't been deactivated
+        by an admin since their last login. If a user is deactivated, they
+        should be logged out on their next request.
+
+        Args:
+            user_id: The user's database ID (ResearcherID)
+
+        Returns:
+            True if user exists and is active, False otherwise.
+            Returns False on database errors (fail secure).
+        """
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as conn:
+                result = conn.execute(
+                    """
+                    SELECT IsActive FROM UserResearchers
+                    WHERE ResearcherID = ?
+                    """,
+                    [user_id],
+                ).fetchone()
+
+                if result is None:
+                    # User doesn't exist
+                    return False
+
+                return bool(result[0])
+
+        except Exception as e:
+            # Fail secure - if we can't check, assume inactive
+            self.logger.error(f"Error checking user active status: {e}", exc_info=True)
+            return False
+
     def get_user_count(self) -> int:
         """Get count of all users (for bootstrap check)."""
         self.ensure_table_exists()
