@@ -694,6 +694,8 @@ class CAPAdminRenderer:
                         WHERE table_name LIKE '%UserBillCAP%' OR table_name LIKE '%userbillcap%'
                     """).fetchall()
                     fixes_applied.append(f"Objects matching UserBillCAP: {all_objects}")
+                except Exception as e:
+                    fixes_applied.append(f"Could not list UserBillCAP objects: {e}")
 
             finally:
                 conn.close()
