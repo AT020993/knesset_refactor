@@ -40,27 +40,46 @@ def create_gcs_manager_from_streamlit_secrets(
     logger = logger_obj or logging.getLogger(__name__)
 
     try:
+        # Check if Streamlit secrets are available
         if not hasattr(st, 'secrets'):
-            logger.warning("Streamlit secrets not available")
+            logger.info("☁️ Cloud storage: DISABLED (not running in Streamlit)")
             return None
 
-        # Check if GCS configuration exists
-        if 'storage' not in st.secrets or 'gcs_bucket_name' not in st.secrets['storage']:
-            logger.info("GCS bucket name not configured in Streamlit secrets")
+        # Check if bucket name is configured
+        storage_secrets = st.secrets.get('storage', {})
+        bucket_name = storage_secrets.get('gcs_bucket_name')
+        if not bucket_name:
+            logger.info("☁️ Cloud storage: DISABLED (no bucket configured in secrets)")
+            return None
+
+        # Check for any credential format
+        gcp_secrets = st.secrets.get('gcp_service_account', {})
+        has_credentials = any([
+            gcp_secrets.get('credentials_base64'),
+            gcp_secrets.get('credentials_json'),
+            gcp_secrets.get('client_email'),  # Direct fields
+        ])
+
+        if not has_credentials:
+            logger.info("☁️ Cloud storage: DISABLED (no GCP credentials in secrets)")
             return None
 
         # Build config dict from Streamlit secrets
         config = {
-            'bucket_name': st.secrets['storage']['gcs_bucket_name']
+            'bucket_name': bucket_name,
+            'credentials': dict(gcp_secrets)
         }
 
-        if 'gcp_service_account' in st.secrets:
-            config['credentials'] = dict(st.secrets['gcp_service_account'])
-
-        return create_gcs_manager_from_config(config, logger)
+        # Try to create the manager
+        manager = create_gcs_manager_from_config(config, logger)
+        if manager is not None:
+            logger.info(f"☁️ Cloud storage: ENABLED (bucket: {bucket_name})")
+        else:
+            logger.warning("☁️ Cloud storage: DISABLED (manager creation failed)")
+        return manager
 
     except Exception as e:
-        logger.error(f"Error creating GCS manager from Streamlit secrets: {e}", exc_info=True)
+        logger.warning(f"☁️ Cloud storage: DISABLED (error: {e})")
         return None
 
 
