@@ -103,6 +103,11 @@ class CAPAdminRenderer:
         """Render the complete admin panel."""
         st.subheader("👥 Researcher Management")
 
+        # Debug: Clear any stale delete dialog state if there was an error
+        if st.session_state.get("admin_delete_had_error"):
+            st.session_state.admin_show_delete_dialog = False
+            st.session_state.admin_delete_had_error = False
+
         # Current researchers table
         self._render_users_table()
 
@@ -122,7 +127,13 @@ class CAPAdminRenderer:
 
     def _render_users_table(self):
         """Render the table of all users with action buttons."""
-        users_df = self.user_service.get_all_users()
+        try:
+            users_df = self.user_service.get_all_users()
+        except Exception as e:
+            import traceback
+            st.error(f"Error loading users: {e}")
+            st.code(traceback.format_exc())
+            return
 
         if users_df.empty:
             st.info("No researchers found. Add your first researcher below.")
@@ -469,6 +480,9 @@ class CAPAdminRenderer:
             st.error(f"Error checking annotations: {e}")
             st.code(traceback.format_exc())
             st.info("Try running Database Repair first (scroll down to Database Maintenance)")
+            # Set flag to clear dialog on next render
+            st.session_state.admin_delete_had_error = True
+            st.session_state.admin_show_delete_dialog = False
             return
 
         st.markdown("---")
@@ -659,6 +673,27 @@ class CAPAdminRenderer:
                     fixes_applied.append(f"✅ Test query succeeded (count={count})")
                 except Exception as e:
                     issues_found.append(f"❌ Test query FAILED: {e}")
+
+                # 11. Check for any triggers
+                try:
+                    triggers = conn.execute(
+                        "SELECT * FROM duckdb_constraints() WHERE constraint_type = 'TRIGGER'"
+                    ).fetchall()
+                    if triggers:
+                        fixes_applied.append(f"Triggers found: {triggers}")
+                    else:
+                        fixes_applied.append("No triggers found")
+                except Exception as e:
+                    fixes_applied.append(f"Could not check triggers: {e}")
+
+                # 12. List all objects in catalog that might reference UserBillCAP
+                try:
+                    all_objects = conn.execute("""
+                        SELECT table_name, table_type
+                        FROM information_schema.tables
+                        WHERE table_name LIKE '%UserBillCAP%' OR table_name LIKE '%userbillcap%'
+                    """).fetchall()
+                    fixes_applied.append(f"Objects matching UserBillCAP: {all_objects}")
 
             finally:
                 conn.close()
