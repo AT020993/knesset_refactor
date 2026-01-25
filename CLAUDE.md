@@ -4,9 +4,10 @@ Guidance for Claude Code when working with this Knesset parliamentary data analy
 
 ## Quick Navigation
 
-- [Development Commands](#development-commands) - Setup, tests, launch
+- [Development Commands](#development-commands) - Setup, tests, launch, git
 - [Architecture](#architecture) - Data flow, layers
 - [Connection Management](#connection-management) - Database access patterns
+- [Error Handling Patterns](#error-handling-patterns) - Return tuples, fail-secure
 - [DuckDB Patterns](#duckdb-patterns) - Sequences, migrations, gotchas
 - [Bill Analytics Rules](#bill-analytics-rules) - Status categories, date matching
 - [CAP Annotation System](#cap-annotation-system) - Multi-user research annotation
@@ -43,6 +44,24 @@ PYTHONPATH="./src" python -m backend.fetch_table --all
 streamlit run src/ui/data_refresh.py --server.port 8501
 ```
 
+**Git Commit Messages** (🔴 Sandbox Limitation):
+
+HEREDOC syntax fails in sandboxed environments with "can't create temp file". Use inline strings:
+```bash
+# Wrong - fails in sandbox
+git commit -m "$(cat <<'EOF'
+Message here
+EOF
+)"
+
+# Correct - use inline multiline
+git commit -m "feat: add feature
+
+Details here.
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+```
+
 ## Architecture
 
 **Data Flow**: Knesset OData API → DuckDB/Parquet → Processing → Streamlit UI (21+ visualizations)
@@ -70,6 +89,42 @@ conn = duckdb.connect(db_path)  # DON'T DO THIS
 ```
 
 **Error Handling**: `ErrorCategory` enum is defined in `src/api/error_handling.py` (canonical location). Import from there, not from `config/api.py`.
+
+## Error Handling Patterns
+
+**Return Tuple Pattern** (for operations that can fail):
+
+Use `(result, Optional[str])` tuples to distinguish success from errors with specific messages:
+```python
+# Returns (data, None) on success, (None, "error message") on failure
+def fetch_data(self, id: int) -> tuple[Optional[dict], Optional[str]]:
+    try:
+        result = self._query(id)
+        if not result:
+            return None, "No data found for ID"
+        return result, None
+    except TimeoutError:
+        return None, "Request timed out after 30 seconds"
+    except ConnectionError:
+        return None, "Network connection failed"
+
+# Caller can show specific error to user
+data, error = service.fetch_data(123)
+if error:
+    st.error(f"⚠️ {error}")
+else:
+    display(data)
+```
+
+**Fail-Secure Pattern**: On database errors, return False/inactive rather than raising:
+```python
+def is_user_active(self, user_id: int) -> bool:
+    try:
+        result = self._query(user_id)
+        return result.get("IsActive", False)
+    except Exception:
+        return False  # Fail secure - treat errors as inactive
+```
 
 ## DuckDB Patterns
 
@@ -206,6 +261,21 @@ researcher_name = st.session_state.get("cap_researcher_name")
 self.service.save_annotation(bill_id, code, direction, researcher_id=researcher_name)  # BUG!
 ```
 The `cap_user_id` is the database primary key used for all annotation operations. The `cap_researcher_name` is only for UI display.
+
+### Session Security
+
+**Session Timeout**: Sessions expire after 2 hours (configurable via `SESSION_TIMEOUT_HOURS` in `auth_handler.py`). The `is_session_valid()` method checks both authentication status and timeout.
+
+**Active User Validation**: `check_authentication()` optionally validates the user is still active in the database. Pass `user_service` parameter to enable:
+```python
+# With active user check (recommended for sensitive operations)
+is_auth, name = CAPAuthHandler.check_authentication(user_service=user_service)
+
+# Without active user check (faster, for read-only operations)
+is_auth, name = CAPAuthHandler.check_authentication()
+```
+
+**Fail-Secure**: If database errors occur during active user check, the session is invalidated (returns False).
 
 ### Database Tables
 
@@ -496,9 +566,9 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 ## Test Status
 
-387 passed, 26 skipped, 0 failures. Run fast tests before commits.
+453 passed, 26 skipped, 0 failures. Run fast tests before commits.
 
-**CAP Multi-Annotator Tests** (48 tests in `test_cap_services.py` + 13 in `test_cap_integration.py`):
+**CAP Tests** (144 total across `test_cap_services.py`, `test_cap_integration.py`, `test_cap_renderers.py`):
 - Taxonomy service operations (5 tests)
 - Repository CRUD with `researcher_id` (17 tests)
 - Statistics with `COUNT(DISTINCT BillID)` (4 tests)
