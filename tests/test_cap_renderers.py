@@ -177,6 +177,148 @@ class TestCAPPDFViewer:
         # Should not raise an error
         viewer.render_bill_documents(bill_id=123)
 
+    def test_fetch_pdf_returns_error_on_timeout(self):
+        """Test _fetch_pdf_impl returns error message on timeout."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.Timeout()
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/test.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "timed out" in error.lower() or "timeout" in error.lower()
+
+    def test_fetch_pdf_returns_error_on_404(self):
+        """Test _fetch_pdf_impl returns specific error on 404."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 404
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                response=mock_response
+            )
+            mock_get.return_value = mock_response
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/missing.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "404" in error
+        assert "not found" in error.lower()
+
+    def test_fetch_pdf_returns_error_on_403(self):
+        """Test _fetch_pdf_impl returns specific error on 403."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                response=mock_response
+            )
+            mock_get.return_value = mock_response
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/forbidden.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "403" in error
+        assert "denied" in error.lower() or "access" in error.lower()
+
+    def test_fetch_pdf_returns_error_on_connection_error(self):
+        """Test _fetch_pdf_impl returns error on connection failure."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.ConnectionError()
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/unreachable.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "connect" in error.lower() or "network" in error.lower()
+
+    def test_fetch_pdf_returns_error_on_ssl_error(self):
+        """Test _fetch_pdf_impl returns error on SSL certificate error."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.SSLError()
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/bad-cert.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "ssl" in error.lower() or "certificate" in error.lower()
+
+    def test_fetch_pdf_returns_none_error_on_success(self):
+        """Test _fetch_pdf_impl returns (data, None) on success."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+
+        # PDF magic bytes: %PDF
+        pdf_content = b"%PDF-1.4 test content"
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_response = mock.MagicMock()
+            mock_response.content = pdf_content
+            mock_response.raise_for_status = mock.MagicMock()
+            mock_get.return_value = mock_response
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/valid.pdf")
+
+        assert data is not None
+        assert error is None
+        # Verify it's valid base64
+        import base64
+        decoded = base64.b64decode(data)
+        assert decoded == pdf_content
+
+    def test_fetch_pdf_returns_error_on_invalid_pdf(self):
+        """Test _fetch_pdf_impl returns error when response is not a valid PDF."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+
+        # Non-PDF content (HTML error page)
+        html_content = b"<html><body>Error 500</body></html>"
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_response = mock.MagicMock()
+            mock_response.content = html_content
+            mock_response.raise_for_status = mock.MagicMock()
+            mock_get.return_value = mock_response
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/not-a-pdf.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "not a valid pdf" in error.lower() or "invalid" in error.lower()
+
+    def test_fetch_pdf_returns_error_on_other_http_error(self):
+        """Test _fetch_pdf_impl returns generic error on other HTTP status codes."""
+        from ui.renderers.cap.pdf_viewer import CAPPDFViewer
+        import requests
+
+        with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 500
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                response=mock_response
+            )
+            mock_get.return_value = mock_response
+
+            data, error = CAPPDFViewer._fetch_pdf_impl("http://example.com/server-error.pdf")
+
+        assert data is None
+        assert error is not None
+        assert "500" in error
+
 
 class TestCAPCategorySelector:
     """Tests for CAPCategorySelector."""

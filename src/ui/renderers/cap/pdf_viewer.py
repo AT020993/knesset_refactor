@@ -5,11 +5,13 @@ Handles rendering of bill documents with embedded PDF viewing:
 - Fetches PDFs and embeds using base64 data URIs (bypasses X-Frame-Options)
 - Shows document type labels with Hebrew-to-English mapping
 - Provides fallback links for non-PDF documents
+- Provides specific error messages for PDF fetch failures
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
+import requests
 import streamlit as st
 import pandas as pd
 
@@ -44,9 +46,9 @@ class CAPPDFViewer:
 
     @staticmethod
     @st.cache_data(ttl=3600, show_spinner=False)
-    def fetch_pdf_as_base64(pdf_url: str) -> Optional[str]:
+    def fetch_pdf_as_base64(pdf_url: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Fetch PDF and return as base64 string.
+        Fetch PDF and return as base64 string with error information.
 
         Cached for 1 hour to avoid repeated network calls for the same PDF.
 
@@ -54,17 +56,58 @@ class CAPPDFViewer:
             pdf_url: URL of the PDF to fetch
 
         Returns:
-            Base64-encoded PDF content, or None if fetch failed
+            Tuple of (base64_data, error_message).
+            - On success: (base64_string, None)
+            - On error: (None, "Error description")
+        """
+        return CAPPDFViewer._fetch_pdf_impl(pdf_url)
+
+    @staticmethod
+    def _fetch_pdf_impl(pdf_url: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Internal implementation of PDF fetching (not cached, for testing).
+
+        Args:
+            pdf_url: URL of the PDF to fetch
+
+        Returns:
+            Tuple of (base64_data, error_message).
         """
         import base64
-        import requests
 
         try:
             response = requests.get(pdf_url, timeout=15)
             response.raise_for_status()
-            return base64.b64encode(response.content).decode("utf-8")
-        except Exception:
-            return None
+
+            # Validate PDF magic bytes
+            content = response.content
+            if not content.startswith(b"%PDF"):
+                return None, "Document is not a valid PDF"
+
+            return base64.b64encode(content).decode("utf-8"), None
+
+        except requests.exceptions.Timeout:
+            return None, "Request timed out. The document server may be slow."
+        except requests.exceptions.SSLError:
+            return (
+                None,
+                "SSL certificate error. The document server may have security issues.",
+            )
+        except requests.exceptions.ConnectionError:
+            return (
+                None,
+                "Could not connect to document server. Check your network.",
+            )
+        except requests.exceptions.HTTPError as e:
+            status_code = getattr(e.response, "status_code", None)
+            if status_code == 404:
+                return None, "Document not found (404)"
+            elif status_code == 403:
+                return None, "Access denied to document (403)"
+            else:
+                return None, f"Server returned error: HTTP {status_code}"
+        except Exception as e:
+            return None, f"Failed to load document: {str(e)}"
 
     def render_bill_documents(self, bill_id: int):
         """
@@ -102,9 +145,13 @@ class CAPPDFViewer:
 
         # Fetch and embed PDF as base64 (cached)
         with st.spinner("Loading PDF..."):
-            pdf_base64 = self.fetch_pdf_as_base64(pdf_url)
+            pdf_base64, error = self.fetch_pdf_as_base64(pdf_url)
 
-        if pdf_base64:
+        if error:
+            # Show specific error message with fallback link
+            st.error(f"📄 Could not load document: {error}")
+            st.markdown(f"[Open document in new tab]({pdf_url})")
+        elif pdf_base64:
             # Embed using data URI
             st.markdown(
                 f'<iframe src="data:application/pdf;base64,{pdf_base64}" '
@@ -113,17 +160,14 @@ class CAPPDFViewer:
                 f'type="application/pdf"></iframe>',
                 unsafe_allow_html=True,
             )
-        else:
-            st.warning("Could not load PDF inline. Use the link below:")
-
-        # Direct link (always shown as fallback)
-        st.markdown(
-            f'<a href="{pdf_url}" target="_blank" rel="noopener noreferrer" '
-            f'style="display: inline-block; padding: 6px 12px; background-color: #0066cc; '
-            f'color: white; text-decoration: none; border-radius: 4px; margin-top: 8px; font-size: 14px;">'
-            f'📥 Open PDF in New Tab</a>',
-            unsafe_allow_html=True,
-        )
+            # Direct link (always shown as fallback for successful loads)
+            st.markdown(
+                f'<a href="{pdf_url}" target="_blank" rel="noopener noreferrer" '
+                f'style="display: inline-block; padding: 6px 12px; background-color: #0066cc; '
+                f'color: white; text-decoration: none; border-radius: 4px; margin-top: 8px; font-size: 14px;">'
+                f'📥 Open PDF in New Tab</a>',
+                unsafe_allow_html=True,
+            )
 
         # Show other available documents
         other_docs = all_docs[
