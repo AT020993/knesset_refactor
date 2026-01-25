@@ -462,7 +462,14 @@ class CAPAdminRenderer:
             return
 
         # Check if user has annotations
-        annotation_count = self.user_service.get_user_annotation_count(user_id)
+        try:
+            annotation_count = self.user_service.get_user_annotation_count(user_id)
+        except Exception as e:
+            import traceback
+            st.error(f"Error checking annotations: {e}")
+            st.code(traceback.format_exc())
+            st.info("Try running Database Repair first (scroll down to Database Maintenance)")
+            return
 
         st.markdown("---")
         st.markdown(f"#### 🗑️ Delete User: {user['display_name']}")
@@ -541,85 +548,138 @@ class CAPAdminRenderer:
 
     def _run_database_repair(self):
         """Run database repair operations to fix migration artifacts."""
-        from backend.connection_manager import get_db_connection
+        import duckdb
 
-        st.info("Running database repair...")
+        st.info("Running comprehensive database repair...")
         issues_found = []
         fixes_applied = []
 
         try:
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                # 1. Find and drop any *_new migration artifact tables
-                tables = conn.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'main' AND table_name LIKE '%\\_new' ESCAPE '\\'"
+            # Use raw duckdb connection to avoid any wrapper issues
+            conn = duckdb.connect(str(self.db_path), read_only=False)
+
+            try:
+                # 1. List ALL tables to understand database state
+                all_tables = conn.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
                 ).fetchall()
+                fixes_applied.append(f"Found {len(all_tables)} tables: {[t[0] for t in all_tables]}")
 
-                for (table_name,) in tables:
-                    issues_found.append(f"Found migration artifact table: {table_name}")
-                    try:
-                        conn.execute(f"DROP TABLE IF EXISTS \"{table_name}\"")
-                        fixes_applied.append(f"Dropped table: {table_name}")
-                    except Exception as e:
-                        fixes_applied.append(f"Failed to drop {table_name}: {e}")
+                # 2. Find and drop any *_new migration artifact tables
+                for (table_name,) in all_tables:
+                    if table_name.endswith('_new'):
+                        issues_found.append(f"Found migration artifact table: {table_name}")
+                        try:
+                            conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+                            fixes_applied.append(f"Dropped table: {table_name}")
+                        except Exception as e:
+                            fixes_applied.append(f"Failed to drop {table_name}: {e}")
 
-                # 2. Drop any views that might reference _new tables
+                # 3. Check for any views
                 try:
                     views = conn.execute(
-                        "SELECT table_name, view_definition FROM information_schema.views "
-                        "WHERE table_schema = 'main'"
+                        "SELECT table_name FROM information_schema.views WHERE table_schema = 'main'"
                     ).fetchall()
-
-                    for view_name, view_def in views:
-                        if "_new" in (view_def or ""):
-                            issues_found.append(f"Found view with _new reference: {view_name}")
+                    if views:
+                        fixes_applied.append(f"Found views: {[v[0] for v in views]}")
+                        for (view_name,) in views:
                             try:
-                                conn.execute(f"DROP VIEW IF EXISTS \"{view_name}\"")
-                                fixes_applied.append(f"Dropped view: {view_name}")
+                                view_def = conn.execute(
+                                    f"SELECT view_definition FROM information_schema.views WHERE table_name = '{view_name}'"
+                                ).fetchone()
+                                if view_def and "_new" in str(view_def[0]):
+                                    issues_found.append(f"View {view_name} references _new table!")
+                                    conn.execute(f'DROP VIEW IF EXISTS "{view_name}"')
+                                    fixes_applied.append(f"Dropped problematic view: {view_name}")
                             except Exception as e:
-                                fixes_applied.append(f"Failed to drop view {view_name}: {e}")
+                                fixes_applied.append(f"Error checking view {view_name}: {e}")
+                    else:
+                        fixes_applied.append("No views found")
                 except Exception as e:
-                    self.logger.debug(f"Could not check views: {e}")
+                    fixes_applied.append(f"Could not check views: {e}")
 
-                # 3. Explicitly drop UserBillCAP_new if it exists
+                # 4. Check DuckDB internal tables/dependencies
                 try:
-                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new")
-                    fixes_applied.append("Executed DROP TABLE IF EXISTS UserBillCAP_new")
+                    deps = conn.execute("SELECT * FROM duckdb_dependencies()").fetchall()
+                    new_deps = [d for d in deps if "_new" in str(d)]
+                    if new_deps:
+                        issues_found.append(f"Found dependencies with _new: {new_deps}")
                 except Exception as e:
-                    fixes_applied.append(f"DROP UserBillCAP_new result: {e}")
+                    fixes_applied.append(f"Could not check dependencies: {e}")
 
-                # 4. Vacuum to clean up
+                # 5. Check sequences
                 try:
+                    seqs = conn.execute("SELECT sequence_name FROM duckdb_sequences()").fetchall()
+                    fixes_applied.append(f"Sequences: {[s[0] for s in seqs]}")
+                except Exception as e:
+                    fixes_applied.append(f"Could not list sequences: {e}")
+
+                # 6. Force drop UserBillCAP_new
+                try:
+                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
+                    fixes_applied.append("Executed DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
+                except Exception as e:
+                    fixes_applied.append(f"DROP UserBillCAP_new: {e}")
+
+                # 7. Check UserBillCAP table structure
+                try:
+                    cols = conn.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'UserBillCAP' ORDER BY ordinal_position"
+                    ).fetchall()
+                    fixes_applied.append(f"UserBillCAP columns: {[c[0] for c in cols]}")
+                except Exception as e:
+                    issues_found.append(f"Could not read UserBillCAP structure: {e}")
+
+                # 8. Check constraints on UserBillCAP
+                try:
+                    constraints = conn.execute(
+                        "SELECT constraint_name, constraint_type "
+                        "FROM information_schema.table_constraints "
+                        "WHERE table_name = 'UserBillCAP'"
+                    ).fetchall()
+                    fixes_applied.append(f"UserBillCAP constraints: {constraints}")
+                except Exception as e:
+                    fixes_applied.append(f"Could not check constraints: {e}")
+
+                # 9. CHECKPOINT and VACUUM
+                try:
+                    conn.execute("CHECKPOINT")
                     conn.execute("VACUUM")
-                    fixes_applied.append("Database vacuumed")
+                    fixes_applied.append("CHECKPOINT and VACUUM completed")
                 except Exception as e:
-                    fixes_applied.append(f"VACUUM failed: {e}")
+                    fixes_applied.append(f"CHECKPOINT/VACUUM: {e}")
 
-                # 5. Verify UserBillCAP table works
+                # 10. Test the exact query that fails
                 try:
                     count = conn.execute(
-                        "SELECT COUNT(*) FROM UserBillCAP"
+                        "SELECT COUNT(*) FROM UserBillCAP WHERE ResearcherID = 999"
                     ).fetchone()[0]
-                    fixes_applied.append(f"UserBillCAP table OK ({count} annotations)")
+                    fixes_applied.append(f"✅ Test query succeeded (count={count})")
                 except Exception as e:
-                    issues_found.append(f"UserBillCAP query failed: {e}")
+                    issues_found.append(f"❌ Test query FAILED: {e}")
+
+            finally:
+                conn.close()
 
             # Report results
             if issues_found:
                 st.warning("**Issues found:**")
                 for issue in issues_found:
                     st.write(f"- {issue}")
+            else:
+                st.success("**No issues found!**")
 
-            st.success("**Repair actions taken:**")
+            st.info("**Diagnostic info:**")
             for fix in fixes_applied:
                 st.write(f"- {fix}")
 
-            st.info("Please try your operation again. If issues persist, try rebooting the app.")
+            st.info("Please try your operation again. If issues persist, the database file may need to be recreated.")
 
         except Exception as e:
+            import traceback
             st.error(f"Database repair failed: {e}")
+            st.code(traceback.format_exc())
             self.logger.error(f"Database repair error: {e}", exc_info=True)
 
 

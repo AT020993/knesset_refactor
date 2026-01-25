@@ -570,11 +570,15 @@ class CAPUserService:
 
     def get_user_annotation_count(self, researcher_id: int) -> int:
         """Get the number of annotations made by a user."""
+        import traceback
+
+        self.logger.info(f"get_user_annotation_count called for researcher_id={researcher_id}")
         self.ensure_table_exists()
         try:
             with get_db_connection(
                 self.db_path, read_only=True, logger_obj=self.logger
             ) as conn:
+                self.logger.info("Checking if UserBillCAP table exists...")
                 # Check if UserBillCAP table exists
                 table_check = conn.execute(
                     "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
@@ -582,8 +586,10 @@ class CAPUserService:
 
                 if not table_check:
                     # No annotations table means no annotations
+                    self.logger.info("UserBillCAP table does not exist, returning 0")
                     return 0
 
+                self.logger.info("Querying annotation count...")
                 result = conn.execute(
                     """
                     SELECT COUNT(*) FROM UserBillCAP
@@ -591,20 +597,25 @@ class CAPUserService:
                     """,
                     [researcher_id],
                 ).fetchone()
+                self.logger.info(f"Query succeeded, count={result[0] if result else 0}")
                 return result[0] if result else 0
 
         except Exception as e:
             error_str = str(e)
+            # Log full traceback to understand where the error comes from
+            self.logger.error(
+                f"Error in get_user_annotation_count: {error_str}\n"
+                f"Full traceback:\n{traceback.format_exc()}"
+            )
             # If table doesn't exist, return 0
             if "does not exist" in error_str:
                 # Special handling for migration artifact errors
                 if "UserBillCAP_new" in error_str:
-                    self.logger.warning(
-                        "Detected migration artifact (UserBillCAP_new). "
-                        "Restart the app to trigger cleanup."
+                    self.logger.error(
+                        "CRITICAL: UserBillCAP_new reference detected! "
+                        "This should not happen. Check database state."
                     )
                 return 0
-            self.logger.error(f"Error getting annotation count: {e}", exc_info=True)
             return 0
 
     def user_exists(self, username: str) -> bool:
