@@ -675,13 +675,48 @@ class CAPAdminRenderer:
             for fix in fixes_applied:
                 st.write(f"- {fix}")
 
-            st.info("Please try your operation again. If issues persist, the database file may need to be recreated.")
+            st.info("Please try your operation again.")
+
+            # Offer to sync repaired database back to GCS
+            st.markdown("---")
+            st.markdown("**Sync repaired database to cloud?**")
+            st.caption(
+                "If you're on Streamlit Cloud, sync the repaired database to GCS "
+                "so the fix persists across reboots."
+            )
+            if st.button("☁️ Sync to Cloud", key="btn_sync_repair_to_cloud"):
+                self._sync_repaired_db_to_cloud()
 
         except Exception as e:
             import traceback
             st.error(f"Database repair failed: {e}")
             st.code(traceback.format_exc())
             self.logger.error(f"Database repair error: {e}", exc_info=True)
+
+    def _sync_repaired_db_to_cloud(self):
+        """Upload the repaired database to GCS."""
+        try:
+            from data.services.storage_sync_service import StorageSyncService
+            from config.settings import Settings
+
+            sync_service = StorageSyncService(logger_obj=self.logger)
+            if not sync_service.is_enabled():
+                st.warning("Cloud storage is not enabled. No sync needed for local development.")
+                return
+
+            with st.spinner("Uploading repaired database to cloud..."):
+                success = sync_service.gcs_manager.upload_file(
+                    Settings.DEFAULT_DB_PATH, "data/warehouse.duckdb"
+                )
+
+            if success:
+                st.success("✅ Repaired database synced to cloud! The fix will persist across reboots.")
+            else:
+                st.error("❌ Failed to sync to cloud. Check logs for details.")
+
+        except Exception as e:
+            st.error(f"Cloud sync failed: {e}")
+            self.logger.error(f"Cloud sync error: {e}", exc_info=True)
 
 
 def render_admin_panel(db_path: Path, logger_obj: Optional[logging.Logger] = None):
