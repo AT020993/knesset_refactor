@@ -53,26 +53,37 @@ class CAPFormRenderer:
         if self._on_annotation_saved:
             self._on_annotation_saved()
 
-    def _sync_to_cloud(self):
-        """Sync database to cloud storage after annotation save."""
+    def _sync_to_cloud(self) -> bool:
+        """Sync database to cloud storage after annotation save.
+
+        Returns:
+            True if sync succeeded or was skipped (not enabled),
+            False if sync was attempted but failed.
+        """
         try:
             from data.services.storage_sync_service import StorageSyncService
 
             sync_service = StorageSyncService(logger_obj=self.logger)
-            if sync_service.is_enabled():
-                # Upload just the database file (fastest)
-                from config.settings import Settings
-                success = sync_service.gcs_manager.upload_file(
-                    Settings.DEFAULT_DB_PATH,
-                    "data/warehouse.duckdb"
-                )
-                if success:
-                    self.logger.info("Database synced to cloud storage after annotation")
-                else:
-                    self.logger.warning("Failed to sync database to cloud storage")
+            if not sync_service.is_enabled():
+                # Cloud storage not enabled - nothing to do
+                return True
+
+            # Upload just the database file (fastest)
+            from config.settings import Settings
+
+            success = sync_service.gcs_manager.upload_file(
+                Settings.DEFAULT_DB_PATH, "data/warehouse.duckdb"
+            )
+            if success:
+                self.logger.info("Database synced to cloud storage after annotation")
+                return True
+            else:
+                self.logger.warning("Failed to sync database to cloud storage")
+                return False
         except Exception as e:
             # Don't fail the annotation save if cloud sync fails
             self.logger.warning(f"Cloud sync after annotation failed: {e}")
+            return False
 
     def render_bill_queue(self, researcher_id: int) -> Tuple[Optional[int], str]:
         """
@@ -223,7 +234,13 @@ class CAPFormRenderer:
             st.success("✅ Annotation saved successfully!")
             self._notify_annotation_saved()
             # Sync database to cloud storage so other researchers can see the annotation
-            self._sync_to_cloud()
+            sync_success = self._sync_to_cloud()
+            if not sync_success:
+                st.warning(
+                    "⚠️ Annotation saved locally, but cloud sync failed. "
+                    "Your work is safe but may not be visible to other researchers "
+                    "until sync succeeds."
+                )
             return True
         else:
             st.error("❌ Error saving annotation")

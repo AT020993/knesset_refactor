@@ -478,6 +478,133 @@ class TestCAPAuthHandler:
         st.session_state.pop("cap_login_time", None)
 
 
+class TestCAPFormRenderer:
+    """Tests for CAPFormRenderer cloud sync functionality."""
+
+    def test_sync_to_cloud_returns_true_when_disabled(self):
+        """Test _sync_to_cloud returns True when cloud storage is not enabled."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module (lazy import location)
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = False
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+        assert result is True
+
+    def test_sync_to_cloud_returns_true_on_success(self):
+        """Test _sync_to_cloud returns True when upload succeeds."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = True
+            mock_sync_instance.gcs_manager.upload_file.return_value = True
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+        assert result is True
+
+    def test_sync_to_cloud_returns_false_on_failure(self):
+        """Test _sync_to_cloud returns False when upload fails."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = True
+            mock_sync_instance.gcs_manager.upload_file.return_value = False
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+        assert result is False
+
+    def test_sync_to_cloud_returns_false_on_exception(self):
+        """Test _sync_to_cloud returns False when an exception occurs."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module to raise an exception
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_class.side_effect = Exception("Connection error")
+
+            result = renderer._sync_to_cloud()
+
+        assert result is False
+
+
+class TestCAPCodedBillsRendererSync:
+    """Tests for CAPCodedBillsRenderer cloud sync functionality."""
+
+    def test_sync_to_cloud_returns_true_when_disabled(self):
+        """Test _sync_to_cloud returns True when cloud storage is not enabled."""
+        from ui.renderers.cap.coded_bills_renderer import CAPCodedBillsRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPCodedBillsRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = False
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+        assert result is True
+
+    def test_sync_to_cloud_returns_true_on_success(self):
+        """Test _sync_to_cloud returns True when upload succeeds."""
+        from ui.renderers.cap.coded_bills_renderer import CAPCodedBillsRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPCodedBillsRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = True
+            mock_sync_instance.gcs_manager.upload_file.return_value = True
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+        assert result is True
+
+    def test_sync_to_cloud_returns_false_on_failure(self):
+        """Test _sync_to_cloud returns False when upload fails."""
+        from ui.renderers.cap.coded_bills_renderer import CAPCodedBillsRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPCodedBillsRenderer(mock_service)
+
+        # Mock StorageSyncService at its source module
+        with mock.patch("data.services.storage_sync_service.StorageSyncService") as mock_sync_class:
+            mock_sync_instance = mock.MagicMock()
+            mock_sync_instance.is_enabled.return_value = True
+            mock_sync_instance.gcs_manager.upload_file.return_value = False
+            mock_sync_class.return_value = mock_sync_instance
+
+            result = renderer._sync_to_cloud()
+
+
 class TestCAPBillQueueRendererIntegration:
     """Integration tests for CAPBillQueueRenderer with mock service."""
 
