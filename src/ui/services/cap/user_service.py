@@ -572,102 +572,165 @@ class CAPUserService:
                     self.logger.warning(f"User {researcher_id} does not exist")
                     return False
 
-                # Check for and fix corrupted FK constraints before delete
-                # The UserBillCAP_new error happens because there's a dangling FK
+                # Try to delete directly first
                 try:
-                    # List all constraints that might reference UserResearchers
-                    self.logger.info("Checking for corrupted FK constraints...")
+                    conn.execute(
+                        "DELETE FROM UserResearchers WHERE ResearcherID = ?",
+                        [researcher_id],
+                    )
 
-                    # Drop UserBillCAP_new if it somehow exists
-                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
+                    # Verify deletion
+                    still_exists = conn.execute(
+                        "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
+                        [researcher_id],
+                    ).fetchone()
 
-                    # Force checkpoint to clean catalog
-                    conn.execute("CHECKPOINT")
+                    if not still_exists:
+                        self.logger.info(f"Successfully deleted user ID: {researcher_id}")
+                        return True
 
-                except Exception as cleanup_e:
-                    self.logger.warning(f"FK cleanup warning (non-fatal): {cleanup_e}")
+                except Exception as delete_e:
+                    error_str = str(delete_e)
+                    self.logger.error(f"Delete failed: {error_str}")
 
-                # Try to delete
+                    # If UserBillCAP_new error, use EXPORT/IMPORT to rebuild catalog
+                    if "UserBillCAP_new" in error_str:
+                        self.logger.warning(
+                            "Corrupted catalog detected - using EXPORT/IMPORT to fix"
+                        )
+                        conn.close()
+                        conn = None
+
+                        if self._rebuild_database_catalog(researcher_id):
+                            return True
+                        return False
+
+                    raise
+
+                self.logger.error(f"Delete executed but user {researcher_id} still exists!")
+                return False
+
+            finally:
+                if conn:
+                    conn.close()
+
+        except Exception as e:
+            self.logger.error(f"Error hard deleting user: {e}", exc_info=True)
+            return False
+
+    def _rebuild_database_catalog(self, researcher_id_to_delete: int) -> bool:
+        """
+        Rebuild database catalog using EXPORT/IMPORT to fix corrupted FK references.
+
+        DuckDB's catalog can become corrupted when migrations are interrupted,
+        leaving dangling FK references to non-existent tables. EXPORT DATABASE
+        exports all data as Parquet and schema as SQL, then IMPORT DATABASE
+        recreates everything with a clean catalog.
+
+        Args:
+            researcher_id_to_delete: User to delete after rebuild
+
+        Returns:
+            True if rebuild and delete succeeded
+        """
+        import duckdb
+        import shutil
+        import tempfile
+        import os
+
+        self.logger.info("Starting database catalog rebuild...")
+
+        # Create temp directory for export
+        export_dir = tempfile.mkdtemp(prefix="duckdb_export_")
+        db_path_str = str(self.db_path)
+        backup_path = db_path_str + ".backup"
+
+        try:
+            # Step 1: Export the entire database
+            self.logger.info(f"Exporting database to {export_dir}...")
+            conn = duckdb.connect(db_path_str, read_only=False)
+            try:
+                # Export with Parquet format for data integrity
+                conn.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
+                self.logger.info("Export completed")
+            finally:
+                conn.close()
+
+            # Step 2: Backup original database file
+            self.logger.info("Backing up original database...")
+            shutil.copy2(db_path_str, backup_path)
+
+            # Step 3: Delete original database to get clean slate
+            self.logger.info("Removing original database...")
+            os.remove(db_path_str)
+
+            # Also remove WAL file if exists
+            wal_path = db_path_str + ".wal"
+            if os.path.exists(wal_path):
+                os.remove(wal_path)
+
+            # Step 4: Create fresh database and import
+            self.logger.info("Creating fresh database and importing...")
+            conn = duckdb.connect(db_path_str, read_only=False)
+            try:
+                conn.execute(f"IMPORT DATABASE '{export_dir}'")
+                self.logger.info("Import completed")
+
+                # Step 5: Now delete the user (should work with clean catalog)
+                self.logger.info(f"Deleting user {researcher_id_to_delete}...")
                 conn.execute(
                     "DELETE FROM UserResearchers WHERE ResearcherID = ?",
-                    [researcher_id],
+                    [researcher_id_to_delete],
                 )
 
                 # Verify deletion
                 still_exists = conn.execute(
                     "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
-                    [researcher_id],
+                    [researcher_id_to_delete],
                 ).fetchone()
 
                 if still_exists:
-                    self.logger.error(f"Delete executed but user {researcher_id} still exists!")
-                    return False
+                    raise RuntimeError("Delete succeeded but user still exists")
 
-                self.logger.info(f"Successfully deleted user ID: {researcher_id}")
+                # Force checkpoint to persist changes
+                conn.execute("CHECKPOINT")
+
+                self.logger.info(
+                    f"Successfully deleted user {researcher_id_to_delete} after catalog rebuild"
+                )
+
+                # Remove backup since we succeeded
+                if os.path.exists(backup_path):
+                    os.remove(backup_path)
+
                 return True
 
-            except Exception as inner_e:
-                error_str = str(inner_e)
-                self.logger.error(f"Error during delete operation: {error_str}")
-
-                # If it's the UserBillCAP_new error, try rebuilding UserBillCAP table
-                if "UserBillCAP_new" in error_str:
-                    self.logger.warning("UserBillCAP_new FK error - attempting table rebuild")
-                    try:
-                        # Nuclear option: rebuild UserBillCAP to fix corrupted catalog
-                        self.logger.info("Backing up UserBillCAP...")
-                        conn.execute("CREATE TABLE IF NOT EXISTS UserBillCAP_backup AS SELECT * FROM UserBillCAP")
-
-                        self.logger.info("Dropping corrupted UserBillCAP...")
-                        conn.execute("DROP TABLE IF EXISTS UserBillCAP CASCADE")
-                        conn.execute("DROP TABLE IF EXISTS UserBillCAP_new CASCADE")
-
-                        self.logger.info("Recreating UserBillCAP...")
-                        conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1")
-                        conn.execute("""
-                            CREATE TABLE UserBillCAP (
-                                AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
-                                BillID INTEGER NOT NULL,
-                                ResearcherID INTEGER NOT NULL,
-                                CAPMinorCode INTEGER NOT NULL,
-                                Direction INTEGER NOT NULL DEFAULT 0,
-                                AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                Confidence VARCHAR DEFAULT 'Medium',
-                                Notes VARCHAR,
-                                Source VARCHAR DEFAULT 'Database',
-                                SubmissionDate VARCHAR,
-                                UNIQUE(BillID, ResearcherID)
-                            )
-                        """)
-
-                        self.logger.info("Restoring data...")
-                        conn.execute("""
-                            INSERT INTO UserBillCAP
-                            SELECT * FROM UserBillCAP_backup
-                        """)
-                        conn.execute("DROP TABLE UserBillCAP_backup")
-
-                        conn.execute("CHECKPOINT")
-                        self.logger.info("UserBillCAP rebuilt successfully")
-
-                        # Now retry the delete
-                        conn.execute(
-                            "DELETE FROM UserResearchers WHERE ResearcherID = ?",
-                            [researcher_id],
-                        )
-                        self.logger.info(f"Deleted user {researcher_id} after table rebuild")
-                        return True
-
-                    except Exception as rebuild_e:
-                        self.logger.error(f"Table rebuild failed: {rebuild_e}")
-
-                return False
-            finally:
+            except Exception as import_e:
+                self.logger.error(f"Import or delete failed: {import_e}")
                 conn.close()
+                conn = None
+
+                # Restore from backup
+                if os.path.exists(backup_path):
+                    self.logger.info("Restoring from backup...")
+                    if os.path.exists(db_path_str):
+                        os.remove(db_path_str)
+                    shutil.move(backup_path, db_path_str)
+
+                raise
+
+            finally:
+                if conn:
+                    conn.close()
 
         except Exception as e:
-            self.logger.error(f"Error hard deleting user: {e}", exc_info=True)
+            self.logger.error(f"Catalog rebuild failed: {e}", exc_info=True)
             return False
+
+        finally:
+            # Clean up export directory
+            if os.path.exists(export_dir):
+                shutil.rmtree(export_dir, ignore_errors=True)
 
     def get_user_annotation_count(self, researcher_id: int) -> int:
         """Get the number of annotations made by a user."""

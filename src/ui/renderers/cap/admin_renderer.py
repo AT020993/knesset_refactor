@@ -563,29 +563,150 @@ class CAPAdminRenderer:
                 "Use these tools to fix database issues. "
                 "Only use if you're experiencing errors."
             )
-            st.caption("_Code version: 2026-01-25-v5_")
+            st.caption("_Code version: 2026-01-25-v6_")
 
-            if st.button("🩺 Run Database Repair", key="btn_db_repair"):
-                self._run_database_repair()
+            col1, col2 = st.columns(2)
 
-                # Clear cached services to force fresh connections
-                self._user_service = None
+            with col1:
+                if st.button("🩺 Run Database Repair", key="btn_db_repair"):
+                    self._run_database_repair()
+                    self._clear_admin_caches()
+                    st.info("🔄 Services reset. Please try your operation again.")
 
-                # Clear admin dialog state (but preserve authentication!)
-                # Authentication keys to KEEP: cap_authenticated, cap_user_id,
-                # cap_user_role, cap_username, cap_researcher_name, cap_login_time
-                auth_keys = {
-                    'cap_authenticated', 'cap_user_id', 'cap_user_role',
-                    'cap_username', 'cap_researcher_name', 'cap_login_time'
-                }
-                keys_to_clear = [k for k in list(st.session_state.keys())
-                               if k.startswith('admin_') or
-                               (k.startswith('cap_') and k not in auth_keys)]
-                for key in keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
+            with col2:
+                if st.button("🔄 Full Catalog Rebuild", key="btn_catalog_rebuild"):
+                    st.warning(
+                        "⚠️ This completely rebuilds the database catalog using EXPORT/IMPORT. "
+                        "Use this if regular repair doesn't fix the issue."
+                    )
+                    self._run_full_catalog_rebuild()
+                    self._clear_admin_caches()
 
-                st.info("🔄 Services reset. Please try your operation again.")
+    def _clear_admin_caches(self):
+        """Clear admin caches while preserving authentication."""
+        # Clear cached services to force fresh connections
+        self._user_service = None
+
+        # Authentication keys to KEEP
+        auth_keys = {
+            'cap_authenticated', 'cap_user_id', 'cap_user_role',
+            'cap_username', 'cap_researcher_name', 'cap_login_time'
+        }
+        keys_to_clear = [k for k in list(st.session_state.keys())
+                       if k.startswith('admin_') or
+                       (k.startswith('cap_') and k not in auth_keys)]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+
+    def _run_full_catalog_rebuild(self):
+        """
+        Completely rebuild database catalog using EXPORT/IMPORT.
+
+        This is the nuclear option for fixing corrupted FK references that persist
+        in DuckDB's internal catalog even after rebuilding individual tables.
+        """
+        import duckdb
+        import shutil
+        import tempfile
+        import os
+
+        st.info("Starting full catalog rebuild... This may take a moment.")
+        db_path_str = str(self.db_path)
+
+        # Create temp directory for export
+        export_dir = tempfile.mkdtemp(prefix="duckdb_export_")
+        backup_path = db_path_str + ".backup"
+
+        try:
+            # Step 1: Export the entire database
+            st.write("📤 Exporting database...")
+            conn = duckdb.connect(db_path_str, read_only=False)
+            try:
+                conn.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
+                st.write("✅ Export completed")
+            finally:
+                conn.close()
+
+            # Step 2: Backup original database file
+            st.write("💾 Backing up original database...")
+            shutil.copy2(db_path_str, backup_path)
+
+            # Step 3: Delete original database to get clean slate
+            st.write("🗑️ Removing original database...")
+            os.remove(db_path_str)
+
+            # Also remove WAL file if exists
+            wal_path = db_path_str + ".wal"
+            if os.path.exists(wal_path):
+                os.remove(wal_path)
+
+            # Step 4: Create fresh database and import
+            st.write("📥 Creating fresh database and importing...")
+            conn = duckdb.connect(db_path_str, read_only=False)
+            try:
+                conn.execute(f"IMPORT DATABASE '{export_dir}'")
+                conn.execute("CHECKPOINT")
+                st.write("✅ Import completed")
+
+                # Verify tables
+                tables = conn.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+                ).fetchall()
+                st.write(f"✅ Verified {len(tables)} tables imported")
+
+                # Test query
+                try:
+                    count = conn.execute(
+                        "SELECT COUNT(*) FROM UserBillCAP WHERE ResearcherID = 999"
+                    ).fetchone()[0]
+                    st.write(f"✅ Test query succeeded (count={count})")
+                except Exception as e:
+                    st.error(f"❌ Test query failed: {e}")
+
+                # Remove backup since we succeeded
+                if os.path.exists(backup_path):
+                    os.remove(backup_path)
+
+                st.success(
+                    "✅ **Full catalog rebuild complete!** "
+                    "The database now has a clean catalog. Try your operation again."
+                )
+
+                # Offer to sync
+                st.markdown("---")
+                if st.button("☁️ Sync Rebuilt DB to Cloud", key="btn_sync_rebuilt_to_cloud"):
+                    self._sync_repaired_db_to_cloud()
+
+            except Exception as import_e:
+                st.error(f"❌ Import failed: {import_e}")
+                conn.close()
+                conn = None
+
+                # Restore from backup
+                if os.path.exists(backup_path):
+                    st.write("⏮️ Restoring from backup...")
+                    if os.path.exists(db_path_str):
+                        os.remove(db_path_str)
+                    shutil.move(backup_path, db_path_str)
+                    st.warning("Database restored from backup.")
+
+                raise
+
+            finally:
+                if conn:
+                    conn.close()
+
+        except Exception as e:
+            import traceback
+            st.error(f"❌ Full catalog rebuild failed: {e}")
+            st.code(traceback.format_exc())
+            self.logger.error(f"Full catalog rebuild error: {e}", exc_info=True)
+
+        finally:
+            # Clean up export directory
+            if os.path.exists(export_dir):
+                shutil.rmtree(export_dir, ignore_errors=True)
 
     def _run_database_repair(self):
         """Run database repair operations to fix migration artifacts."""
