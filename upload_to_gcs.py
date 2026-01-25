@@ -1,32 +1,113 @@
-"""
-One-time script to upload local data to Google Cloud Storage.
+#!/usr/bin/env python3
+"""Upload local data files to Google Cloud Storage.
 
 Usage:
+    # Set bucket name via environment variable
+    export GCS_BUCKET_NAME="your-bucket-name"
+    export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
     python upload_to_gcs.py
+
+    # Or pass bucket name as argument
+    python upload_to_gcs.py --bucket your-bucket-name
+
+    # Preview what would be uploaded without actually uploading
+    python upload_to_gcs.py --bucket your-bucket-name --dry-run
 
 Prerequisites:
     1. Create a GCS bucket in Google Cloud Console
     2. Create a service account with Storage Admin role
     3. Download the JSON key file
-    4. Set environment variable: export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
-    5. Update BUCKET_NAME below with your bucket name
+    4. Set GOOGLE_APPLICATION_CREDENTIALS environment variable
 """
 
-from pathlib import Path
-from google.cloud import storage
+import argparse
+import os
 import sys
+from pathlib import Path
 
-# CONFIGURATION - UPDATE THIS WITH YOUR BUCKET NAME
-BUCKET_NAME = "knesset_bucket"  # iucc-international-dimensions project
+from google.cloud import storage
 
-def upload_data_to_gcs():
-    """Upload all local data files to Google Cloud Storage."""
 
-    # Initialize GCS client
+def get_bucket_name(args_bucket: str = None) -> str:
+    """Get bucket name from args, env var, or exit with error.
+
+    Priority: CLI argument > environment variable
+
+    Args:
+        args_bucket: Bucket name from command line argument
+
+    Returns:
+        The bucket name to use
+
+    Exits:
+        With error message if no bucket specified
+    """
+    # Priority: CLI arg > env var
+    if args_bucket:
+        return args_bucket
+
+    env_bucket = os.environ.get("GCS_BUCKET_NAME")
+    if env_bucket:
+        return env_bucket
+
+    # No bucket specified - error out with helpful message
+    print("ERROR: No GCS bucket specified.")
+    print("\nPlease specify bucket name via:")
+    print("  1. Command line: python upload_to_gcs.py --bucket YOUR_BUCKET")
+    print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
+    sys.exit(1)
+
+
+def main():
+    """Main entry point for upload script."""
+    parser = argparse.ArgumentParser(
+        description="Upload data files to Google Cloud Storage"
+    )
+    parser.add_argument("--bucket", "-b", help="GCS bucket name")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be uploaded without actually uploading",
+    )
+    args = parser.parse_args()
+
+    bucket_name = get_bucket_name(args.bucket)
+    print(f"Using GCS bucket: {bucket_name}")
+
+    # Project root for finding data files
+    project_root = Path(__file__).parent
+
+    # Files to upload
+    files_to_upload = [
+        ("data/warehouse.duckdb", "data/warehouse.duckdb"),
+        ("data/faction_coalition_status.csv", "data/faction_coalition_status.csv"),
+    ]
+
+    # Add all parquet files
+    parquet_dir = project_root / "data" / "parquet"
+    if parquet_dir.exists():
+        for pq_file in parquet_dir.glob("*.parquet"):
+            files_to_upload.append(
+                (f"data/parquet/{pq_file.name}", f"data/parquet/{pq_file.name}")
+            )
+
+    # Dry run mode - just show what would be uploaded
+    if args.dry_run:
+        print("\n🔍 Dry run - would upload:")
+        for local_path, remote_path in files_to_upload:
+            full_path = project_root / local_path
+            if full_path.exists():
+                size_mb = full_path.stat().st_size / (1024 * 1024)
+                print(f"  {local_path} -> gs://{bucket_name}/{remote_path} ({size_mb:.1f} MB)")
+            else:
+                print(f"  {local_path} -> SKIPPED (file not found)")
+        return
+
+    # Connect to GCS
     try:
         client = storage.Client()
-        bucket = client.bucket(BUCKET_NAME)
-        print(f"✓ Connected to bucket: {BUCKET_NAME}")
+        bucket = client.bucket(bucket_name)
+        print(f"✓ Connected to bucket: {bucket_name}")
     except Exception as e:
         print(f"✗ Failed to connect to GCS: {e}")
         print("\nMake sure you:")
@@ -36,26 +117,11 @@ def upload_data_to_gcs():
         print('     export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"')
         sys.exit(1)
 
-    # Files to upload
-    project_root = Path(__file__).parent
-    files_to_upload = [
-        ("data/warehouse.duckdb", "data/warehouse.duckdb"),
-        ("data/faction_coalition_status.csv", "data/faction_coalition_status.csv"),
-    ]
-
-    # Add all parquet files
-    parquet_dir = project_root / "data" / "parquet"
-    if parquet_dir.exists():
-        for parquet_file in parquet_dir.glob("*.parquet"):
-            local_path = f"data/parquet/{parquet_file.name}"
-            gcs_path = f"data/parquet/{parquet_file.name}"
-            files_to_upload.append((local_path, gcs_path))
-
-    # Upload each file
+    # Upload files
     success_count = 0
     fail_count = 0
 
-    for local_path, gcs_path in files_to_upload:
+    for local_path, remote_path in files_to_upload:
         full_local_path = project_root / local_path
 
         if not full_local_path.exists():
@@ -63,20 +129,21 @@ def upload_data_to_gcs():
             continue
 
         try:
-            blob = bucket.blob(gcs_path)
+            print(f"Uploading {local_path}...")
+            blob = bucket.blob(remote_path)
             blob.upload_from_filename(str(full_local_path))
 
             size_mb = full_local_path.stat().st_size / (1024 * 1024)
-            print(f"✓ Uploaded {local_path} ({size_mb:.2f} MB) → gs://{BUCKET_NAME}/{gcs_path}")
+            print(f"  ✓ -> gs://{bucket_name}/{remote_path} ({size_mb:.2f} MB)")
             success_count += 1
         except Exception as e:
-            print(f"✗ Failed to upload {local_path}: {e}")
+            print(f"  ✗ Failed: {e}")
             fail_count += 1
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(f"Upload complete: {success_count} succeeded, {fail_count} failed")
-    print("="*60)
+    print("=" * 60)
 
     if success_count > 0:
         print("\nNext steps:")
@@ -86,5 +153,6 @@ def upload_data_to_gcs():
         print("  4. Redeploy your app")
         print("\nYour app will then automatically download data from GCS on startup!")
 
+
 if __name__ == "__main__":
-    upload_data_to_gcs()
+    main()
