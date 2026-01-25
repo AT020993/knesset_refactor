@@ -574,12 +574,18 @@ class CAPUserService:
 
         self.logger.info(f"get_user_annotation_count called for researcher_id={researcher_id}")
         self.ensure_table_exists()
+
+        # Silent notifier - we handle errors ourselves, don't display to user
+        def _silent_notify(msg: str, level: str) -> None:
+            self.logger.warning(f"Suppressed UI notification ({level}): {msg}")
+
         try:
             # Use read_only=False to ensure we see current catalog state
             # DuckDB's MVCC means read-only connections may see stale snapshots
             # that reference non-existent migration artifact tables
+            # Use silent notifier to prevent error dialogs - we handle errors below
             with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
+                self.db_path, read_only=False, logger_obj=self.logger, ui_notify=_silent_notify
             ) as conn:
                 self.logger.info("Checking if UserBillCAP table exists...")
                 # Check if UserBillCAP table exists
