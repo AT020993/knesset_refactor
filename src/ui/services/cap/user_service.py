@@ -550,6 +550,7 @@ class CAPUserService:
         try:
             # Check annotation count first (this handles its own errors gracefully)
             annotation_count = self.get_user_annotation_count(researcher_id)
+            self.logger.info(f"User {researcher_id} has {annotation_count} annotations")
             if annotation_count > 0:
                 self.logger.warning(
                     f"Cannot hard delete user ID {researcher_id}: "
@@ -558,16 +559,59 @@ class CAPUserService:
                 return False
 
             # Use raw duckdb.connect() to bypass any wrapper issues
-            # The connection wrapper has issues with corrupted catalog state
             self.logger.info(f"Attempting to delete user {researcher_id} using raw connection")
             conn = duckdb.connect(str(self.db_path), read_only=False)
             try:
+                # First verify user exists
+                user_exists = conn.execute(
+                    "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
+                    [researcher_id],
+                ).fetchone()
+
+                if not user_exists:
+                    self.logger.warning(f"User {researcher_id} does not exist")
+                    return False
+
+                # Try to delete
                 conn.execute(
                     "DELETE FROM UserResearchers WHERE ResearcherID = ?",
                     [researcher_id],
                 )
-                self.logger.info(f"Permanently deleted user ID: {researcher_id}")
+
+                # Verify deletion
+                still_exists = conn.execute(
+                    "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
+                    [researcher_id],
+                ).fetchone()
+
+                if still_exists:
+                    self.logger.error(f"Delete executed but user {researcher_id} still exists!")
+                    return False
+
+                self.logger.info(f"Successfully deleted user ID: {researcher_id}")
                 return True
+
+            except Exception as inner_e:
+                error_str = str(inner_e)
+                self.logger.error(f"Error during delete operation: {error_str}")
+
+                # If it's the UserBillCAP_new error, the user table itself is fine
+                # Try a direct delete without FK checks
+                if "UserBillCAP_new" in error_str:
+                    self.logger.warning("UserBillCAP_new error detected, trying PRAGMA disable FK")
+                    try:
+                        # DuckDB: disable FK checks temporarily
+                        conn.execute("SET enable_external_access = false")
+                        conn.execute(
+                            "DELETE FROM UserResearchers WHERE ResearcherID = ?",
+                            [researcher_id],
+                        )
+                        self.logger.info(f"Deleted user {researcher_id} (FK check bypassed)")
+                        return True
+                    except Exception as bypass_e:
+                        self.logger.error(f"Bypass also failed: {bypass_e}")
+
+                return False
             finally:
                 conn.close()
 

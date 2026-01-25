@@ -538,12 +538,19 @@ class CAPAdminRenderer:
                     type="primary",
                     use_container_width=True,
                 ):
-                    if self.user_service.hard_delete_user(user_id):
-                        st.success(f"User '{user['display_name']}' permanently deleted")
-                        st.session_state.admin_show_delete_dialog = False
-                        st.session_state.admin_delete_user_id = None
-                    else:
-                        st.error("Failed to delete user")
+                    try:
+                        self.logger.info(f"Attempting to delete user {user_id}")
+                        if self.user_service.hard_delete_user(user_id):
+                            st.success(f"User '{user['display_name']}' permanently deleted")
+                            st.session_state.admin_show_delete_dialog = False
+                            st.session_state.admin_delete_user_id = None
+                        else:
+                            st.error("Failed to delete user. Check logs for details.")
+                            st.info("Try running Database Repair first, then Sync to Cloud.")
+                    except Exception as e:
+                        import traceback
+                        st.error(f"Delete error: {e}")
+                        st.code(traceback.format_exc())
             with col2:
                 if st.button("Cancel", key="btn_cancel_hard_delete", use_container_width=True):
                     st.session_state.admin_show_delete_dialog = False
@@ -556,7 +563,7 @@ class CAPAdminRenderer:
                 "Use these tools to fix database issues. "
                 "Only use if you're experiencing errors."
             )
-            st.caption("_Code version: 2026-01-25-v4_")
+            st.caption("_Code version: 2026-01-25-v5_")
 
             if st.button("🩺 Run Database Repair", key="btn_db_repair"):
                 self._run_database_repair()
