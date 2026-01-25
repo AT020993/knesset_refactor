@@ -620,6 +620,84 @@ class TestCAPAuthHandler:
         st.session_state.pop("cap_login_time", None)
 
 
+class TestCAPFormRendererCategoryValidation:
+    """Tests for CAPFormRenderer category validation functionality."""
+
+    def test_validate_category_selection_rejects_none_major(self):
+        """Test validation rejects None major category."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        is_valid, error = renderer._validate_category_selection(
+            major_code=None, minor_code=101
+        )
+
+        assert is_valid is False
+        assert error is not None
+        assert "Major Category" in error
+
+    def test_validate_category_selection_rejects_none_minor(self):
+        """Test validation rejects None minor category."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        renderer = CAPFormRenderer(mock_service)
+
+        is_valid, error = renderer._validate_category_selection(
+            major_code=1, minor_code=None
+        )
+
+        assert is_valid is False
+        assert error is not None
+        assert "Minor Category" in error
+
+    def test_validate_category_selection_rejects_mismatched_categories(self):
+        """Test validation rejects minor category that doesn't belong to major."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        # Major category 1 has minors 101, 102, 103
+        mock_service.get_minor_categories.return_value = [
+            {"MinorCode": 101, "MinorTopic_HE": "Topic 1"},
+            {"MinorCode": 102, "MinorTopic_HE": "Topic 2"},
+            {"MinorCode": 103, "MinorTopic_HE": "Topic 3"},
+        ]
+        renderer = CAPFormRenderer(mock_service)
+
+        # Trying to use minor 201 (from major 2) with major 1
+        is_valid, error = renderer._validate_category_selection(
+            major_code=1, minor_code=201
+        )
+
+        assert is_valid is False
+        assert error is not None
+        assert "does not belong to major category" in error
+        mock_service.get_minor_categories.assert_called_once_with(1)
+
+    def test_validate_category_selection_accepts_valid_combination(self):
+        """Test validation accepts valid major/minor combination."""
+        from ui.renderers.cap.form_renderer import CAPFormRenderer
+
+        mock_service = mock.MagicMock()
+        # Major category 1 has minors 101, 102, 103
+        mock_service.get_minor_categories.return_value = [
+            {"MinorCode": 101, "MinorTopic_HE": "Topic 1"},
+            {"MinorCode": 102, "MinorTopic_HE": "Topic 2"},
+            {"MinorCode": 103, "MinorTopic_HE": "Topic 3"},
+        ]
+        renderer = CAPFormRenderer(mock_service)
+
+        is_valid, error = renderer._validate_category_selection(
+            major_code=1, minor_code=102
+        )
+
+        assert is_valid is True
+        assert error is None
+        mock_service.get_minor_categories.assert_called_once_with(1)
+
+
 class TestCAPFormRenderer:
     """Tests for CAPFormRenderer cloud sync functionality."""
 

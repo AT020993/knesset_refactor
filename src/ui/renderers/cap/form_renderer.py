@@ -197,6 +197,45 @@ class CAPFormRenderer:
             key=key,
         )
 
+    def _validate_category_selection(
+        self,
+        major_code: Optional[int],
+        minor_code: Optional[int],
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate that selected categories are valid and compatible.
+
+        Before saving an annotation, this method ensures:
+        1. A major category is selected
+        2. A minor category is selected
+        3. The minor category actually belongs to the selected major category
+
+        This prevents FK constraint errors and data integrity issues.
+
+        Args:
+            major_code: Selected major category code
+            minor_code: Selected minor category code
+
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is None.
+        """
+        if major_code is None:
+            return False, "Please select a Major Category"
+
+        if minor_code is None:
+            return False, "Please select a Minor Category"
+
+        # Get valid minor codes for this major category
+        valid_minors = self.service.get_minor_categories(major_code)
+        valid_minor_codes = {m["MinorCode"] for m in valid_minors}
+
+        if minor_code not in valid_minor_codes:
+            return (
+                False,
+                f"Selected minor category does not belong to major category {major_code}",
+            )
+
+        return True, None
+
     def _handle_form_submission(
         self,
         bill_id: int,
@@ -210,12 +249,10 @@ class CAPFormRenderer:
         submission_date: str,
     ) -> bool:
         """Handle form submission logic."""
-        # Validate required fields
-        if not selected_major:
-            st.error("❌ Please select a Major Category")
-            return False
-        if not selected_minor:
-            st.error("❌ Please select a Minor Category")
+        # Validate category selection (includes None checks and parent/child match)
+        is_valid, error = self._validate_category_selection(selected_major, selected_minor)
+        if not is_valid:
+            st.error(f"❌ {error}")
             return False
 
         # Save annotation using researcher_id (not display name)
