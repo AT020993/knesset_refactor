@@ -274,6 +274,137 @@ class TestCAPCategorySelector:
         selector.show_category_description(101)
 
 
+class TestCAPAuthHandler:
+    """Tests for CAPAuthHandler session timeout functionality."""
+
+    def test_session_timeout_check_valid_session(self):
+        """Test that a recent session (< 2 hours) returns True."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime, timedelta
+        import streamlit as st
+
+        # Setup: authenticated with recent login time
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_login_time = datetime.now() - timedelta(minutes=30)
+
+        result = CAPAuthHandler.is_session_valid()
+
+        assert result is True
+
+        # Cleanup
+        st.session_state.pop("cap_authenticated", None)
+        st.session_state.pop("cap_login_time", None)
+
+    def test_session_timeout_check_expired_session(self):
+        """Test that an old session (> 2 hours) returns False."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime, timedelta
+        import streamlit as st
+
+        # Setup: authenticated but login was 3 hours ago
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_login_time = datetime.now() - timedelta(hours=3)
+
+        result = CAPAuthHandler.is_session_valid()
+
+        assert result is False
+
+        # Cleanup
+        st.session_state.pop("cap_authenticated", None)
+        st.session_state.pop("cap_login_time", None)
+
+    def test_session_timeout_missing_login_time(self):
+        """Test that missing login time returns False."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        import streamlit as st
+
+        # Setup: authenticated but no login time recorded
+        st.session_state.cap_authenticated = True
+        if "cap_login_time" in st.session_state:
+            del st.session_state["cap_login_time"]
+
+        result = CAPAuthHandler.is_session_valid()
+
+        assert result is False
+
+        # Cleanup
+        st.session_state.pop("cap_authenticated", None)
+
+    def test_session_timeout_not_authenticated(self):
+        """Test that unauthenticated session returns False."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime
+        import streamlit as st
+
+        # Setup: not authenticated
+        st.session_state.cap_authenticated = False
+        st.session_state.cap_login_time = datetime.now()
+
+        result = CAPAuthHandler.is_session_valid()
+
+        assert result is False
+
+        # Cleanup
+        st.session_state.pop("cap_authenticated", None)
+        st.session_state.pop("cap_login_time", None)
+
+    def test_clear_session_clears_all_keys(self):
+        """Test that _clear_session clears all CAP session keys."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime
+        import streamlit as st
+
+        # Setup: populate all session keys
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_user_id = 42
+        st.session_state.cap_user_role = "admin"
+        st.session_state.cap_researcher_name = "Test User"
+        st.session_state.cap_username = "testuser"
+        st.session_state.cap_login_time = datetime.now()
+
+        CAPAuthHandler._clear_session()
+
+        # All keys should be cleared or set to default values
+        assert st.session_state.get("cap_authenticated") is False
+        assert st.session_state.get("cap_user_id") is None
+        assert st.session_state.get("cap_user_role") == ""
+        assert st.session_state.get("cap_researcher_name") == ""
+        assert st.session_state.get("cap_username") == ""
+        assert st.session_state.get("cap_login_time") is None
+
+    def test_check_authentication_clears_expired_session(self):
+        """Test that check_authentication clears an expired session."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+        from datetime import datetime, timedelta
+        import streamlit as st
+
+        # Setup: authenticated but expired (3 hours old)
+        st.session_state.cap_authenticated = True
+        st.session_state.cap_user_id = 42
+        st.session_state.cap_researcher_name = "Test User"
+        st.session_state.cap_login_time = datetime.now() - timedelta(hours=3)
+
+        # Mock _get_cap_secrets to return enabled=True
+        with mock.patch("ui.renderers.cap.auth_handler._get_cap_secrets") as mock_secrets:
+            mock_secrets.return_value = {"enabled": True}
+
+            is_auth, name = CAPAuthHandler.check_authentication()
+
+        # Should return not authenticated
+        assert is_auth is False
+        assert name == ""
+
+        # Session should be cleared
+        assert st.session_state.get("cap_authenticated") is False
+        assert st.session_state.get("cap_user_id") is None
+
+    def test_session_timeout_constant_exists(self):
+        """Test that SESSION_TIMEOUT_HOURS constant is defined."""
+        from ui.renderers.cap.auth_handler import SESSION_TIMEOUT_HOURS
+
+        assert SESSION_TIMEOUT_HOURS == 2
+
+
 class TestCAPBillQueueRendererIntegration:
     """Integration tests for CAPBillQueueRenderer with mock service."""
 

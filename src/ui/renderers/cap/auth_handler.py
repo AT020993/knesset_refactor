@@ -5,7 +5,7 @@ Handles multi-user authentication logic for the CAP annotation system.
 Supports role-based access control with 'admin' and 'researcher' roles.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Tuple, Optional
 import logging
@@ -13,6 +13,9 @@ import logging
 import streamlit as st
 
 from ui.services.cap.user_service import CAPUserService, get_user_service
+
+# Session timeout in hours - sessions older than this are automatically invalidated
+SESSION_TIMEOUT_HOURS = 2
 
 
 def _get_cap_secrets() -> dict:
@@ -73,9 +76,50 @@ class CAPAuthHandler:
         return self._user_service
 
     @staticmethod
+    def is_session_valid() -> bool:
+        """
+        Check if the current session is valid (authenticated and not expired).
+
+        Returns:
+            True if session is authenticated and less than SESSION_TIMEOUT_HOURS old,
+            False otherwise.
+        """
+        # Must be authenticated
+        if not st.session_state.get("cap_authenticated", False):
+            return False
+
+        # Must have a login time recorded
+        login_time = st.session_state.get("cap_login_time")
+        if login_time is None:
+            return False
+
+        # Check if session has expired
+        session_age = datetime.now() - login_time
+        max_age = timedelta(hours=SESSION_TIMEOUT_HOURS)
+
+        return session_age < max_age
+
+    @staticmethod
+    def _clear_session():
+        """
+        Clear all CAP session state keys.
+
+        This is used when logging out or when a session expires.
+        """
+        st.session_state.cap_authenticated = False
+        st.session_state.cap_researcher_name = ""
+        st.session_state.cap_user_id = None
+        st.session_state.cap_user_role = ""
+        st.session_state.cap_username = ""
+        st.session_state.cap_login_time = None
+
+    @staticmethod
     def check_authentication() -> Tuple[bool, str]:
         """
         Check if the user is authenticated for CAP annotation.
+
+        Also validates session timeout - sessions older than SESSION_TIMEOUT_HOURS
+        are automatically invalidated.
 
         Returns:
             Tuple of (is_authenticated, researcher_name)
@@ -87,6 +131,11 @@ class CAPAuthHandler:
 
             # Check session state for authentication
             if st.session_state.get("cap_authenticated", False):
+                # Check if session has expired
+                if not CAPAuthHandler.is_session_valid():
+                    CAPAuthHandler._clear_session()
+                    st.warning("⏰ Your session has expired. Please log in again.")
+                    return False, ""
                 return True, st.session_state.get("cap_researcher_name", "Unknown")
 
             return False, ""
@@ -199,12 +248,7 @@ class CAPAuthHandler:
     @staticmethod
     def logout():
         """Clear all authentication session state."""
-        st.session_state.cap_authenticated = False
-        st.session_state.cap_researcher_name = ""
-        st.session_state.cap_user_id = None
-        st.session_state.cap_user_role = ""
-        st.session_state.cap_username = ""
-        st.session_state.cap_login_time = None
+        CAPAuthHandler._clear_session()
 
     @staticmethod
     def is_feature_enabled() -> bool:
