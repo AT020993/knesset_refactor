@@ -594,8 +594,15 @@ class CAPUserService:
                 return result[0] if result else 0
 
         except Exception as e:
+            error_str = str(e)
             # If table doesn't exist, return 0
-            if "does not exist" in str(e):
+            if "does not exist" in error_str:
+                # Special handling for migration artifact errors
+                if "UserBillCAP_new" in error_str:
+                    self.logger.warning(
+                        "Detected migration artifact (UserBillCAP_new). "
+                        "Restart the app to trigger cleanup."
+                    )
                 return 0
             self.logger.error(f"Error getting annotation count: {e}", exc_info=True)
             return 0

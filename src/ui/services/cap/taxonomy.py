@@ -124,6 +124,46 @@ class CAPTaxonomyService:
             except Exception as e:
                 self.logger.warning(f"Could not create index {index_name}: {e}")
 
+    def _cleanup_migration_artifacts(self, conn) -> None:
+        """
+        Clean up any leftover temporary tables from interrupted migrations.
+
+        If a migration was interrupted (e.g., app restart, network error),
+        there may be leftover _new tables that cause "table does not exist"
+        errors. This method detects and handles these cases.
+
+        Args:
+            conn: Active DuckDB connection
+        """
+        try:
+            # Check for leftover UserBillCAP_new table
+            new_table_exists = conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserBillCAP_new'"
+            ).fetchone()
+
+            if new_table_exists:
+                # Check if main table also exists
+                main_table_exists = conn.execute(
+                    "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
+                ).fetchone()
+
+                if main_table_exists:
+                    # Both tables exist - drop the _new table (migration was interrupted after copy)
+                    self.logger.warning(
+                        "Found leftover UserBillCAP_new table from interrupted migration - dropping it"
+                    )
+                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new")
+                else:
+                    # Only _new exists - rename it to main table (migration interrupted after drop)
+                    self.logger.warning(
+                        "Found UserBillCAP_new without UserBillCAP - completing interrupted migration"
+                    )
+                    conn.execute("ALTER TABLE UserBillCAP_new RENAME TO UserBillCAP")
+
+        except Exception as e:
+            self.logger.warning(f"Error cleaning up migration artifacts: {e}")
+            # Don't fail - let the normal migration process handle any issues
+
     def _migrate_to_multi_annotator(self, conn) -> None:
         """
         Migrate existing annotations to multi-annotator schema.
@@ -135,6 +175,9 @@ class CAPTaxonomyService:
         Args:
             conn: Active DuckDB connection
         """
+        # Cleanup any leftover temporary tables from interrupted migrations
+        self._cleanup_migration_artifacts(conn)
+
         # Check if UserBillCAP table exists
         tables = conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
