@@ -262,43 +262,25 @@ class CAPAdminRenderer:
                 submitted = st.form_submit_button("Add Researcher", use_container_width=True)
 
                 if submitted:
-                    errors = []
-
-                    if not username or not username.strip():
-                        errors.append("Username is required")
-                    elif " " in username:
-                        errors.append("Username cannot contain spaces")
-                    elif self.user_service.user_exists(username.strip().lower()):
-                        errors.append("Username already exists")
-
-                    if not display_name or not display_name.strip():
-                        errors.append("Display name is required")
-
-                    if not password:
-                        errors.append("Password is required")
-                    elif len(password) < 6:
-                        errors.append("Password must be at least 6 characters")
-                    elif password != confirm_password:
-                        errors.append("Passwords do not match")
-
-                    if errors:
-                        for error in errors:
-                            st.error(error)
+                    # Password confirmation check (UI-only validation)
+                    if password and password != confirm_password:
+                        st.error("Passwords do not match")
                     else:
                         created_by = st.session_state.get("cap_researcher_name", "Unknown")
 
-                        success = self.user_service.create_user(
-                            username=username.strip().lower(),
-                            display_name=display_name.strip(),
+                        # Use create_user_with_validation for all other validation
+                        user_id, error = self.user_service.create_user_with_validation(
+                            username=username,
+                            display_name=display_name,
                             password=password,
                             role=role,
                             created_by=created_by,
                         )
 
-                        if success:
-                            st.success(f"Researcher '{display_name}' created successfully!")
+                        if error:
+                            st.error(f"❌ {error}")
                         else:
-                            st.error("Failed to create researcher. Please check the logs.")
+                            st.success(f"✅ User '{display_name.strip()}' created successfully!")
 
     def _render_edit_dialog(self):
         """Render the edit display name dialog if triggered."""

@@ -1429,6 +1429,252 @@ class TestCAPUserServiceSequence:
         assert second_id > first_id, f"ID should continue from sequence, got {second_id} after {first_id}"
 
 
+class TestCAPUserServiceValidation:
+    """Tests for user creation validation - Task 9 QA Plan.
+
+    These tests verify pre-validation before user creation to provide
+    clear error messages instead of relying on DB constraint errors.
+    """
+
+    def test_user_exists_returns_true_for_existing_user(self, initialized_db, mock_logger):
+        """Test that user_exists returns True for an existing username."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        # 'researcher1' exists in initialized_db fixture
+        result = user_service.user_exists("researcher1")
+
+        assert result is True
+
+    def test_user_exists_returns_false_for_nonexistent_user(self, initialized_db, mock_logger):
+        """Test that user_exists returns False for a non-existent username."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(initialized_db, mock_logger)
+
+        result = user_service.user_exists("nonexistent_username_xyz")
+
+        assert result is False
+
+    def test_user_exists_returns_true_on_error_fail_secure(self, temp_db_path, mock_logger):
+        """Test that user_exists returns True on database errors (fail secure).
+
+        When we can't verify if a user exists, we should assume they do
+        to prevent accidental duplicate creation.
+        """
+        from ui.services.cap.user_service import CAPUserService
+
+        # Create service but don't initialize tables - database access will fail
+        user_service = CAPUserService(temp_db_path, mock_logger)
+        # Force _table_ensured to False to skip table creation
+        user_service._table_ensured = False
+
+        # Corrupt the connection by closing the underlying database
+        # Actually, let's test with a mock that raises an exception
+        with mock.patch.object(user_service, 'ensure_table_exists', return_value=True):
+            with mock.patch('ui.services.cap.user_service.get_db_connection') as mock_conn:
+                mock_conn.side_effect = Exception("Database connection error")
+                result = user_service.user_exists("any_user")
+
+        # Should return True (fail secure) on error
+        assert result is True
+
+    def test_create_user_with_validation_success(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation succeeds with valid inputs."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="valid_user",
+            display_name="Valid User",
+            password="password123",
+            role="researcher"
+        )
+
+        assert error is None, f"Expected no error, got: {error}"
+        assert user_id is not None
+        assert isinstance(user_id, int)
+        assert user_id > 0
+
+        # Verify user was actually created
+        user = user_service.get_user_by_id(user_id)
+        assert user is not None
+        assert user["username"] == "valid_user"
+        assert user["display_name"] == "Valid User"
+        assert user["role"] == "researcher"
+
+    def test_create_user_with_validation_rejects_duplicate_username(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects duplicate username."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Create first user
+        user_id1, error1 = user_service.create_user_with_validation(
+            username="duplicate_test",
+            display_name="First User",
+            password="password123",
+            role="researcher"
+        )
+        assert error1 is None
+
+        # Try to create second user with same username
+        user_id2, error2 = user_service.create_user_with_validation(
+            username="duplicate_test",
+            display_name="Second User",
+            password="different_password",
+            role="admin"
+        )
+
+        assert user_id2 is None
+        assert error2 is not None
+        assert "username" in error2.lower() and ("exists" in error2.lower() or "taken" in error2.lower())
+
+    def test_create_user_with_validation_rejects_short_username(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects username shorter than 3 chars."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="ab",  # Too short - only 2 chars
+            display_name="Short Username User",
+            password="password123",
+            role="researcher"
+        )
+
+        assert user_id is None
+        assert error is not None
+        assert "username" in error.lower()
+        assert "3" in error or "character" in error.lower()
+
+    def test_create_user_with_validation_rejects_invalid_username_chars(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects username with invalid characters."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Test with spaces
+        user_id1, error1 = user_service.create_user_with_validation(
+            username="user name",
+            display_name="User with Space",
+            password="password123",
+            role="researcher"
+        )
+        assert user_id1 is None
+        assert error1 is not None
+        assert "username" in error1.lower()
+
+        # Test with special characters
+        user_id2, error2 = user_service.create_user_with_validation(
+            username="user@name",
+            display_name="User with At",
+            password="password123",
+            role="researcher"
+        )
+        assert user_id2 is None
+        assert error2 is not None
+
+    def test_create_user_with_validation_accepts_underscore_in_username(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation accepts underscores in username."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="valid_user_name",
+            display_name="User with Underscores",
+            password="password123",
+            role="researcher"
+        )
+
+        assert error is None, f"Expected no error, got: {error}"
+        assert user_id is not None
+
+    def test_create_user_with_validation_rejects_short_password(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects password shorter than 6 chars."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="valid_user",
+            display_name="Valid Name",
+            password="12345",  # Too short - only 5 chars
+            role="researcher"
+        )
+
+        assert user_id is None
+        assert error is not None
+        assert "password" in error.lower()
+        assert "6" in error or "character" in error.lower()
+
+    def test_create_user_with_validation_rejects_empty_display_name(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects empty display name."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        # Test empty string
+        user_id1, error1 = user_service.create_user_with_validation(
+            username="valid_user",
+            display_name="",
+            password="password123",
+            role="researcher"
+        )
+        assert user_id1 is None
+        assert error1 is not None
+        assert "display" in error1.lower() or "name" in error1.lower()
+
+        # Test whitespace only
+        user_id2, error2 = user_service.create_user_with_validation(
+            username="valid_user2",
+            display_name="   ",
+            password="password123",
+            role="researcher"
+        )
+        assert user_id2 is None
+        assert error2 is not None
+
+    def test_create_user_with_validation_rejects_invalid_role(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation rejects invalid role."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="valid_user",
+            display_name="Valid Name",
+            password="password123",
+            role="superuser"  # Invalid role
+        )
+
+        assert user_id is None
+        assert error is not None
+        assert "role" in error.lower()
+
+    def test_create_user_with_validation_accepts_admin_role(self, temp_db_path, mock_logger):
+        """Test create_user_with_validation accepts 'admin' role."""
+        from ui.services.cap.user_service import CAPUserService
+
+        user_service = CAPUserService(temp_db_path, mock_logger)
+
+        user_id, error = user_service.create_user_with_validation(
+            username="admin_user",
+            display_name="Admin User",
+            password="password123",
+            role="admin"
+        )
+
+        assert error is None
+        assert user_id is not None
+
+        user = user_service.get_user_by_id(user_id)
+        assert user["role"] == "admin"
+
+
 class TestCAPAPIService:
     """Tests for CAPAPIService error handling.
 

@@ -601,7 +601,15 @@ class CAPUserService:
             return 0
 
     def user_exists(self, username: str) -> bool:
-        """Check if a username already exists."""
+        """
+        Check if a username already exists.
+
+        Args:
+            username: Username to check
+
+        Returns:
+            True if user exists or on error (fail secure), False if user doesn't exist
+        """
         self.ensure_table_exists()
         try:
             with get_db_connection(
@@ -615,7 +623,125 @@ class CAPUserService:
 
         except Exception as e:
             self.logger.error(f"Error checking user existence: {e}", exc_info=True)
-            return False
+            # Fail secure: if we can't check, assume user exists to prevent duplicates
+            return True
+
+    @staticmethod
+    def validate_username(username: str) -> Optional[str]:
+        """
+        Validate username format.
+
+        Args:
+            username: Username to validate
+
+        Returns:
+            Error message if invalid, None if valid
+        """
+        import re
+
+        if not username:
+            return "Username is required"
+
+        username = username.strip()
+
+        if len(username) < 3:
+            return "Username must be at least 3 characters"
+
+        # Only allow alphanumeric and underscore
+        if not re.match(r"^[a-zA-Z0-9_]+$", username):
+            return "Username can only contain letters, numbers, and underscores"
+
+        return None
+
+    def create_user_with_validation(
+        self,
+        username: str,
+        display_name: str,
+        password: str,
+        role: str,
+        created_by: Optional[str] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """
+        Create user with pre-validation checks.
+
+        This method performs all validations before attempting database insertion,
+        providing clear error messages instead of relying on DB constraint errors.
+
+        Args:
+            username: Unique username for login (alphanumeric + underscore, min 3 chars)
+            display_name: Display name shown in UI (non-empty after strip)
+            password: Plain text password (min 6 chars, will be hashed)
+            role: 'admin' or 'researcher'
+            created_by: Username of admin who created this account
+
+        Returns:
+            Tuple of (user_id, error_message).
+            - On success: (user_id, None)
+            - On error: (None, "Error description")
+        """
+        # Validate username format
+        username_error = self.validate_username(username)
+        if username_error:
+            return None, username_error
+
+        # Normalize username
+        username = username.strip().lower()
+
+        # Validate password
+        if not password:
+            return None, "Password is required"
+        if len(password) < 6:
+            return None, "Password must be at least 6 characters"
+
+        # Validate display name
+        if not display_name or not display_name.strip():
+            return None, "Display name is required"
+
+        # Validate role
+        if role not in [self.ROLE_ADMIN, self.ROLE_RESEARCHER]:
+            return None, f"Role must be '{self.ROLE_ADMIN}' or '{self.ROLE_RESEARCHER}'"
+
+        # Check if username already exists (before attempting insert)
+        if self.user_exists(username):
+            return None, f"Username '{username}' already exists"
+
+        # All validations passed - create the user
+        password_hash = self.hash_password(password)
+
+        try:
+            self.ensure_table_exists()
+            with get_db_connection(
+                self.db_path, read_only=False, logger_obj=self.logger
+            ) as conn:
+                # Insert user and return the new ID
+                conn.execute(
+                    """
+                    INSERT INTO UserResearchers
+                    (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
+                    VALUES (nextval('seq_researcher_id'), ?, ?, ?, ?, TRUE, ?, ?)
+                    """,
+                    [username, display_name.strip(), password_hash, role, datetime.now(), created_by],
+                )
+
+                # Get the ID of the newly created user
+                result = conn.execute(
+                    "SELECT ResearcherID FROM UserResearchers WHERE Username = ?",
+                    [username],
+                ).fetchone()
+
+                if result:
+                    user_id = result[0]
+                    self.logger.info(f"Created user: {username} with role: {role}")
+                    return user_id, None
+                else:
+                    return None, "User created but ID could not be retrieved"
+
+        except Exception as e:
+            if "UNIQUE constraint" in str(e):
+                # Race condition: another process created the user between our check and insert
+                return None, f"Username '{username}' already exists"
+            self.logger.error(f"Error creating user: {e}", exc_info=True)
+            return None, f"Failed to create user: {str(e)}"
 
     def is_user_active(self, user_id: int) -> bool:
         """
