@@ -542,6 +542,7 @@ class CAPAdminRenderer:
                 "Use these tools to fix database issues. "
                 "Only use if you're experiencing errors."
             )
+            st.caption("_Code version: 2026-01-25-v3_")
 
             if st.button("🩺 Run Database Repair", key="btn_db_repair"):
                 self._run_database_repair()
