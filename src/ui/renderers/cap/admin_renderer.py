@@ -33,12 +33,71 @@ class CAPAdminRenderer:
         self.logger = logger_obj or logging.getLogger(__name__)
         self._user_service: Optional[CAPUserService] = None
 
+    # Valid roles for the CAP system
+    VALID_ROLES = {"admin", "researcher"}
+
     @property
     def user_service(self) -> CAPUserService:
         """Get or create the user service."""
         if self._user_service is None:
             self._user_service = get_user_service(self.db_path, self.logger)
         return self._user_service
+
+    def _get_user_list(self) -> pd.DataFrame:
+        """
+        Get list of all users from the user service.
+
+        Returns:
+            DataFrame with user information
+        """
+        return self.user_service.get_all_users()
+
+    def _can_delete_user(self, user_id: int, current_user_id: Optional[int] = None) -> tuple[bool, str]:
+        """
+        Check if a user can be deleted.
+
+        Rules:
+        - Cannot delete yourself
+        - Users with annotations can only be soft-deleted (deactivated), not hard-deleted
+
+        Args:
+            user_id: ID of user to delete
+            current_user_id: ID of currently logged-in user (if None, uses session state)
+
+        Returns:
+            Tuple of (can_delete, reason).
+            - (True, "") if deletion is allowed
+            - (False, "reason") if deletion is not allowed
+        """
+        if current_user_id is None:
+            current_user_id = st.session_state.get("cap_user_id")
+
+        # Cannot delete yourself
+        if user_id == current_user_id:
+            return False, "Cannot delete your own account"
+
+        # Check if user has annotations
+        annotation_count = self.user_service.get_user_annotation_count(user_id)
+        if annotation_count > 0:
+            return False, f"User has {annotation_count} annotations - can only deactivate, not permanently delete"
+
+        return True, ""
+
+    def _validate_role_change(self, new_role: str) -> tuple[bool, Optional[str]]:
+        """
+        Validate that a role is valid.
+
+        Args:
+            new_role: Role to validate
+
+        Returns:
+            Tuple of (is_valid, error_message).
+            - (True, None) if role is valid
+            - (False, "error message") if role is invalid
+        """
+        if new_role not in self.VALID_ROLES:
+            return False, f"Invalid role: '{new_role}'. Must be one of: {', '.join(sorted(self.VALID_ROLES))}"
+        return True, None
 
     def render_admin_panel(self):
         """Render the complete admin panel."""

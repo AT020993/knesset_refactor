@@ -19,6 +19,49 @@ class CAPStatsRenderer:
         """Initialize with CAP service."""
         self.service = service
 
+    @staticmethod
+    def _format_percentage(value: float) -> str:
+        """
+        Format a decimal value as a percentage string.
+
+        Args:
+            value: Decimal value (e.g., 0.5 for 50%)
+
+        Returns:
+            Formatted percentage string (e.g., "50.0%")
+        """
+        return f"{value * 100:.1f}%"
+
+    def _get_summary_metrics(self, stats: dict) -> dict:
+        """
+        Extract summary metrics from annotation stats.
+
+        Args:
+            stats: Dictionary from service.get_annotation_stats()
+
+        Returns:
+            Dictionary with:
+            - total_coded: Number of bills coded
+            - total_bills: Total number of bills
+            - progress_pct: Coding progress as decimal (0.0-1.0)
+            - progress_str: Coding progress as formatted percentage string
+        """
+        total_bills = stats.get("total_bills", 0)
+        total_coded = stats.get("total_coded", 0)
+
+        # Avoid division by zero
+        if total_bills > 0:
+            progress_pct = total_coded / total_bills
+        else:
+            progress_pct = 0.0
+
+        return {
+            "total_coded": total_coded,
+            "total_bills": total_bills,
+            "progress_pct": progress_pct,
+            "progress_str": self._format_percentage(progress_pct),
+        }
+
     def render_stats_dashboard(self):
         """Render the annotation statistics dashboard."""
         stats = self.service.get_annotation_stats()
