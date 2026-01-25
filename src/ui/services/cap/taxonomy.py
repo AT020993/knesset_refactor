@@ -39,6 +39,7 @@ class CAPTaxonomyService:
         self.db_path = db_path
         self.logger = logger_obj or logging.getLogger(__name__)
         self._taxonomy_cache: Optional[pd.DataFrame] = None
+        self._tables_initialized = False  # Instance-level flag to prevent re-initialization
 
     def ensure_tables_exist(self) -> bool:
         """
@@ -52,6 +53,13 @@ class CAPTaxonomyService:
         Returns:
             True if successful, False otherwise
         """
+        # Skip if already initialized in this instance
+        if self._tables_initialized:
+            self.logger.debug("Tables already initialized in this instance - skipping")
+            return True
+
+        self.logger.info("ensure_tables_exist() called - checking database state...")
+
         try:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
@@ -92,6 +100,7 @@ class CAPTaxonomyService:
                 # Create performance indexes
                 self._ensure_indexes(conn)
 
+                self._tables_initialized = True
                 self.logger.info("CAP annotation tables created/verified successfully")
                 return True
 
@@ -216,9 +225,18 @@ class CAPTaxonomyService:
         ).fetchdf()
 
         column_names = columns["column_name"].str.lower().tolist()
+        self.logger.info(f"UserBillCAP columns (lowercase): {column_names}")
 
         if "researcherid" in column_names:
-            self.logger.debug("UserBillCAP already has multi-annotator schema")
+            self.logger.info("UserBillCAP already has multi-annotator schema - skipping migration")
+            return
+
+        # ALSO check if AssignedBy column exists - if not, we can't migrate
+        if "assignedby" not in column_names:
+            self.logger.warning(
+                "UserBillCAP has neither ResearcherID nor AssignedBy column! "
+                "This is an invalid state. Skipping migration to avoid errors."
+            )
             return
 
         # Migration needed: AssignedBy (string) -> ResearcherID (FK)
@@ -259,10 +277,25 @@ class CAPTaxonomyService:
         # Has existing data - migrate carefully
         self.logger.info(f"Migrating {existing_count} existing annotations...")
 
+        # SAFETY CHECK: Verify AssignedBy column actually exists before migration
+        if "assignedby" not in column_names:
+            self.logger.error(
+                f"Cannot migrate: AssignedBy column not found. "
+                f"Available columns: {column_names}. Skipping migration."
+            )
+            return
+
         # Create sequence for auto-increment (DuckDB doesn't auto-increment INTEGER PRIMARY KEY)
         conn.execute("""
             CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1
         """)
+
+        # Drop any leftover UserBillCAP_new from previous failed attempts
+        try:
+            conn.execute("DROP TABLE IF EXISTS UserBillCAP_new")
+            self.logger.debug("Dropped any leftover UserBillCAP_new table")
+        except Exception as e:
+            self.logger.debug(f"No leftover UserBillCAP_new to drop: {e}")
 
         # Create new table with proper schema
         conn.execute("""
