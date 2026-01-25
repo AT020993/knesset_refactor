@@ -564,10 +564,16 @@ class CAPAdminRenderer:
                 # Clear cached services to force fresh connections
                 self._user_service = None
 
-                # Clear any session state that might hold stale references
+                # Clear admin dialog state (but preserve authentication!)
+                # Authentication keys to KEEP: cap_authenticated, cap_user_id,
+                # cap_user_role, cap_username, cap_researcher_name, cap_login_time
+                auth_keys = {
+                    'cap_authenticated', 'cap_user_id', 'cap_user_role',
+                    'cap_username', 'cap_researcher_name', 'cap_login_time'
+                }
                 keys_to_clear = [k for k in list(st.session_state.keys())
-                               if 'cap_' in k.lower() and 'user' not in k.lower()
-                               and 'authenticated' not in k.lower()]
+                               if k.startswith('admin_') or
+                               (k.startswith('cap_') and k not in auth_keys)]
                 for key in keys_to_clear:
                     if key in st.session_state:
                         del st.session_state[key]
