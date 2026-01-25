@@ -116,6 +116,10 @@ class CAPAdminRenderer:
         self._render_password_reset_dialog()
         self._render_delete_confirmation_dialog()
 
+        # Database maintenance section
+        st.markdown("---")
+        self._render_database_maintenance()
+
     def _render_users_table(self):
         """Render the table of all users with action buttons."""
         users_df = self.user_service.get_all_users()
@@ -523,6 +527,100 @@ class CAPAdminRenderer:
                 if st.button("Cancel", key="btn_cancel_hard_delete", use_container_width=True):
                     st.session_state.admin_show_delete_dialog = False
                     st.session_state.admin_delete_user_id = None
+
+    def _render_database_maintenance(self):
+        """Render database maintenance tools for admins."""
+        with st.expander("🔧 Database Maintenance", expanded=False):
+            st.caption(
+                "Use these tools to fix database issues. "
+                "Only use if you're experiencing errors."
+            )
+
+            if st.button("🩺 Run Database Repair", key="btn_db_repair"):
+                self._run_database_repair()
+
+    def _run_database_repair(self):
+        """Run database repair operations to fix migration artifacts."""
+        from backend.connection_manager import get_db_connection
+
+        st.info("Running database repair...")
+        issues_found = []
+        fixes_applied = []
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=False, logger_obj=self.logger
+            ) as conn:
+                # 1. Find and drop any *_new migration artifact tables
+                tables = conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'main' AND table_name LIKE '%\\_new' ESCAPE '\\'"
+                ).fetchall()
+
+                for (table_name,) in tables:
+                    issues_found.append(f"Found migration artifact table: {table_name}")
+                    try:
+                        conn.execute(f"DROP TABLE IF EXISTS \"{table_name}\"")
+                        fixes_applied.append(f"Dropped table: {table_name}")
+                    except Exception as e:
+                        fixes_applied.append(f"Failed to drop {table_name}: {e}")
+
+                # 2. Drop any views that might reference _new tables
+                try:
+                    views = conn.execute(
+                        "SELECT table_name, view_definition FROM information_schema.views "
+                        "WHERE table_schema = 'main'"
+                    ).fetchall()
+
+                    for view_name, view_def in views:
+                        if "_new" in (view_def or ""):
+                            issues_found.append(f"Found view with _new reference: {view_name}")
+                            try:
+                                conn.execute(f"DROP VIEW IF EXISTS \"{view_name}\"")
+                                fixes_applied.append(f"Dropped view: {view_name}")
+                            except Exception as e:
+                                fixes_applied.append(f"Failed to drop view {view_name}: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Could not check views: {e}")
+
+                # 3. Explicitly drop UserBillCAP_new if it exists
+                try:
+                    conn.execute("DROP TABLE IF EXISTS UserBillCAP_new")
+                    fixes_applied.append("Executed DROP TABLE IF EXISTS UserBillCAP_new")
+                except Exception as e:
+                    fixes_applied.append(f"DROP UserBillCAP_new result: {e}")
+
+                # 4. Vacuum to clean up
+                try:
+                    conn.execute("VACUUM")
+                    fixes_applied.append("Database vacuumed")
+                except Exception as e:
+                    fixes_applied.append(f"VACUUM failed: {e}")
+
+                # 5. Verify UserBillCAP table works
+                try:
+                    count = conn.execute(
+                        "SELECT COUNT(*) FROM UserBillCAP"
+                    ).fetchone()[0]
+                    fixes_applied.append(f"UserBillCAP table OK ({count} annotations)")
+                except Exception as e:
+                    issues_found.append(f"UserBillCAP query failed: {e}")
+
+            # Report results
+            if issues_found:
+                st.warning("**Issues found:**")
+                for issue in issues_found:
+                    st.write(f"- {issue}")
+
+            st.success("**Repair actions taken:**")
+            for fix in fixes_applied:
+                st.write(f"- {fix}")
+
+            st.info("Please try your operation again. If issues persist, try rebooting the app.")
+
+        except Exception as e:
+            st.error(f"Database repair failed: {e}")
+            self.logger.error(f"Database repair error: {e}", exc_info=True)
 
 
 def render_admin_panel(db_path: Path, logger_obj: Optional[logging.Logger] = None):
