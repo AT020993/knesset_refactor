@@ -184,6 +184,17 @@ COALESCE(
 ) AS coverage_pct
 ```
 
+**🔴 Catalog Corruption from Interrupted Migrations**: If a migration is interrupted during `DROP TABLE X; ALTER TABLE X_new RENAME TO X`, DuckDB's internal constraint catalog can retain stale FK references to the non-existent `_new` table. **Fix**: Use `EXPORT DATABASE` + `IMPORT DATABASE` to completely rebuild the catalog:
+```python
+# Nuclear fix for corrupted catalog (stale FK references)
+conn.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
+conn.close()
+os.remove(db_path)  # Also remove .wal file if exists
+conn = duckdb.connect(db_path)
+conn.execute(f"IMPORT DATABASE '{export_dir}'")
+```
+**Warning**: Don't run EXPORT/IMPORT while other connections are active - causes "Can't open connection with different configuration" error. Admin Panel has "Full Catalog Rebuild" button for this.
+
 ## Bill Analytics Rules
 
 ### Status Categories (All Charts)
@@ -563,6 +574,8 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 | `NOT NULL constraint on ResearcherID` | Missing researcher_id in INSERT | Use `nextval('seq_researcher_id')` explicitly |
 | `This event loop is already running` | asyncio.run() in Streamlit | Use thread isolation pattern (see Streamlit Patterns) |
 | App sluggish on Streamlit Cloud | Free tier resource limits | Use lazy loading pattern (see Streamlit Patterns) |
+| `Table with name *_new does not exist` | Interrupted migration left stale FK in catalog | Use Admin Panel → "Full Catalog Rebuild" or EXPORT/IMPORT DATABASE |
+| `Can't open connection...different configuration` | Multiple connections with conflicting modes | Close all connections, reboot app, then retry |
 
 ## Test Status
 
