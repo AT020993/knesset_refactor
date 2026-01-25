@@ -1427,3 +1427,161 @@ class TestCAPUserServiceSequence:
 
         # New user should have a higher ID, not reuse the deleted one
         assert second_id > first_id, f"ID should continue from sequence, got {second_id} after {first_id}"
+
+
+class TestCAPAPIService:
+    """Tests for CAPAPIService error handling.
+
+    These tests verify that API methods return tuple (results, error_message)
+    to distinguish between "no results found" and "API error".
+    """
+
+    def test_search_bills_returns_tuple_on_success(self, mock_logger):
+        """Test that search_bills_by_name returns (results, None) on success."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch, MagicMock
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        # Mock successful API response
+        mock_response = {
+            "value": [
+                {"BillID": 1, "Name": "Test Bill 1"},
+                {"BillID": 2, "Name": "Test Bill 2"},
+            ]
+        }
+
+        async def run_test():
+            with patch.object(service, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = mock_response
+                result, error = await service.search_bills_by_name("Test")
+
+                assert error is None, f"Expected no error, got: {error}"
+                assert isinstance(result, list)
+                assert len(result) == 2
+                assert result[0]["BillID"] == 1
+
+        asyncio.run(run_test())
+
+    def test_search_bills_returns_tuple_on_empty_results(self, mock_logger):
+        """Test that search_bills_by_name returns ([], None) when no results found."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        # Mock empty API response (valid response, just no results)
+        mock_response = {"value": []}
+
+        async def run_test():
+            with patch.object(service, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = mock_response
+                result, error = await service.search_bills_by_name("NonexistentBill")
+
+                assert error is None, "Empty results should not be an error"
+                assert isinstance(result, list)
+                assert len(result) == 0
+
+        asyncio.run(run_test())
+
+    def test_search_bills_returns_error_on_timeout(self, mock_logger):
+        """Test that search_bills_by_name returns ([], error) on timeout."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        async def run_test():
+            with patch.object(service, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.side_effect = asyncio.TimeoutError()
+                result, error = await service.search_bills_by_name("Test")
+
+                assert isinstance(result, list)
+                assert len(result) == 0
+                assert error is not None
+                assert "timeout" in error.lower() or "timed out" in error.lower()
+                assert "try again" in error.lower()
+
+        asyncio.run(run_test())
+
+    def test_search_bills_returns_error_on_network_failure(self, mock_logger):
+        """Test that search_bills_by_name returns ([], error) on network error."""
+        import asyncio
+        import aiohttp
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        async def run_test():
+            with patch.object(service, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.side_effect = aiohttp.ClientError("Connection refused")
+                result, error = await service.search_bills_by_name("Test")
+
+                assert isinstance(result, list)
+                assert len(result) == 0
+                assert error is not None
+                assert "network" in error.lower()
+
+        asyncio.run(run_test())
+
+    def test_search_bills_returns_error_on_unexpected_exception(self, mock_logger):
+        """Test that search_bills_by_name returns ([], error) on unexpected error."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        async def run_test():
+            with patch.object(service, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.side_effect = ValueError("Unexpected JSON parse error")
+                result, error = await service.search_bills_by_name("Test")
+
+                assert isinstance(result, list)
+                assert len(result) == 0
+                assert error is not None
+                assert "unexpected" in error.lower()
+
+        asyncio.run(run_test())
+
+    def test_search_bills_sync_returns_tuple(self, mock_logger):
+        """Test that the synchronous wrapper also returns a tuple."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        # Mock the async method to return expected tuple
+        async def mock_search(*args, **kwargs):
+            return [{"BillID": 1, "Name": "Test"}], None
+
+        with patch.object(service, "search_bills_by_name", side_effect=mock_search):
+            result, error = service.search_bills_by_name_sync("Test")
+
+            assert error is None
+            assert len(result) == 1
+            assert result[0]["BillID"] == 1
+
+    def test_search_bills_sync_returns_error_tuple(self, mock_logger):
+        """Test that sync wrapper returns error tuple on failure."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from ui.services.cap_api_service import CAPAPIService
+
+        service = CAPAPIService(mock_logger)
+
+        # Mock the async method to return error tuple
+        async def mock_search(*args, **kwargs):
+            return [], "Network error: Connection refused"
+
+        with patch.object(service, "search_bills_by_name", side_effect=mock_search):
+            result, error = service.search_bills_by_name_sync("Test")
+
+            assert len(result) == 0
+            assert error is not None
+            assert "network" in error.lower()

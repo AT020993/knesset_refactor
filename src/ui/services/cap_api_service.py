@@ -8,7 +8,7 @@ for annotation, without requiring them to be in the local database.
 import asyncio
 import aiohttp
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 import pandas as pd
 
@@ -17,6 +17,11 @@ class CAPAPIService:
     """Service for fetching bills from Knesset API for CAP annotation."""
 
     BASE_URL = "https://knesset.gov.il/Odata/ParliamentInfo.svc"
+
+    # Error messages
+    ERROR_TIMEOUT = "Request timed out. The Knesset API may be slow. Please try again."
+    ERROR_NETWORK = "Network error: {details}"
+    ERROR_UNEXPECTED = "Unexpected error: {details}"
 
     def __init__(self, logger_obj: Optional[logging.Logger] = None):
         """Initialize the API service."""
@@ -97,7 +102,7 @@ class CAPAPIService:
         search_term: str,
         knesset_num: Optional[int] = None,
         limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Search bills by name.
 
@@ -107,7 +112,9 @@ class CAPAPIService:
             limit: Maximum results
 
         Returns:
-            List of matching bills
+            Tuple of (results_list, error_message).
+            - On success: (list_of_bills, None)
+            - On error: ([], "Error description")
         """
         # URL encode the search term
         encoded_term = search_term.replace("'", "''")
@@ -129,10 +136,16 @@ class CAPAPIService:
         try:
             async with aiohttp.ClientSession() as session:
                 data = await self._fetch_json(session, url)
-                return data.get("value", [])
+                return data.get("value", []), None
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout searching bills for term: {search_term}")
+            return [], self.ERROR_TIMEOUT
+        except aiohttp.ClientError as e:
+            self.logger.error(f"Network error searching bills: {e}")
+            return [], self.ERROR_NETWORK.format(details=str(e))
         except Exception as e:
-            self.logger.error(f"Error searching bills: {e}")
-            return []
+            self.logger.error(f"Unexpected error searching bills: {e}")
+            return [], self.ERROR_UNEXPECTED.format(details=str(e))
 
     def fetch_recent_bills_sync(
         self,
@@ -166,6 +179,33 @@ class CAPAPIService:
         except Exception as e:
             self.logger.error(f"Error in sync fetch: {e}")
             return None
+
+    def search_bills_by_name_sync(
+        self,
+        search_term: str,
+        knesset_num: Optional[int] = None,
+        limit: int = 50
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """
+        Synchronous wrapper to search bills by name.
+
+        Args:
+            search_term: Term to search in bill names
+            knesset_num: Optional Knesset number filter
+            limit: Maximum results
+
+        Returns:
+            Tuple of (results_list, error_message).
+            - On success: (list_of_bills, None)
+            - On error: ([], "Error description")
+        """
+        try:
+            return asyncio.run(
+                self.search_bills_by_name(search_term, knesset_num, limit)
+            )
+        except Exception as e:
+            self.logger.error(f"Error in sync search: {e}")
+            return [], self.ERROR_UNEXPECTED.format(details=str(e))
 
 
 def get_cap_api_service(logger_obj: Optional[logging.Logger] = None) -> CAPAPIService:
