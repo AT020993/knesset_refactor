@@ -544,6 +544,11 @@ class CAPUserService:
             True if successful, False otherwise
         """
         self.ensure_table_exists()
+
+        # Silent notifier - we handle errors ourselves
+        def _silent_notify(msg: str, level: str) -> None:
+            self.logger.warning(f"Suppressed UI notification ({level}): {msg}")
+
         try:
             # Check annotation count first
             annotation_count = self.get_user_annotation_count(researcher_id)
@@ -555,7 +560,7 @@ class CAPUserService:
                 return False
 
             with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
+                self.db_path, read_only=False, logger_obj=self.logger, ui_notify=_silent_notify
             ) as conn:
                 conn.execute(
                     "DELETE FROM UserResearchers WHERE ResearcherID = ?",
