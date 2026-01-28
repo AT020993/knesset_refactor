@@ -16,7 +16,7 @@ The system enables researchers to:
 
 The Democratic Erosion codebook has three major categories:
 
-### 1. Government Institutions (מוסדות שלטון) - Codes 100-108
+### 1. Government Institutions (מוסדות שלטון) - Codes 100-109
 | Code | Hebrew | English |
 |------|--------|---------|
 | 100 | כללי | General |
@@ -28,6 +28,7 @@ The Democratic Erosion codebook has three major categories:
 | 106 | כוחות הביטחון | Security Forces |
 | 107 | רשויות מקומיות | Local Authorities |
 | 108 | מפלגות | Political Parties |
+| 109 | נשיא המדינה | President |
 
 ### 2. Civil Institutions (מוסדות אזרחיים) - Codes 200-204
 | Code | Hebrew | English |
@@ -38,7 +39,7 @@ The Democratic Erosion codebook has three major categories:
 | 203 | חינוך ואקדמיה | Education & Academia |
 | 204 | מוסדות תרבות | Cultural Institutions |
 
-### 3. Rights (זכויות) - Codes 300-306
+### 3. Rights (זכויות) - Codes 300-308
 | Code | Hebrew | English |
 |------|--------|---------|
 | 300 | כללי | General |
@@ -46,8 +47,10 @@ The Democratic Erosion codebook has three major categories:
 | 302 | חופש הביטוי והמחאה | Freedom of Expression/Protest |
 | 303 | חופש הדת | Freedom of Religion |
 | 304 | שוויון | Equality |
-| 305 | אזרחות, תושבות וכניסה | Citizenship/Residency/Entry |
-| 306 | יהודיות ולאומיות | Jewishness & Nationalism |
+| 305 | זכות לחירות ופרטיות | Right to Liberty & Privacy |
+| 306 | אזרחות, תושבות וכניסה | Citizenship/Residency/Entry |
+| 307 | זכות לקניין | Right to Property |
+| 308 | זכות לחיים | Right to Life |
 
 ### Direction Coding
 | Code | Hebrew | English | Description |
@@ -153,10 +156,11 @@ data/
 
 Key rules for coding:
 1. Each bill is coded to ONE category only
-2. If a bill involves both weakening and strengthening, code by the weakening effect
+2. Code by the means (institution/right mentioned) not ultimate target
 3. If a bill affects both an institution and a right, code by the institution
-4. Bills combining "Jewish state" elements with other aspects → code under "Jewishness"
-5. Bills combining equality issues with other rights → code under "Equality"
+4. Increasing oversight of an authority = reducing its powers
+5. Bills combining equality issues with other rights → code under "Equality" with sub-code: Women (1), Arabs (2), LGBTQ (3), Ultra-Orthodox (4)
+6. Bills with Jewish/national identity elements → add secondary "Jewish-National Identity" coding
 
 ## Troubleshooting
 
