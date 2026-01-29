@@ -198,8 +198,8 @@ class CAPCodedBillsRenderer:
     def _render_bills_table(self, coded_bills):
         """Render the coded bills data table with annotation count."""
         # Build display columns (some may not exist in older schemas)
-        display_cols = ["BillID", "KnessetNum", "BillName", "CAPTopic_HE", "Direction"]
-        col_names = ["ID", "Knesset", "Bill Name", "Category", "Direction"]
+        display_cols = ["BillID", "KnessetNum", "BillName", "CAPTopic_HE"]
+        col_names = ["ID", "Knesset", "Bill Name", "Category"]
 
         # Add researcher name if available
         if "AssignedBy" in coded_bills.columns:
@@ -216,7 +216,6 @@ class CAPCodedBillsRenderer:
 
         display_df = coded_bills[display_cols].copy()
         display_df.columns = col_names
-        display_df["Direction"] = display_df["Direction"].map({1: "+1", -1: "-1", 0: "0"})
 
         st.dataframe(display_df, use_container_width=True)
 
@@ -254,19 +253,10 @@ class CAPCodedBillsRenderer:
             # Show current annotation details
             researcher_name = selected_bill.get("AssignedBy", "Unknown")
             st.markdown(f"**Current Annotation for Bill {bill_id}** (by {researcher_name}):")
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 st.write(f"📁 Category: {selected_bill['CAPTopic_HE']}")
             with col2:
-                dir_map = {
-                    1: "+1 (Strengthening)",
-                    -1: "-1 (Weakening)",
-                    0: "0 (Other)",
-                }
-                st.write(
-                    f"↔️ Direction: {dir_map.get(selected_bill['Direction'], selected_bill['Direction'])}"
-                )
-            with col3:
                 st.write(f"📅 Date: {selected_bill['AssignedDate']}")
 
             # Get full annotation details (for this researcher's annotation)
@@ -367,28 +357,6 @@ class CAPCodedBillsRenderer:
             )
             selected_minor = minor_options.get(selected_minor_label)
 
-            # Direction selection
-            current_direction = current_annotation.get("Direction", 0)
-            direction_options = [1, -1, 0]
-            direction_idx = (
-                direction_options.index(current_direction)
-                if current_direction in direction_options
-                else 2
-            )
-
-            direction = st.radio(
-                "Direction *",
-                options=direction_options,
-                index=direction_idx,
-                format_func=lambda x: {
-                    1: "+1 הרחבה/חיזוק (Strengthening)",
-                    -1: "-1 צמצום/פגיעה (Weakening)",
-                    0: "0 אחר (Other)",
-                }[x],
-                horizontal=True,
-                key=f"edit_direction_{bill_id}",
-            )
-
             # Confidence level
             current_confidence = current_annotation.get("Confidence", "Medium")
             confidence_options = ["High", "Medium", "Low"]
@@ -429,7 +397,6 @@ class CAPCodedBillsRenderer:
                 success = self.service.save_annotation(
                     bill_id=bill_id,
                     cap_minor_code=selected_minor,
-                    direction=direction,
                     researcher_id=researcher_id,
                     confidence=confidence,
                     notes=notes,
