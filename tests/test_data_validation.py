@@ -164,10 +164,11 @@ class TestTableMetadataValidation:
             description="Test table",
             primary_key="id"
         )
-        
+
         assert metadata.is_cursor_paged is False
         assert metadata.chunk_size == 100
-        assert metadata.dependencies is None
+        # dependencies defaults to empty list (not None) to avoid mutable default argument issues
+        assert metadata.dependencies == []
 
 
 class TestDatabaseConfigValidation:
