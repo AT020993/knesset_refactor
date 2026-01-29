@@ -478,7 +478,13 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 ## Test Status
 
-453 passed, 26 skipped, 0 failures. Run fast tests before commits.
+Run fast tests before commits.
+
+**Cloud Compatibility Tests** (44 tests across 2 files):
+- `test_cloud_compatibility.py`: 34 unit tests covering credential loading, storage ops, async patterns, database persistence, session state, resource constraints
+- `test_cloud_integration.py`: 10 integration tests for deployment scenarios, secrets configuration, concurrent access
+- Fixtures in `tests/fixtures/cloud_fixtures.py`: mocked secrets, GCS client, Streamlit/CLI contexts, session state
+- See `tests/README_CLOUD_TESTS.md` for full documentation
 
 **CAP Tests** (144 total across `test_cap_services.py`, `test_cap_integration.py`, `test_cap_renderers.py`):
 - Taxonomy service operations (5 tests)
