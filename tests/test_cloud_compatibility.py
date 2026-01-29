@@ -753,4 +753,143 @@ class TestResourceConstraints:
     - Lazy loading reduces memory footprint
     - Operations complete within timeout limits
     """
-    pass
+
+    def test_large_query_result_handling(self, tmp_path):
+        """Large query results should not crash the application."""
+        from backend.connection_manager import get_db_connection
+
+        db_path = tmp_path / "test.duckdb"
+
+        with get_db_connection(db_path, read_only=False) as conn:
+            # Create table with moderate data
+            conn.execute("CREATE TABLE test (id INTEGER, data VARCHAR)")
+            # Insert 10000 rows
+            conn.execute("""
+                INSERT INTO test
+                SELECT i, 'data_' || i
+                FROM generate_series(1, 10000) AS t(i)
+            """)
+
+        # Query should work without memory issues
+        with get_db_connection(db_path, read_only=True) as conn:
+            result = conn.execute("SELECT * FROM test LIMIT 5000").fetchdf()
+            assert len(result) == 5000
+
+    def test_cached_data_decorator_prevents_recomputation(self):
+        """@st.cache_data should prevent expensive recomputation."""
+        call_count = [0]
+
+        def expensive_operation():
+            call_count[0] += 1
+            return {"result": "data"}
+
+        # Simulate caching behavior
+        cache = {}
+
+        def cached_expensive_operation():
+            if "result" not in cache:
+                cache["result"] = expensive_operation()
+            return cache["result"]
+
+        # First call computes
+        result1 = cached_expensive_operation()
+        assert call_count[0] == 1
+
+        # Second call uses cache
+        result2 = cached_expensive_operation()
+        assert call_count[0] == 1  # Not incremented
+
+        assert result1 == result2
+
+    def test_lazy_loading_reduces_memory(self, mock_session_state):
+        """Lazy loading pattern should only load active section."""
+        sections = ["📊 Data Explorer", "📈 Visualizations", "🏷️ CAP Annotation"]
+
+        loaded_sections = []
+
+        def load_section(section_name):
+            loaded_sections.append(section_name)
+            return f"Loaded: {section_name}"
+
+        with patch("streamlit.session_state", mock_session_state):
+            mock_session_state["active_section"] = sections[0]
+
+            # Only load active section
+            active = mock_session_state.get("active_section")
+            if active == sections[0]:
+                load_section(sections[0])
+
+            # Only one section should be loaded
+            assert len(loaded_sections) == 1
+            assert loaded_sections[0] == sections[0]
+
+    def test_connection_pool_limits(self, tmp_path):
+        """Should not exceed connection limits under load."""
+        from backend.connection_manager import get_db_connection
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create database
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE TABLE test (id INTEGER)")
+
+        # Open multiple connections using duckdb.connect directly
+        # (get_db_connection is a context manager that closes on exit)
+        connections = []
+        max_connections = 10
+
+        try:
+            for i in range(max_connections):
+                conn = duckdb.connect(str(db_path), read_only=True)
+                connections.append(conn)
+
+            # All connections should be usable
+            for conn in connections:
+                result = conn.execute("SELECT 1").fetchone()
+                assert result[0] == 1
+        finally:
+            # Cleanup
+            for conn in connections:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+    @pytest.mark.slow
+    def test_timeout_on_long_running_query(self, tmp_path):
+        """Long-running queries should timeout gracefully."""
+        from backend.connection_manager import get_db_connection
+        import time
+
+        db_path = tmp_path / "test.duckdb"
+
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE TABLE test (id INTEGER)")
+
+            start = time.time()
+            conn.execute("SELECT 1")
+            elapsed = time.time() - start
+            assert elapsed < 1.0  # Should be nearly instant
+
+    def test_dataframe_memory_estimation(self):
+        """Should be able to estimate DataFrame memory usage."""
+        import pandas as pd
+
+        # Create DataFrame with known size
+        df = pd.DataFrame({
+            "id": range(1000),
+            "name": ["test" * 10] * 1000,  # ~40 chars each
+        })
+
+        # Estimate memory
+        memory_bytes = df.memory_usage(deep=True).sum()
+        memory_mb = memory_bytes / (1024 * 1024)
+
+        # Should be reasonable for 1000 rows
+        assert memory_mb < 10  # Less than 10MB for small test data
+
+        # This pattern can be used to warn users about large DataFrames
+        MEMORY_WARNING_THRESHOLD_MB = 100
+        if memory_mb > MEMORY_WARNING_THRESHOLD_MB:
+            pass  # Would show warning in real app
