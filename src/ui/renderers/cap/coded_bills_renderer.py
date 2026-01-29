@@ -227,16 +227,36 @@ class CAPCodedBillsRenderer:
             coded_bills: DataFrame of coded bills
             researcher_id: Current researcher's ID for edits
         """
+        # Search by Bill ID
+        search_bill_id = st.text_input(
+            "🔍 Search by Bill ID",
+            key="edit_search_bill_id",
+            placeholder="Enter Bill ID to filter...",
+        )
+
+        # Filter coded_bills if search is provided
+        filtered_bills = coded_bills
+        if search_bill_id:
+            search_bill_id = search_bill_id.strip()
+            # Filter where BillID contains the search string
+            filtered_bills = coded_bills[
+                coded_bills["BillID"].astype(str).str.contains(search_bill_id, na=False)
+            ]
+
+            if filtered_bills.empty:
+                st.warning(f"No annotations found for Bill ID containing: {search_bill_id}")
+                return
+
         # Bill selection for editing
         edit_idx = st.selectbox(
             "Select annotation to edit",
-            options=range(len(coded_bills)),
-            format_func=lambda i: self._format_edit_option(coded_bills.iloc[i]),
+            options=range(len(filtered_bills)),
+            format_func=lambda i: self._format_edit_option(filtered_bills.iloc[i]),
             key="edit_bill_select",
         )
 
         if edit_idx is not None:
-            selected_bill = coded_bills.iloc[edit_idx]
+            selected_bill = filtered_bills.iloc[edit_idx]
             bill_id = int(selected_bill["BillID"])
             # Get researcher ID from the selected annotation (in case viewing all)
             # Prioritize the annotation's ResearcherID, then fall back to current user
