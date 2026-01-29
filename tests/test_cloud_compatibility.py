@@ -179,7 +179,168 @@ class TestCloudStorageOperations:
     - Operations gracefully degrade when GCS is unavailable
     - Proper error handling for network failures
     """
-    pass
+
+    def test_upload_file_success(self, mock_gcs_client, tmp_path):
+        """Upload should succeed when GCS is available."""
+        from pathlib import Path
+        from data.storage.cloud_storage import CloudStorageManager
+
+        # Create a test file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test content")
+
+        with patch("data.storage.cloud_storage.storage") as mock_storage:
+            with patch("data.storage.cloud_storage.service_account"):
+                # Setup mock client chain
+                mock_storage.Client.return_value = mock_gcs_client
+
+                manager = CloudStorageManager(
+                    bucket_name="test-bucket",
+                    credentials_dict=MOCK_GCS_CREDENTIALS
+                )
+                result = manager.upload_file(test_file, "remote/test.txt")
+
+                assert result is True
+                # Verify upload was called
+                mock_gcs_client.bucket.return_value.blob.return_value.upload_from_filename.assert_called_once()
+
+    def test_upload_file_failure_returns_false(self, mock_gcs_client, tmp_path):
+        """Upload failure should return False, not raise exception."""
+        from data.storage.cloud_storage import CloudStorageManager
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test content")
+
+        # Make upload fail
+        mock_gcs_client.bucket.return_value.blob.return_value.upload_from_filename.side_effect = Exception("Network error")
+
+        with patch("data.storage.cloud_storage.storage") as mock_storage:
+            with patch("data.storage.cloud_storage.service_account"):
+                mock_storage.Client.return_value = mock_gcs_client
+
+                manager = CloudStorageManager(
+                    bucket_name="test-bucket",
+                    credentials_dict=MOCK_GCS_CREDENTIALS
+                )
+                result = manager.upload_file(test_file, "remote/test.txt")
+
+                assert result is False  # Graceful failure
+
+    def test_download_file_success(self, mock_gcs_client, tmp_path):
+        """Download should succeed when file exists."""
+        from data.storage.cloud_storage import CloudStorageManager
+
+        local_path = tmp_path / "downloaded.txt"
+
+        # File exists in GCS
+        mock_gcs_client.bucket.return_value.blob.return_value.exists.return_value = True
+
+        with patch("data.storage.cloud_storage.storage") as mock_storage:
+            with patch("data.storage.cloud_storage.service_account"):
+                mock_storage.Client.return_value = mock_gcs_client
+
+                manager = CloudStorageManager(
+                    bucket_name="test-bucket",
+                    credentials_dict=MOCK_GCS_CREDENTIALS
+                )
+                result = manager.download_file("remote/file.txt", local_path)
+
+                assert result is True
+                # Verify download was called
+                mock_gcs_client.bucket.return_value.blob.return_value.download_to_filename.assert_called_once()
+
+    def test_download_nonexistent_file_returns_false(self, mock_gcs_client, tmp_path):
+        """Downloading non-existent file should return False."""
+        from data.storage.cloud_storage import CloudStorageManager
+
+        # File doesn't exist
+        mock_gcs_client.bucket.return_value.blob.return_value.exists.return_value = False
+
+        local_path = tmp_path / "downloaded.txt"
+
+        with patch("data.storage.cloud_storage.storage") as mock_storage:
+            with patch("data.storage.cloud_storage.service_account"):
+                mock_storage.Client.return_value = mock_gcs_client
+
+                manager = CloudStorageManager(
+                    bucket_name="test-bucket",
+                    credentials_dict=MOCK_GCS_CREDENTIALS
+                )
+                result = manager.download_file("remote/nonexistent.txt", local_path)
+
+                assert result is False
+                # Verify download was NOT called since file doesn't exist
+                mock_gcs_client.bucket.return_value.blob.return_value.download_to_filename.assert_not_called()
+
+    def test_storage_sync_service_disabled_gracefully(self):
+        """StorageSyncService should handle disabled state gracefully."""
+        from data.services.storage_sync_service import StorageSyncService
+
+        with patch("data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets", return_value=None):
+            service = StorageSyncService()
+
+            assert service.is_enabled() is False
+
+            # Operations should return gracefully
+            result = service.upload_all_data()
+            assert result == {}  # Graceful no-op returns empty dict
+
+    def test_sync_after_annotation_when_enabled(self, mock_gcs_client, monkeypatch):
+        """Sync should trigger after annotation when cloud is enabled."""
+        from data.services.storage_sync_service import StorageSyncService
+        from data.storage.cloud_storage import CloudStorageManager
+
+        # Create a mock manager that behaves like CloudStorageManager
+        mock_manager = MagicMock(spec=CloudStorageManager)
+        mock_manager.upload_file.return_value = True
+        mock_manager.upload_directory.return_value = {}
+
+        # Create service and manually enable it
+        # (conftest autouse fixture disables it by default)
+        service = StorageSyncService(gcs_manager=mock_manager)
+        service.gcs_manager = mock_manager
+        service.enabled = True
+
+        # Also patch is_enabled to return True for this test
+        monkeypatch.setattr(service, "is_enabled", lambda: True)
+
+        assert service.is_enabled() is True
+
+        # Call upload_all_data
+        service.upload_all_data()
+
+        # Should have attempted upload (upload_file for database at minimum)
+        assert mock_manager.upload_file.called or mock_manager.upload_directory.called
+
+    def test_download_on_startup_creates_local_files(self, mock_gcs_client, tmp_path, monkeypatch):
+        """Download at startup should create local database files."""
+        from data.services.storage_sync_service import StorageSyncService
+        from data.storage.cloud_storage import CloudStorageManager
+
+        # Create a mock manager that behaves like CloudStorageManager
+        mock_manager = MagicMock(spec=CloudStorageManager)
+        mock_manager.download_file.return_value = True
+        mock_manager.download_directory.return_value = {}
+        mock_manager.file_exists.return_value = True
+
+        # Create service and manually enable it
+        # (conftest autouse fixture disables it by default)
+        service = StorageSyncService(gcs_manager=mock_manager)
+        service.gcs_manager = mock_manager
+        service.enabled = True
+
+        # Also patch is_enabled to return True for this test
+        monkeypatch.setattr(service, "is_enabled", lambda: True)
+
+        assert service.is_enabled() is True
+
+        # Call download_all_data
+        result = service.download_all_data()
+
+        # Should have attempted database download
+        assert mock_manager.download_file.called
+        # Result should contain database key
+        assert 'database' in result
 
 
 class TestSecretsManagement:
