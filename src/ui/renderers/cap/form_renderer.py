@@ -140,15 +140,9 @@ class CAPFormRenderer:
             self._category_selector.show_category_description(selected_minor)
 
         with st.form("annotation_form"):
-            # Direction selection
-            direction = self._render_direction_selector()
-
             # Submission date info
-            if direction in [1, -1]:
-                if submission_date:
-                    st.info(f"📅 **Submission Date:** {submission_date} (from database)")
-                else:
-                    st.warning("⚠️ Submission date not available in database")
+            if submission_date:
+                st.info(f"📅 **Submission Date:** {submission_date}")
 
             # Confidence and notes
             confidence = st.selectbox(
@@ -169,7 +163,6 @@ class CAPFormRenderer:
                     bill_id,
                     selected_major,
                     selected_minor,
-                    direction,
                     researcher_id,
                     confidence,
                     notes,
@@ -181,21 +174,6 @@ class CAPFormRenderer:
                 st.info("Skipping this bill")
 
         return False
-
-    def _render_direction_selector(self, default_index: int = None, key: str = None) -> int:
-        """Render direction radio selector."""
-        return st.radio(
-            "Direction *",
-            options=[1, -1, 0],
-            index=default_index,
-            format_func=lambda x: {
-                1: "+1 הרחבה/חיזוק (Strengthening)",
-                -1: "-1 צמצום/פגיעה (Weakening)",
-                0: "0 אחר (Other)",
-            }[x],
-            horizontal=True,
-            key=key,
-        )
 
     def _validate_category_selection(
         self,
@@ -241,7 +219,6 @@ class CAPFormRenderer:
         bill_id: int,
         selected_major: Optional[int],
         selected_minor: Optional[int],
-        direction: int,
         researcher_id: int,
         confidence: str,
         notes: str,
@@ -259,7 +236,6 @@ class CAPFormRenderer:
         success = self.service.save_annotation(
             bill_id=bill_id,
             cap_minor_code=selected_minor,
-            direction=direction,
             researcher_id=researcher_id,
             confidence=confidence,
             notes=notes,
@@ -310,15 +286,9 @@ class CAPFormRenderer:
             self._category_selector.show_category_description(selected_minor)
 
         with st.form("api_annotation_form"):
-            # Direction
-            direction = self._render_direction_selector(key="api_direction")
-
             # Submission date info
-            if direction in [1, -1]:
-                if submission_date:
-                    st.info(f"📅 **Submission Date:** {submission_date} (from API)")
-                else:
-                    st.warning("⚠️ Submission date not available from API")
+            if submission_date:
+                st.info(f"📅 **Submission Date:** {submission_date}")
 
             # Confidence
             confidence = st.selectbox(
@@ -340,7 +310,6 @@ class CAPFormRenderer:
                     bill_id,
                     selected_major,
                     selected_minor,
-                    direction,
                     researcher_id,
                     confidence,
                     notes,
