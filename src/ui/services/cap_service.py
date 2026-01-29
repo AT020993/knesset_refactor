@@ -8,7 +8,6 @@ for tracking legislation that affects democratic institutions and rights.
 The codebook uses:
 - Major categories (1=Government Institutions, 2=Civil Institutions, 3=Rights)
 - Minor categories (101-108, 201-204, 301-306)
-- Direction coding (+1=Strengthening, -1=Weakening, 0=Other)
 
 This is a facade module that composes focused services from the cap/ package.
 For specific functionality, you can also import directly from:
@@ -41,10 +40,6 @@ class CAPAnnotationService:
 
     # Re-export constants from taxonomy for backward compatibility
     TAXONOMY_FILE = CAPTaxonomyService.TAXONOMY_FILE
-    DIRECTION_STRENGTHENING = CAPTaxonomyService.DIRECTION_STRENGTHENING
-    DIRECTION_WEAKENING = CAPTaxonomyService.DIRECTION_WEAKENING
-    DIRECTION_NEUTRAL = CAPTaxonomyService.DIRECTION_NEUTRAL
-    DIRECTION_LABELS = CAPTaxonomyService.DIRECTION_LABELS
 
     def __init__(self, db_path: Path, logger_obj: Optional[logging.Logger] = None):
         """Initialize the CAP annotation service."""
@@ -146,7 +141,6 @@ class CAPAnnotationService:
         self,
         bill_id: int,
         cap_minor_code: int,
-        direction: int,
         researcher_id: int,
         confidence: str = "Medium",
         notes: str = "",
@@ -163,7 +157,6 @@ class CAPAnnotationService:
         return self._repository.save_annotation(
             bill_id=bill_id,
             cap_minor_code=cap_minor_code,
-            direction=direction,
             researcher_id=researcher_id,
             confidence=confidence,
             notes=notes,
