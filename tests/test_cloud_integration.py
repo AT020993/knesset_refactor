@@ -151,11 +151,16 @@ class TestSecretsConfiguration:
                 result = create_gcs_manager_from_streamlit_secrets()
                 assert result is None
 
-    def test_cap_annotation_secrets_structure(self):
+    def test_cap_annotation_secrets_structure(self, mock_streamlit_secrets):
         """CAP annotation secrets should have required fields."""
+        # Create mock secrets with CAP enabled
+        secrets = mock_streamlit_secrets(cap_enabled=True)
+        cap_secrets = secrets["cap_annotation"]
+
+        # Verify required fields exist
         required_fields = ["enabled", "bootstrap_admin_username", "bootstrap_admin_password"]
         for field in required_fields:
-            assert field in required_fields  # Pattern verification
+            assert field in cap_secrets, f"Missing required field: {field}"
 
 
 @pytest.mark.integration
