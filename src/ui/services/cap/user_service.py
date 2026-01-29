@@ -27,6 +27,13 @@ class CAPUserService:
     ROLE_ADMIN = "admin"
     ROLE_RESEARCHER = "researcher"
 
+    # Password policy constants
+    MIN_PASSWORD_LENGTH = 8
+    PASSWORD_REQUIREMENTS = (
+        "Password must be at least 8 characters and contain: "
+        "uppercase letter, lowercase letter, and a digit"
+    )
+
     def __init__(self, db_path: Path, logger_obj: Optional[logging.Logger] = None):
         """Initialize the user service."""
         self.db_path = db_path
@@ -134,6 +141,42 @@ class CAPUserService:
             return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
         except Exception:
             return False
+
+    @classmethod
+    def validate_password_strength(cls, password: str) -> Optional[str]:
+        """
+        Validate password meets strength requirements.
+
+        Requirements:
+        - At least 8 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+
+        Args:
+            password: Password to validate
+
+        Returns:
+            Error message if invalid, None if valid
+        """
+        if not password:
+            return "Password is required"
+
+        if len(password) < cls.MIN_PASSWORD_LENGTH:
+            return f"Password must be at least {cls.MIN_PASSWORD_LENGTH} characters"
+
+        has_upper = any(c.isupper() for c in password)
+        has_lower = any(c.islower() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+
+        if not has_upper:
+            return "Password must contain at least one uppercase letter"
+        if not has_lower:
+            return "Password must contain at least one lowercase letter"
+        if not has_digit:
+            return "Password must contain at least one digit"
+
+        return None  # Valid
 
     # --- Authentication ---
 
@@ -335,8 +378,10 @@ class CAPUserService:
                 self.logger.error(f"Invalid role: {role}")
                 return False
 
-            if len(password) < 6:
-                self.logger.error("Password too short (minimum 6 characters)")
+            # Validate password strength
+            password_error = self.validate_password_strength(password)
+            if password_error:
+                self.logger.error(f"Password validation failed: {password_error}")
                 return False
 
             password_hash = self.hash_password(password)
@@ -437,8 +482,10 @@ class CAPUserService:
             True if successful, False otherwise
         """
         try:
-            if len(new_password) < 6:
-                self.logger.error("Password too short (minimum 6 characters)")
+            # Validate password strength
+            password_error = self.validate_password_strength(new_password)
+            if password_error:
+                self.logger.error(f"Password validation failed: {password_error}")
                 return False
 
             password_hash = self.hash_password(new_password)
@@ -877,11 +924,10 @@ class CAPUserService:
         # Normalize username
         username = username.strip().lower()
 
-        # Validate password
-        if not password:
-            return None, "Password is required"
-        if len(password) < 6:
-            return None, "Password must be at least 6 characters"
+        # Validate password strength
+        password_error = self.validate_password_strength(password)
+        if password_error:
+            return None, password_error
 
         # Validate display name
         if not display_name or not display_name.strip():

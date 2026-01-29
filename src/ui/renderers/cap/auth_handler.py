@@ -17,6 +17,10 @@ from ui.services.cap.user_service import CAPUserService, get_user_service
 # Session timeout in hours - sessions older than this are automatically invalidated
 SESSION_TIMEOUT_HOURS = 2
 
+# Rate limiting constants
+MAX_FAILED_ATTEMPTS = 5  # Lock account after this many failures
+LOCKOUT_DURATION_MINUTES = 15  # How long to lock out after max failures
+
 
 def _get_cap_secrets() -> dict:
     """
@@ -112,6 +116,55 @@ class CAPAuthHandler:
         st.session_state.cap_user_role = ""
         st.session_state.cap_username = ""
         st.session_state.cap_login_time = None
+
+    @staticmethod
+    def _get_failed_attempts_key(username: str) -> str:
+        """Get the session state key for tracking failed login attempts."""
+        return f"cap_failed_attempts_{username}"
+
+    @staticmethod
+    def _get_lockout_key(username: str) -> str:
+        """Get the session state key for tracking lockout time."""
+        return f"cap_lockout_until_{username}"
+
+    @staticmethod
+    def _is_account_locked(username: str) -> bool:
+        """Check if an account is currently locked due to too many failed attempts."""
+        lockout_key = CAPAuthHandler._get_lockout_key(username)
+        lockout_until = st.session_state.get(lockout_key)
+
+        if lockout_until is None:
+            return False
+
+        if datetime.now() < lockout_until:
+            return True
+
+        # Lockout expired, clear it
+        st.session_state[lockout_key] = None
+        st.session_state[CAPAuthHandler._get_failed_attempts_key(username)] = 0
+        return False
+
+    @staticmethod
+    def _record_failed_attempt(username: str) -> int:
+        """Record a failed login attempt and return the new count."""
+        attempts_key = CAPAuthHandler._get_failed_attempts_key(username)
+        current_attempts = st.session_state.get(attempts_key, 0) + 1
+        st.session_state[attempts_key] = current_attempts
+
+        # Check if we should lock the account
+        if current_attempts >= MAX_FAILED_ATTEMPTS:
+            lockout_key = CAPAuthHandler._get_lockout_key(username)
+            st.session_state[lockout_key] = datetime.now() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+
+        return current_attempts
+
+    @staticmethod
+    def _clear_failed_attempts(username: str) -> None:
+        """Clear failed attempt counter after successful login."""
+        attempts_key = CAPAuthHandler._get_failed_attempts_key(username)
+        lockout_key = CAPAuthHandler._get_lockout_key(username)
+        st.session_state[attempts_key] = 0
+        st.session_state[lockout_key] = None
 
     @staticmethod
     def check_authentication(user_service: Optional["CAPUserService"] = None) -> Tuple[bool, str]:
@@ -226,9 +279,24 @@ class CAPAuthHandler:
                     return False
 
                 username = researcher_options[selected_display]
+
+                # Check if account is locked due to too many failed attempts
+                if self._is_account_locked(username):
+                    lockout_key = self._get_lockout_key(username)
+                    lockout_until = st.session_state.get(lockout_key)
+                    if lockout_until:
+                        remaining = (lockout_until - datetime.now()).seconds // 60
+                        st.error(f"🔒 Account temporarily locked. Try again in {remaining + 1} minute(s).")
+                    else:
+                        st.error("🔒 Account temporarily locked. Please try again later.")
+                    return False
+
                 user = self.user_service.authenticate(username, password)
 
                 if user:
+                    # Clear failed attempts on successful login
+                    self._clear_failed_attempts(username)
+
                     # Set session state
                     st.session_state.cap_authenticated = True
                     st.session_state.cap_researcher_name = user["display_name"]
@@ -240,7 +308,14 @@ class CAPAuthHandler:
                     st.success(f"Welcome, {user['display_name']}!")
                     return True
                 else:
-                    st.error("Incorrect password")
+                    # Record failed attempt and check if account should be locked
+                    attempts = self._record_failed_attempt(username)
+                    remaining_attempts = MAX_FAILED_ATTEMPTS - attempts
+
+                    if remaining_attempts > 0:
+                        st.error(f"Incorrect password. {remaining_attempts} attempt(s) remaining before lockout.")
+                    else:
+                        st.error(f"🔒 Too many failed attempts. Account locked for {LOCKOUT_DURATION_MINUTES} minutes.")
                     return False
 
         return False

@@ -5,6 +5,7 @@ import sys
 from contextlib import contextmanager
 from math import ceil
 from typing import List, Optional, Callable, Dict, Any
+from urllib.parse import urlparse
 import logging
 
 import aiohttp
@@ -16,6 +17,28 @@ from config.api import APIConfig
 from config.database import DatabaseConfig
 from .error_handling import categorize_error, ErrorCategory
 from .circuit_breaker import circuit_breaker_manager
+
+# Module-level logger for backoff handler (can't use self in decorator)
+_module_logger = logging.getLogger(__name__)
+
+
+def _backoff_handler(details: Dict[str, Any]) -> None:
+    """Module-level handler for logging backoff attempts with error categorization.
+
+    Note: This is at module level because backoff decorators are evaluated at
+    class definition time, not instance creation time, so we can't use self.
+    """
+    exception = details.get('exception')
+    if exception:
+        error_category = categorize_error(exception)
+        _module_logger.warning(
+            f"Backing off {details['wait']:.1f}s after {error_category.value} error "
+            f"(attempt {details['tries']}/{APIConfig.MAX_RETRIES}): {exception}"
+        )
+    else:
+        _module_logger.warning(
+            f"Backing off {details['wait']:.1f}s (attempt {details['tries']}/{APIConfig.MAX_RETRIES})"
+        )
 
 
 class _DummyProgressBar:
@@ -69,28 +92,24 @@ class ODataClient:
             self.logger.debug("tqdm unavailable, using dummy progress bar")
             return _DummyProgressBar(total=total, desc=desc, initial=initial)
     
-    def _backoff_handler(self, details: Dict[str, Any]) -> None:
-        """Handler for logging backoff attempts with error categorization."""
-        exception = details['exception']
-        error_category = categorize_error(exception)
-        self.logger.warning(
-            f"Backing off {details['wait']:.1f}s after {error_category.value} error "
-            f"(attempt {details['tries']}/{self.config.MAX_RETRIES}): {exception}"
-        )
-    
     @backoff.on_exception(
         backoff.expo,
         (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError),
         max_tries=APIConfig.MAX_RETRIES,
-        on_backoff=lambda details: None,  # Will be set by instance
+        on_backoff=_backoff_handler,  # Use module-level handler for proper logging
         jitter=backoff.full_jitter,
         base=APIConfig.RETRY_BASE_DELAY,
         max_value=APIConfig.RETRY_MAX_DELAY,
     )
     async def fetch_json(self, session: aiohttp.ClientSession, url: str) -> dict:
         """Fetch JSON data from a URL with retries and circuit breaker."""
-        # Get base URL for circuit breaker
-        base_url = f"{url.split('/', 3)[0]}//{url.split('/', 3)[2]}"
+        # Get base URL for circuit breaker - use proper URL parsing for safety
+        try:
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+        except Exception:
+            # Fallback to original method if URL parsing fails
+            base_url = url.split('/')[0] + '//' + url.split('/')[2] if '/' in url else url
         
         # Check circuit breaker
         if not circuit_breaker_manager.can_attempt(base_url):
@@ -166,9 +185,15 @@ class ODataClient:
                     break
                 
                 current_df = pd.DataFrame.from_records(rows)
+
+                # Check for empty DataFrame before accessing iloc[-1]
+                if current_df.empty:
+                    self.logger.warning(f"Empty DataFrame received for {table}, ending pagination")
+                    break
+
                 dfs.append(current_df)
-                
-                # Update last_val
+
+                # Update last_val - safe now because we checked for empty
                 last_val = int(current_df[pk].iloc[-1])
                 total_rows_fetched += len(rows)
                 pbar.update(len(rows))

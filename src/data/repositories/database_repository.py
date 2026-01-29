@@ -66,10 +66,21 @@ class DatabaseRepository:
             return None
     
     def table_exists(self, table_name: str) -> bool:
-        """Check if a table exists in the database."""
-        query = f"SELECT COUNT(*) as count FROM duckdb_tables() WHERE table_name = '{table_name}'"
-        result = self.execute_query(query)
-        return result is not None and not result.empty and result.iloc[0]['count'] > 0
+        """Check if a table exists in the database.
+
+        Uses parameterized query to prevent SQL injection.
+        """
+        try:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
+                # Use parameterized query to prevent SQL injection
+                result = conn.execute(
+                    "SELECT COUNT(*) as count FROM duckdb_tables() WHERE table_name = ?",
+                    [table_name]
+                ).fetchdf()
+                return not result.empty and result.iloc[0]['count'] > 0
+        except Exception as e:
+            self.logger.error(f"Error checking if table exists: {e}", exc_info=True)
+            return False
     
     def get_table_count(self, table_name: str) -> int:
         """Get the number of rows in a table."""

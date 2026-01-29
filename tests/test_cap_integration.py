@@ -43,23 +43,24 @@ class TestCAPAnnotationWorkflow:
         taxonomy_service.ensure_tables_exist()
         taxonomy_service.load_taxonomy_from_csv()
 
-        # Create test users
+        # Create test users (passwords must meet complexity requirements:
+        # 8+ chars, uppercase, lowercase, digit)
         user_service.create_user(
             username="researcher_a",
             display_name="Researcher A",
-            password="test123",
+            password="TestPass1",
             role="researcher",
         )
         user_service.create_user(
             username="researcher_b",
             display_name="Researcher B",
-            password="test456",
+            password="TestPass2",
             role="researcher",
         )
         user_service.create_user(
             username="admin_user",
             display_name="Admin User",
-            password="admin789",
+            password="AdminPass1",
             role="admin",
         )
 
@@ -112,7 +113,7 @@ class TestCAPAnnotationWorkflow:
         taxonomy_service = setup_system["taxonomy_service"]
 
         # Step 1: Authenticate researcher A
-        user_a = user_service.authenticate("researcher_a", "test123")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
         assert user_a is not None, "Researcher A authentication failed"
         assert user_a["username"] == "researcher_a"
         assert user_a["display_name"] == "Researcher A"
@@ -147,7 +148,7 @@ class TestCAPAnnotationWorkflow:
             assert annotation is not None, "Annotation not found in database"
 
         # Step 5: Researcher B authenticates
-        user_b = user_service.authenticate("researcher_b", "test456")
+        user_b = user_service.authenticate("researcher_b", "TestPass2")
         assert user_b is not None, "Researcher B authentication failed"
         researcher_b_id = user_b["id"]
 
@@ -185,7 +186,7 @@ class TestCAPAnnotationWorkflow:
         valid_minor_code = minor_cats[0]["MinorCode"]
 
         # Researcher A annotates bill 200
-        user_a = user_service.authenticate("researcher_a", "test123")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
         repository.save_annotation(
             bill_id=200,
             cap_minor_code=valid_minor_code,
@@ -215,8 +216,8 @@ class TestCAPAnnotationWorkflow:
         minor_cats = taxonomy_service.get_minor_categories(first_major)
         valid_minor_code = minor_cats[0]["MinorCode"]
 
-        user_a = user_service.authenticate("researcher_a", "test123")
-        user_b = user_service.authenticate("researcher_b", "test456")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
+        user_b = user_service.authenticate("researcher_b", "TestPass2")
 
         # Initially both researchers see all 3 bills as uncoded
         uncoded_a_before = repository.get_uncoded_bills(researcher_id=user_a["id"])
@@ -255,7 +256,7 @@ class TestCAPAnnotationWorkflow:
         code_1 = minor_cats[0]["MinorCode"]
         code_2 = minor_cats[1]["MinorCode"] if len(minor_cats) > 1 else code_1
 
-        user_a = user_service.authenticate("researcher_a", "test123")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
 
         # First annotation
         repository.save_annotation(
@@ -301,7 +302,7 @@ class TestCAPAnnotationWorkflow:
         """Test that admin user authenticates with admin role."""
         user_service = setup_system["user_service"]
 
-        admin = user_service.authenticate("admin_user", "admin789")
+        admin = user_service.authenticate("admin_user", "AdminPass1")
         assert admin is not None, "Admin authentication failed"
         assert admin["role"] == "admin", "Admin should have admin role"
         assert admin["display_name"] == "Admin User"
@@ -318,8 +319,8 @@ class TestCAPAnnotationWorkflow:
         minor_cats = taxonomy_service.get_minor_categories(first_major)
         valid_minor_code = minor_cats[0]["MinorCode"]
 
-        user_a = user_service.authenticate("researcher_a", "test123")
-        user_b = user_service.authenticate("researcher_b", "test456")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
+        user_b = user_service.authenticate("researcher_b", "TestPass2")
 
         # Both researchers annotate bill 100
         repository.save_annotation(
@@ -359,8 +360,8 @@ class TestCAPAnnotationWorkflow:
         minor_cats = taxonomy_service.get_minor_categories(first_major)
         valid_minor_code = minor_cats[0]["MinorCode"]
 
-        user_a = user_service.authenticate("researcher_a", "test123")
-        user_b = user_service.authenticate("researcher_b", "test456")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
+        user_b = user_service.authenticate("researcher_b", "TestPass2")
 
         # Both researchers annotate bill 100
         repository.save_annotation(
@@ -400,8 +401,8 @@ class TestCAPAnnotationWorkflow:
         minor_cats = taxonomy_service.get_minor_categories(first_major)
         valid_minor_code = minor_cats[0]["MinorCode"]
 
-        user_a = user_service.authenticate("researcher_a", "test123")
-        user_b = user_service.authenticate("researcher_b", "test456")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
+        user_b = user_service.authenticate("researcher_b", "TestPass2")
 
         # Both researchers annotate bill 100
         repository.save_annotation(
@@ -436,7 +437,7 @@ class TestCAPAnnotationWorkflow:
             password_hash = result[0]
 
             # Password hash should not equal the plain password
-            assert password_hash != "test123", "Password should be hashed, not plain text"
+            assert password_hash != "TestPass1", "Password should be hashed, not plain text"
             # Password hash should start with $2b$ (bcrypt marker)
             assert password_hash.startswith("$2"), "Password should use bcrypt hashing"
 
@@ -445,7 +446,7 @@ class TestCAPAnnotationWorkflow:
         user_service = setup_system["user_service"]
 
         # Get researcher_a's ID
-        user_a = user_service.authenticate("researcher_a", "test123")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
         assert user_a is not None
         researcher_a_id = user_a["id"]
 
@@ -454,7 +455,7 @@ class TestCAPAnnotationWorkflow:
         assert result is True
 
         # User can no longer authenticate
-        result = user_service.authenticate("researcher_a", "test123")
+        result = user_service.authenticate("researcher_a", "TestPass1")
         assert result is None, "Inactive user should not be able to authenticate"
 
     def test_last_login_updated_on_authentication(self, setup_system):
@@ -466,7 +467,7 @@ class TestCAPAnnotationWorkflow:
         # Note: LastLoginAt might be None for newly created users
 
         # Authenticate
-        user_a = user_service.authenticate("researcher_a", "test123")
+        user_a = user_service.authenticate("researcher_a", "TestPass1")
         assert user_a is not None
 
         # Check that last login was updated

@@ -398,7 +398,8 @@ class PlotsPageRenderer:
         final_knesset_filter = self._get_final_knesset_filter(selected_chart)
 
         # Check if we can generate the plot
-        can_generate_plot = selected_chart and (final_knesset_filter is not False)
+        # None means "all Knessets", empty list [] means invalid/no selection
+        can_generate_plot = selected_chart and (final_knesset_filter is None or len(final_knesset_filter) > 0)
 
         if not can_generate_plot:
             # Charts that support "All Knessets" - all others require single selection
@@ -478,7 +479,8 @@ class PlotsPageRenderer:
             selected_chart: Currently selected chart name
 
         Returns:
-            Knesset filter list, None for all Knessets, or False if invalid
+            Knesset filter list for specific selection, None for all Knessets,
+            or empty list [] if selection is invalid/missing (caller should check)
         """
         current_selection = SessionStateManager.get_plot_main_knesset_selection()
         # Charts that support "All Knessets" color-coded view
@@ -502,9 +504,9 @@ class PlotsPageRenderer:
                 return final_knesset_filter
             except ValueError:
                 st.error(f"Invalid Knesset number selected: {current_selection}")
-                return False
+                return []  # Return empty list instead of False for type consistency
         else:
-            return False
+            return []  # Return empty list instead of False for type consistency
 
     def _build_plot_arguments(
         self,

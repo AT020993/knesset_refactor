@@ -234,9 +234,13 @@ def get_db_connection(
 
     finally:
         if conn:
-            _connection_monitor.unregister_connection(conn)
-            conn.close()
-            logger_obj.debug(f"Connection to {db_path} closed successfully")
+            try:
+                _connection_monitor.unregister_connection(conn)
+                conn.close()
+                logger_obj.debug(f"Connection to {db_path} closed successfully")
+            except Exception as close_err:
+                # Log but don't mask the original exception
+                logger_obj.warning(f"Error closing connection to {db_path}: {close_err}")
 
 
 def safe_execute_query(

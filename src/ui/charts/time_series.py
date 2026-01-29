@@ -94,6 +94,11 @@ class TimeSeriesCharts(BaseChart):
                     df = df.groupby(group_cols, as_index=False)['QueryCount'].sum()
                     df.rename(columns={'Year': 'TimePeriod'}, inplace=True)
 
+            # Check if DataFrame is empty after aggregation
+            if df.empty:
+                self.logger.warning("No data after aggregation optimization")
+                return None
+
             # Normalize DataFrame types
             df = self.normalize_time_series_df(df)
 

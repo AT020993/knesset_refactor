@@ -24,6 +24,9 @@ class CloudStorageManager:
     between local storage and GCS bucket.
     """
 
+    # Required fields for GCS service account credentials
+    REQUIRED_CREDENTIAL_FIELDS = {'type', 'project_id', 'private_key', 'client_email'}
+
     def __init__(
         self,
         bucket_name: str,
@@ -39,6 +42,10 @@ class CloudStorageManager:
             credentials_dict: Service account credentials as dict (from Streamlit secrets)
             credentials_path: Path to service account JSON file
             logger_obj: Logger instance
+
+        Raises:
+            ImportError: If google-cloud-storage is not installed
+            ValueError: If credentials_dict is provided but missing required fields
         """
         if not GCS_AVAILABLE:
             raise ImportError(
@@ -49,8 +56,9 @@ class CloudStorageManager:
         self.bucket_name = bucket_name
         self.logger = logger_obj or logging.getLogger(__name__)
 
-        # Initialize credentials
+        # Validate credentials_dict early to provide clear error messages
         if credentials_dict:
+            self._validate_credentials_dict(credentials_dict)
             self.credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict
             )
@@ -67,6 +75,25 @@ class CloudStorageManager:
         self.bucket = self.client.bucket(bucket_name)
 
         self.logger.info(f"Initialized CloudStorageManager for bucket: {bucket_name}")
+
+    def _validate_credentials_dict(self, credentials_dict: Dict[str, Any]) -> None:
+        """Validate that credentials dict has all required fields.
+
+        Args:
+            credentials_dict: Service account credentials dictionary
+
+        Raises:
+            ValueError: If required fields are missing
+        """
+        if not credentials_dict:
+            raise ValueError("credentials_dict cannot be empty")
+
+        missing = self.REQUIRED_CREDENTIAL_FIELDS - set(credentials_dict.keys())
+        if missing:
+            raise ValueError(
+                f"GCS credentials missing required fields: {sorted(missing)}. "
+                f"Expected fields: {sorted(self.REQUIRED_CREDENTIAL_FIELDS)}"
+            )
 
     def upload_file(self, local_path: Path, gcs_path: str) -> bool:
         """

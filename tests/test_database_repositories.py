@@ -153,31 +153,49 @@ class TestDatabaseRepository:
             assert result is False
 
     def test_table_exists_with_mock(self):
-        """Test table existence check with mocked execute_query."""
-        with patch.object(self.repo, 'execute_query') as mock_query:
-            mock_query.return_value = pd.DataFrame({'count': [1]})
+        """Test table existence check with mocked connection."""
+        mock_conn = Mock()
+        mock_result = Mock()
+        mock_result.fetchdf.return_value = pd.DataFrame({'count': [1]})
+        mock_conn.execute.return_value = mock_result
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             exists = self.repo.table_exists('KNS_Person')
 
             assert exists == True
-            mock_query.assert_called_once()
-            # Verify correct SQL was executed
-            sql_call = mock_query.call_args[0][0]
-            assert "KNS_Person" in sql_call
+            mock_conn.execute.assert_called_once()
+            # Verify parameterized query was used (SQL injection fix)
+            call_args = mock_conn.execute.call_args
+            assert 'KNS_Person' in call_args[0][1]  # Should be in parameters, not SQL
 
     def test_table_exists_false_with_mock(self):
         """Test table existence check when table doesn't exist."""
-        with patch.object(self.repo, 'execute_query') as mock_query:
-            mock_query.return_value = pd.DataFrame({'count': [0]})
+        mock_conn = Mock()
+        mock_result = Mock()
+        mock_result.fetchdf.return_value = pd.DataFrame({'count': [0]})
+        mock_conn.execute.return_value = mock_result
 
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            yield mock_conn
+
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             exists = self.repo.table_exists('NonExistentTable')
 
             assert exists == False
 
     def test_table_exists_query_error(self):
         """Test table existence check with query error."""
-        with patch.object(self.repo, 'execute_query', return_value=None):
+        @contextmanager
+        def mock_get_db_connection(*args, **kwargs):
+            raise Exception("Database connection error")
+            yield  # noqa - unreachable but needed for generator
 
+        with patch('src.data.repositories.database_repository.get_db_connection', mock_get_db_connection):
             exists = self.repo.table_exists('SomeTable')
 
             assert exists == False

@@ -14,6 +14,7 @@ Guidance for Claude Code when working with this Knesset parliamentary data analy
 - [Streamlit Cloud Deployment](#streamlit-cloud-deployment) - GCS, secrets
 - [Streamlit Patterns](#streamlit-patterns) - Performance, widgets, async
 - [Quick Troubleshooting](#quick-troubleshooting) - Common errors
+- [Security Patterns](#security-patterns) - SQL injection, validation, atomic writes
 - [Test Status](#test-status) - Current test coverage
 
 ## Learning System (Auto-Check)
@@ -86,6 +87,17 @@ with get_db_connection(db_path, read_only=False, logger_obj=self.logger) as conn
 
 # Wrong - bypasses monitoring
 conn = duckdb.connect(db_path)  # DON'T DO THIS
+```
+
+**Use `read_only=True` for visualizations**: Charts and read operations should always use `read_only=True` to improve concurrency and prevent accidental modifications:
+```python
+# Correct - for charts and queries
+with get_db_connection(db_path, read_only=True, logger_obj=self.logger) as conn:
+    df = safe_execute_query(conn, "SELECT * FROM ...")
+
+# Only use read_only=False when actually writing
+with get_db_connection(db_path, read_only=False, logger_obj=self.logger) as conn:
+    conn.execute("INSERT INTO ...")
 ```
 
 **Error Handling**: `ErrorCategory` enum is defined in `src/api/error_handling.py` (canonical location). Import from there, not from `config/api.py`.
@@ -231,6 +243,16 @@ Multi-user bill classification for democratic erosion research. **Full documenta
 - Roles: `admin` (full access) / `researcher` (annotate only)
 - 🔴 Always use `cap_user_id` (int), not `cap_researcher_name` (string) for operations
 - Tables: `UserResearchers`, `UserCAPTaxonomy`, `UserBillCAP`
+
+**Password Requirements**:
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one digit
+
+**Rate Limiting**:
+- 5 failed login attempts → 15-minute account lockout
+- Lockout is per-username, tracked in session state
 
 ## Network Charts
 
@@ -462,6 +484,67 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 **MCP servers available**: context7 (docs), Linear (issues), Playwright (browser), Figma (design).
 
+## Security Patterns
+
+**SQL Injection Prevention** (🔴 Critical):
+
+Always use parameterized queries, never string interpolation for user input:
+```python
+# Wrong - SQL injection vulnerable
+query = f"SELECT * FROM users WHERE name = '{user_input}'"
+
+# Correct - parameterized query
+query = "SELECT * FROM users WHERE name = ?"
+conn.execute(query, [user_input])
+```
+
+**Credential Validation**:
+
+GCS credentials are validated on initialization (`cloud_storage.py`):
+```python
+REQUIRED_CREDENTIAL_FIELDS = {'type', 'project_id', 'private_key', 'client_email'}
+# Missing fields raise ValueError with clear message
+```
+
+**Atomic File Writes** (for state files):
+
+Use temp file + rename pattern to prevent corruption from crashes:
+```python
+import tempfile
+from pathlib import Path
+
+# Write to temp file first
+temp_fd, temp_path = tempfile.mkstemp(dir=file.parent, prefix=".state_", suffix=".tmp")
+try:
+    with open(temp_fd, 'w') as f:
+        json.dump(data, f)
+    Path(temp_path).replace(file)  # Atomic rename
+except Exception:
+    Path(temp_path).unlink(missing_ok=True)
+    raise
+```
+
+**Cloud Sync Locking**:
+
+File locking prevents concurrent annotation uploads from overwriting each other (`form_renderer.py`):
+```python
+lock_file = db_path.with_suffix('.lock')
+if lock_file.exists() and (time.time() - lock_file.stat().st_mtime) < 60:
+    return  # Another sync in progress
+```
+
+**Connection Close Safety**:
+
+Always wrap connection close in try/except to prevent masking original exceptions:
+```python
+finally:
+    if conn:
+        try:
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Error closing connection: {e}")
+```
+
 ## Quick Troubleshooting
 
 | Error | Cause | Fix |
@@ -475,6 +558,10 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 | App sluggish on Streamlit Cloud | Free tier resource limits | Use lazy loading pattern (see Streamlit Patterns) |
 | `Table with name *_new does not exist` | Interrupted migration left stale FK in catalog | Use Admin Panel → "Full Catalog Rebuild" or EXPORT/IMPORT DATABASE |
 | `Can't open connection...different configuration` | Multiple connections with conflicting modes | Close all connections, reboot app, then retry |
+| `Account temporarily locked` | Too many failed login attempts | Wait 15 minutes or clear session state |
+| `Password must contain...` | New password complexity requirements | Use 8+ chars with uppercase, lowercase, and digit |
+| `IndexError: iloc[-1]` on empty DataFrame | API returned no data | Check filters, add `if df.empty:` guard |
+| Widget key collision errors | Duplicate Streamlit widget keys | Use unique prefix like `f"filter_{id(self)}_..."` |
 
 ## Test Status
 
@@ -503,3 +590,7 @@ Key behaviors tested:
 - `get_user_annotation_count()` uses `ResearcherID` (not legacy `AssignedBy`)
 - Division by zero protection in coverage statistics
 - CSV export with multi-annotator researcher info
+- Password complexity validation (uppercase, lowercase, digit)
+- Rate limiting and account lockout
+
+**Test Passwords**: Tests use passwords like `Password1`, `TestPass1` that meet complexity requirements (8+ chars, upper, lower, digit).

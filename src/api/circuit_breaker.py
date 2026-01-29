@@ -82,11 +82,9 @@ class CircuitBreaker:
 
                 # total_response_time accumulates only for successful calls
                 self.total_response_time += response_time
-                self.record_success() # Increments successful_calls
-                if self.successful_calls > 0:
-                    self.avg_response_time = self.total_response_time / self.successful_calls
-                else:
-                    self.avg_response_time = 0.0 # Should not happen if successful_calls is incremented first
+                self.record_success()  # Increments successful_calls
+                # Calculate average (successful_calls is always > 0 after record_success)
+                self.avg_response_time = self.total_response_time / self.successful_calls
 
                 self._logger.info(f"Call successful on attempt {attempt}. Response time: {response_time:.4f}s. Average response time: {self.avg_response_time:.4f}s. Total successful calls: {self.successful_calls}")
                 return result

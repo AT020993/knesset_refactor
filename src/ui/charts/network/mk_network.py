@@ -46,7 +46,7 @@ class MKCollaborationNetwork(BaseChart):
 
         try:
             with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
+                self.db_path, read_only=True, logger_obj=self.logger
             ) as con:
                 if not self.check_tables_exist(
                     con, ["KNS_Bill", "KNS_BillInitiator", "KNS_Person", "KNS_PersonToPosition", "KNS_Faction"]

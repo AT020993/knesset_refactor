@@ -1,6 +1,7 @@
 """Resume state management for cursor-based table downloads."""
 
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -47,10 +48,14 @@ class ResumeStateService:
             return {}
     
     def _save_state(self) -> None:
-        """Save current state to JSON file."""
+        """Save current state to JSON file using atomic write to prevent corruption.
+
+        Uses write-to-temp-then-rename pattern for atomic file updates,
+        preventing corruption from concurrent writes or crashes mid-write.
+        """
         try:
             self.resume_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Add timestamps to all entries
             timestamped_state = {}
             for table, data in self._state.items():
@@ -63,10 +68,26 @@ class ResumeStateService:
                         "total_rows": 0,
                         "last_update": time.time()
                     }
-            
-            self.resume_file.write_text(json.dumps(timestamped_state, indent=4))
-            self.logger.debug(f"Resume state saved for {len(timestamped_state)} tables")
-            
+
+            # Atomic write: write to temp file, then rename
+            # This prevents corruption if the process is interrupted mid-write
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=self.resume_file.parent,
+                prefix=".resume_state_",
+                suffix=".tmp"
+            )
+            try:
+                with open(temp_fd, 'w') as f:
+                    json.dump(timestamped_state, f, indent=4)
+
+                # Atomic rename (on POSIX systems)
+                Path(temp_path).replace(self.resume_file)
+                self.logger.debug(f"Resume state saved for {len(timestamped_state)} tables")
+            except Exception:
+                # Clean up temp file on failure
+                Path(temp_path).unlink(missing_ok=True)
+                raise
+
         except Exception as e:
             self.logger.warning(f"Could not save resume state: {e}")
     

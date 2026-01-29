@@ -190,9 +190,16 @@ class DataRefreshService:
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         self.logger.info("Submitting task to thread pool")
                         future = executor.submit(run_in_thread)
-                        result = future.result(timeout=600)  # 10 minute timeout
-                        self.logger.info(f"Thread pool returned: {result}")
-                        return result
+                        try:
+                            result = future.result(timeout=600)  # 10 minute timeout
+                            self.logger.info(f"Thread pool returned: {result}")
+                            return result
+                        except concurrent.futures.TimeoutError:
+                            self.logger.error("Data refresh timed out after 10 minutes")
+                            raise RuntimeError(
+                                "Data refresh exceeded maximum time limit (10 minutes). "
+                                "Try refreshing fewer tables at once."
+                            )
 
             except RuntimeError:
                 # No running loop - we're in CLI context, use asyncio.run()

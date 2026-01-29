@@ -144,13 +144,21 @@ class CAPBillQueueRenderer:
 
         with st.expander("📝 My Recent Annotations (last 5)", expanded=False):
             for _, row in recent.iterrows():
-                bill_name = str(row["BillName"])[:50]
-                if len(str(row["BillName"])) > 50:
-                    bill_name += "..."
-                st.markdown(
-                    f"📄 **{row['BillID']}** - {bill_name} "
-                    f"[{row['MinorCode']}]"
-                )
+                try:
+                    # Use .get() with defaults for safe column access
+                    raw_bill_name = row.get("BillName", "Unknown")
+                    bill_name = str(raw_bill_name)[:50] if raw_bill_name else "Unknown"
+                    if raw_bill_name and len(str(raw_bill_name)) > 50:
+                        bill_name += "..."
+                    bill_id = row.get("BillID", "?")
+                    minor_code = row.get("MinorCode", "?")
+                    st.markdown(
+                        f"📄 **{bill_id}** - {bill_name} "
+                        f"[{minor_code}]"
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Error rendering recent annotation row: {e}")
+                    continue
 
     def _render_other_annotations(self, bill_id: int, current_researcher_id: int):
         """

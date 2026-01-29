@@ -105,15 +105,24 @@ def handle_data_refresh_button_click(
         else:
             st.sidebar.warning("⚠️ Data refresh completed with some errors. Check logs for details.")
 
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.rerun()
+        refresh_succeeded = True
     except Exception as e:
         ui_logger.error(f"❌ Data Refresh Error: {e}", exc_info=True)
         st.sidebar.error(f"❌ Data Refresh Error: {e}")
         st.sidebar.code(f"Error: {str(e)}\n\nTraceback:\n{format_exc_func()}")
+        refresh_succeeded = False
     finally:
         st.session_state.data_refresh_process_running = False
+
+        # Always clear caches after refresh attempt (even on partial failure)
+        # to ensure filter options and other cached data reflect current DB state
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        ui_logger.info("Cleared all Streamlit caches after data refresh")
+
+        # Only trigger rerun on success to show updated UI
+        if refresh_succeeded:
+            st.rerun()
 
 
 def handle_multiselect_change():

@@ -42,39 +42,43 @@ class TestBackoffHandler:
 
     def test_backoff_handler_logs_error(self):
         """Test backoff handler logs categorized errors."""
-        mock_logger = Mock()
-        client = ODataClient(logger_obj=mock_logger)
+        # Import the module-level backoff handler
+        from api.odata_client import _backoff_handler, _module_logger
 
-        details = {
-            'exception': aiohttp.ClientConnectionError("Connection failed"),
-            'wait': 5.0,
-            'tries': 2
-        }
+        # Mock the module logger
+        with patch.object(_module_logger, 'warning') as mock_warning:
+            details = {
+                'exception': aiohttp.ClientConnectionError("Connection failed"),
+                'wait': 5.0,
+                'tries': 2
+            }
 
-        client._backoff_handler(details)
+            _backoff_handler(details)
 
-        mock_logger.warning.assert_called_once()
-        call_args = mock_logger.warning.call_args[0][0]
-        assert "Backing off" in call_args
-        assert "5.0s" in call_args
-        assert "attempt 2" in call_args
+            mock_warning.assert_called_once()
+            call_args = mock_warning.call_args[0][0]
+            assert "Backing off" in call_args
+            assert "5.0s" in call_args
+            assert "attempt 2" in call_args
 
     def test_backoff_handler_timeout_error(self):
         """Test backoff handler with timeout errors."""
-        mock_logger = Mock()
-        client = ODataClient(logger_obj=mock_logger)
+        # Import the module-level backoff handler
+        from api.odata_client import _backoff_handler, _module_logger
 
-        details = {
-            'exception': asyncio.TimeoutError("Request timeout"),
-            'wait': 10.0,
-            'tries': 3
-        }
+        # Mock the module logger
+        with patch.object(_module_logger, 'warning') as mock_warning:
+            details = {
+                'exception': asyncio.TimeoutError("Request timeout"),
+                'wait': 10.0,
+                'tries': 3
+            }
 
-        client._backoff_handler(details)
+            _backoff_handler(details)
 
-        mock_logger.warning.assert_called_once()
-        call_args = mock_logger.warning.call_args[0][0]
-        assert "timeout" in call_args.lower()
+            mock_warning.assert_called_once()
+            call_args = mock_warning.call_args[0][0]
+            assert "timeout" in call_args.lower()
 
 
 class TestDownloadTable:

@@ -1363,7 +1363,7 @@ class TestCAPUserServiceSequence:
         success = user_service.create_user(
             username="seq_test_1",
             display_name="Seq Test 1",
-            password="password123",
+            password="Password1",
             role="researcher",
         )
         assert success, "Failed to create first user"
@@ -1387,7 +1387,7 @@ class TestCAPUserServiceSequence:
             success = user_service.create_user(
                 username=f"multi_user_{i}",
                 display_name=f"Multi User {i}",
-                password="password123",
+                password="Password1",
                 role="researcher",
             )
             assert success, f"Failed to create user {i}"
@@ -1410,7 +1410,7 @@ class TestCAPUserServiceSequence:
         user_service.create_user(
             username="user_to_delete",
             display_name="Delete Me",
-            password="password123",
+            password="Password1",
             role="researcher",
         )
         users_df = user_service.get_all_users()
@@ -1423,7 +1423,7 @@ class TestCAPUserServiceSequence:
         user_service.create_user(
             username="user_after_delete",
             display_name="After Delete",
-            password="password123",
+            password="Password1",
             role="researcher",
         )
         users_df = user_service.get_all_users()
@@ -1493,7 +1493,7 @@ class TestCAPUserServiceValidation:
         user_id, error = user_service.create_user_with_validation(
             username="valid_user",
             display_name="Valid User",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
 
@@ -1519,7 +1519,7 @@ class TestCAPUserServiceValidation:
         user_id1, error1 = user_service.create_user_with_validation(
             username="duplicate_test",
             display_name="First User",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
         assert error1 is None
@@ -1528,7 +1528,7 @@ class TestCAPUserServiceValidation:
         user_id2, error2 = user_service.create_user_with_validation(
             username="duplicate_test",
             display_name="Second User",
-            password="different_password",
+            password="DiffPass2",
             role="admin"
         )
 
@@ -1545,7 +1545,7 @@ class TestCAPUserServiceValidation:
         user_id, error = user_service.create_user_with_validation(
             username="ab",  # Too short - only 2 chars
             display_name="Short Username User",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
 
@@ -1564,7 +1564,7 @@ class TestCAPUserServiceValidation:
         user_id1, error1 = user_service.create_user_with_validation(
             username="user name",
             display_name="User with Space",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
         assert user_id1 is None
@@ -1575,7 +1575,7 @@ class TestCAPUserServiceValidation:
         user_id2, error2 = user_service.create_user_with_validation(
             username="user@name",
             display_name="User with At",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
         assert user_id2 is None
@@ -1590,7 +1590,7 @@ class TestCAPUserServiceValidation:
         user_id, error = user_service.create_user_with_validation(
             username="valid_user_name",
             display_name="User with Underscores",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
 
@@ -1625,7 +1625,7 @@ class TestCAPUserServiceValidation:
         user_id1, error1 = user_service.create_user_with_validation(
             username="valid_user",
             display_name="",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
         assert user_id1 is None
@@ -1636,7 +1636,7 @@ class TestCAPUserServiceValidation:
         user_id2, error2 = user_service.create_user_with_validation(
             username="valid_user2",
             display_name="   ",
-            password="password123",
+            password="Password1",
             role="researcher"
         )
         assert user_id2 is None
@@ -1651,7 +1651,7 @@ class TestCAPUserServiceValidation:
         user_id, error = user_service.create_user_with_validation(
             username="valid_user",
             display_name="Valid Name",
-            password="password123",
+            password="Password1",
             role="superuser"  # Invalid role
         )
 
@@ -1668,7 +1668,7 @@ class TestCAPUserServiceValidation:
         user_id, error = user_service.create_user_with_validation(
             username="admin_user",
             display_name="Admin User",
-            password="password123",
+            password="Password1",
             role="admin"
         )
 

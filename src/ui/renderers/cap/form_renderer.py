@@ -56,30 +56,59 @@ class CAPFormRenderer:
     def _sync_to_cloud(self) -> bool:
         """Sync database to cloud storage after annotation save.
 
+        Uses file locking to prevent race conditions when multiple researchers
+        save annotations concurrently.
+
         Returns:
-            True if sync succeeded or was skipped (not enabled),
+            True if sync succeeded or was skipped (not enabled or locked),
             False if sync was attempted but failed.
         """
         try:
             from data.services.storage_sync_service import StorageSyncService
+            from config.settings import Settings
+            import time
 
             sync_service = StorageSyncService(logger_obj=self.logger)
             if not sync_service.is_enabled():
                 # Cloud storage not enabled - nothing to do
                 return True
 
-            # Upload just the database file (fastest)
-            from config.settings import Settings
+            # Use file locking to prevent concurrent syncs (race condition fix)
+            lock_file = Settings.DEFAULT_DB_PATH.with_suffix('.lock')
 
-            success = sync_service.gcs_manager.upload_file(
-                Settings.DEFAULT_DB_PATH, "data/warehouse.duckdb"
-            )
-            if success:
-                self.logger.info("Database synced to cloud storage after annotation")
-                return True
-            else:
-                self.logger.warning("Failed to sync database to cloud storage")
-                return False
+            # Check if another sync is in progress
+            if lock_file.exists():
+                # Check if lock is stale (older than 60 seconds)
+                try:
+                    lock_age = time.time() - lock_file.stat().st_mtime
+                    if lock_age < 60:
+                        self.logger.warning("Another cloud sync in progress, skipping")
+                        return True  # Don't fail the annotation, just skip sync
+                    else:
+                        # Stale lock, remove it
+                        self.logger.info("Removing stale lock file")
+                        lock_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+            try:
+                # Create lock file
+                lock_file.touch()
+
+                # Upload just the database file (fastest)
+                success = sync_service.gcs_manager.upload_file(
+                    Settings.DEFAULT_DB_PATH, "data/warehouse.duckdb"
+                )
+                if success:
+                    self.logger.info("Database synced to cloud storage after annotation")
+                    return True
+                else:
+                    self.logger.warning("Failed to sync database to cloud storage")
+                    return False
+            finally:
+                # Always remove lock file
+                lock_file.unlink(missing_ok=True)
+
         except Exception as e:
             # Don't fail the annotation save if cloud sync fails
             self.logger.warning(f"Cloud sync after annotation failed: {e}")

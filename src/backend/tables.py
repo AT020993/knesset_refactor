@@ -1,7 +1,7 @@
 """Table definitions and metadata for the Knesset database."""
 
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -12,7 +12,7 @@ class TableMetadata:
     primary_key: str
     is_cursor_paged: bool = False
     chunk_size: int = 100
-    dependencies: List[str] = None
+    dependencies: List[str] = field(default_factory=list)
 
 
 class KnessetTables:
@@ -220,7 +220,7 @@ class KnessetTables:
     def get_dependencies(cls, table_name: str) -> List[str]:
         """Get dependencies for a table."""
         table = cls.get_table_by_name(table_name)
-        return table.dependencies or [] if table else []
+        return table.dependencies if table else []
     
     @classmethod
     def get_load_order(cls) -> List[str]:

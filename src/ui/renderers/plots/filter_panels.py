@@ -30,6 +30,8 @@ class PlotFilterPanels:
         """
         self.db_path = db_path
         self.logger = logger
+        # Unique prefix for widget keys to avoid collisions across instances
+        self._key_prefix = f"filter_{id(self)}"
 
     def render_advanced_filters(self, selected_chart: str) -> None:
         """
@@ -76,7 +78,7 @@ class PlotFilterPanels:
                 "Query Types",
                 options=query_types,
                 default=st.session_state.get('plot_query_type_filter', []),
-                key=f"query_type_filter_{selected_chart.replace(' ', '_')}",
+                key=f"{self._key_prefix}_query_type_{selected_chart.replace(' ', '_')}",
                 help="Filter by specific query types"
             )
             st.session_state.plot_query_type_filter = selected_query_types
@@ -90,7 +92,7 @@ class PlotFilterPanels:
                 "Query Status",
                 options=query_statuses,
                 default=st.session_state.get('plot_query_status_filter', []),
-                key=f"query_status_filter_{selected_chart.replace(' ', '_')}",
+                key=f"{self._key_prefix}_query_status_{selected_chart.replace(' ', '_')}",
                 help="Filter by query answer status"
             )
             st.session_state.plot_query_status_filter = selected_query_statuses
@@ -108,7 +110,7 @@ class PlotFilterPanels:
                 "Session Types",
                 options=session_types,
                 default=st.session_state.get('plot_session_type_filter', []),
-                key=f"session_type_filter_{selected_chart.replace(' ', '_')}",
+                key=f"{self._key_prefix}_session_type_{selected_chart.replace(' ', '_')}",
                 help="Filter by session type"
             )
             st.session_state.plot_session_type_filter = selected_session_types
@@ -122,7 +124,7 @@ class PlotFilterPanels:
                 "Agenda Status",
                 options=agenda_statuses,
                 default=st.session_state.get('plot_agenda_status_filter', []),
-                key=f"agenda_status_filter_{selected_chart.replace(' ', '_')}",
+                key=f"{self._key_prefix}_agenda_status_{selected_chart.replace(' ', '_')}",
                 help="Filter by agenda status"
             )
             st.session_state.plot_agenda_status_filter = selected_agenda_statuses
@@ -141,7 +143,7 @@ class PlotFilterPanels:
                     min_value=1,
                     max_value=20,
                     value=int(st.session_state.get('plot_min_collaborations', 3)),
-                    key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
+                    key=f"{self._key_prefix}_min_collab_{selected_chart.replace(' ', '_')}",
                     help="Minimum number of collaborative bills to show faction-to-faction relationship"
                 )
                 st.session_state.plot_min_collaborations = min_collaborations
@@ -151,7 +153,7 @@ class PlotFilterPanels:
                 show_solo_bills = st.checkbox(
                     "Show Solo Bills",
                     value=bool(st.session_state.get('plot_show_solo_bills', True)),
-                    key=f"show_solo_bills_{selected_chart.replace(' ', '_')}",
+                    key=f"{self._key_prefix}_show_solo_{selected_chart.replace(' ', '_')}",
                     help="Display solo bills (bills with only 1 initiator) on the diagonal"
                 )
                 st.session_state.plot_show_solo_bills = show_solo_bills
@@ -163,7 +165,7 @@ class PlotFilterPanels:
                     min_value=1,
                     max_value=50,
                     value=int(st.session_state.get('plot_min_total_bills', 1)),
-                    key=f"min_total_bills_{selected_chart.replace(' ', '_')}",
+                    key=f"{self._key_prefix}_min_total_{selected_chart.replace(' ', '_')}",
                     help="Minimum total bills for a faction to be included in matrix"
                 )
                 st.session_state.plot_min_total_bills = min_total_bills
@@ -179,7 +181,7 @@ class PlotFilterPanels:
                     min_value=1,
                     max_value=20,
                     value=int(st.session_state.get('plot_min_collaborations', 3 if "Matrix" in selected_chart else 5)),
-                    key=f"min_collaborations_{selected_chart.replace(' ', '_')}",
+                    key=f"{self._key_prefix}_min_collab_gen_{selected_chart.replace(' ', '_')}",
                     help="Minimum number of collaborative bills to display relationship"
                 )
                 st.session_state.plot_min_collaborations = min_collaborations
@@ -195,7 +197,7 @@ class PlotFilterPanels:
             "Bill Origin",
             options=bill_origin_options,
             index=bill_origin_options.index(st.session_state.get('plot_bill_origin_filter', 'All Bills')),
-            key=f"bill_origin_filter_{selected_chart.replace(' ', '_')}",
+            key=f"{self._key_prefix}_bill_origin_{selected_chart.replace(' ', '_')}",
             help="Filter bills by their origin: Private (initiated by MKs) or Governmental (initiated by government)"
         )
         st.session_state.plot_bill_origin_filter = selected_bill_origin
