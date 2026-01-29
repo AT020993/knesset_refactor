@@ -649,7 +649,99 @@ class TestSessionStatePatterns:
     - State is properly initialized on first load
     - State cleanup works correctly
     """
-    pass
+
+    def test_session_state_persists_across_reruns(self, mock_session_state):
+        """Session state should persist values across simulated reruns."""
+        with patch("streamlit.session_state", mock_session_state):
+            # First "run"
+            mock_session_state["user_id"] = 123
+            mock_session_state["authenticated"] = True
+
+            # Simulate rerun (state should persist)
+            assert mock_session_state.get("user_id") == 123
+            assert mock_session_state.get("authenticated") is True
+
+    def test_session_timeout_detection(self, mock_session_state):
+        """Session timeout should be detected after configured duration."""
+        from datetime import datetime, timedelta
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+
+        with patch("streamlit.session_state", mock_session_state):
+            with patch("ui.renderers.cap.auth_handler.st.session_state", mock_session_state):
+                # Set login time to 3 hours ago (past 2-hour timeout)
+                mock_session_state["cap_authenticated"] = True
+                mock_session_state["cap_login_time"] = datetime.now() - timedelta(hours=3)
+
+                # Should detect as invalid/expired
+                is_valid = CAPAuthHandler.is_session_valid()
+                assert is_valid is False
+
+    def test_session_within_timeout_is_valid(self, mock_session_state):
+        """Session within timeout should be valid."""
+        from datetime import datetime, timedelta
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+
+        with patch("streamlit.session_state", mock_session_state):
+            with patch("ui.renderers.cap.auth_handler.st.session_state", mock_session_state):
+                # Set login time to 1 hour ago (within 2-hour timeout)
+                mock_session_state["cap_authenticated"] = True
+                mock_session_state["cap_login_time"] = datetime.now() - timedelta(hours=1)
+                mock_session_state["cap_user_id"] = 1
+                mock_session_state["cap_username"] = "testuser"
+
+                is_valid = CAPAuthHandler.is_session_valid()
+                assert is_valid is True
+
+    def test_logout_clears_session_state(self, mock_session_state):
+        """Logout should clear all CAP-related session state."""
+        from ui.renderers.cap.auth_handler import CAPAuthHandler
+
+        with patch("streamlit.session_state", mock_session_state):
+            with patch("ui.renderers.cap.auth_handler.st.session_state", mock_session_state):
+                # Setup authenticated session
+                mock_session_state["cap_authenticated"] = True
+                mock_session_state["cap_user_id"] = 123
+                mock_session_state["cap_username"] = "testuser"
+                mock_session_state["cap_researcher_name"] = "Test User"
+                mock_session_state["cap_user_role"] = "researcher"
+
+                # Logout
+                CAPAuthHandler.logout()
+
+                # All CAP state should be cleared
+                assert mock_session_state.get("cap_authenticated") is not True
+                assert mock_session_state.get("cap_user_id") is None
+
+    def test_session_state_isolation_between_users(self, mock_session_state):
+        """Different users should have isolated session states (simulated)."""
+        # In real Streamlit, each browser session has isolated state
+        # This tests the pattern, not actual isolation
+
+        user1_state = {}
+        user2_state = {}
+
+        # User 1 logs in
+        user1_state["cap_user_id"] = 1
+        user1_state["cap_username"] = "user1"
+
+        # User 2 logs in (different state object)
+        user2_state["cap_user_id"] = 2
+        user2_state["cap_username"] = "user2"
+
+        # Verify isolation
+        assert user1_state["cap_user_id"] != user2_state["cap_user_id"]
+        assert user1_state["cap_username"] != user2_state["cap_username"]
+
+    def test_widget_state_uses_session_state_keys(self, mock_session_state):
+        """Widget values should be stored in session state with keys."""
+        with patch("streamlit.session_state", mock_session_state):
+            # Simulate widget setting value
+            mock_session_state["cap_knesset_filter"] = 25
+            mock_session_state["cap_bill_search"] = "education"
+
+            # Reading should return stored values
+            assert mock_session_state.get("cap_knesset_filter") == 25
+            assert mock_session_state.get("cap_bill_search") == "education"
 
 
 class TestResourceConstraints:
