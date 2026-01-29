@@ -10,7 +10,7 @@ Guidance for Claude Code when working with this Knesset parliamentary data analy
 - [Error Handling Patterns](#error-handling-patterns) - Return tuples, fail-secure
 - [DuckDB Patterns](#duckdb-patterns) - Sequences, migrations, gotchas
 - [Bill Analytics Rules](#bill-analytics-rules) - Status categories, date matching
-- [CAP Annotation System](#cap-annotation-system) - Multi-user research annotation
+- [CAP Annotation System](#cap-annotation-system) - Summary → full docs in `src/ui/services/cap/`
 - [Streamlit Cloud Deployment](#streamlit-cloud-deployment) - GCS, secrets
 - [Streamlit Patterns](#streamlit-patterns) - Performance, widgets, async
 - [Quick Troubleshooting](#quick-troubleshooting) - Common errors
@@ -30,7 +30,7 @@ Prioritize lessons with:
 ## Development Commands
 
 ```bash
-# Setup (first time)
+# Setup (first time) - Requires Python 3.12+
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -225,124 +225,12 @@ To add more: Edit CSV → Run data refresh → Charts auto-update.
 
 ## CAP Annotation System
 
-Multi-user bill classification system for democratic erosion research with role-based access control and **multi-annotator support** for inter-rater reliability.
+Multi-user bill classification for democratic erosion research. **Full documentation**: [`src/ui/services/cap/CLAUDE.md`](src/ui/services/cap/CLAUDE.md)
 
-### Multi-Annotator Mode
-
-Multiple researchers can independently annotate the same bill. This enables:
-- **Inter-rater reliability analysis**: Compare annotations across researchers
-- **Independent queues**: Bills remain in a researcher's queue until THEY annotate it
-- **Annotation count badges**: UI shows 👥 badges when multiple researchers annotated a bill
-- **Other annotations view**: Expandable section shows other researchers' annotations for comparison
-
-**Key Behavior**: A bill annotated by Researcher A still appears in Researcher B's queue until B annotates it.
-
-### Authentication & User Management
-
-**Multi-User System**: Researchers authenticate with individual accounts (username/password). Passwords are hashed with bcrypt (cost factor 12).
-
-**Roles**:
-- `admin`: Full access including user management panel
-- `researcher`: Can annotate bills, view statistics, export data
-
-**Bootstrap Admin**: On first run, creates admin from `.streamlit/secrets.toml`:
-```toml
-[cap_annotation]
-enabled = true
-bootstrap_admin_username = "admin"
-bootstrap_admin_display_name = "Administrator"
-bootstrap_admin_password = "change-me-immediately"
-```
-
-**Session State Keys**:
-- `cap_authenticated`: Boolean login status
-- `cap_user_id`: Researcher's database ID (used for all annotation operations)
-- `cap_user_role`: "admin" or "researcher"
-- `cap_username`: Login username
-- `cap_researcher_name`: Display name (shown in UI)
-
-**🔴 Critical - Always Use `cap_user_id` for Operations**:
-```python
-# Correct - pass researcher_id (int) to service methods
-researcher_id = st.session_state.get("cap_user_id")
-self.service.save_annotation(bill_id, code, direction, researcher_id=researcher_id)
-
-# Wrong - passing researcher_name (string) where int is expected
-researcher_name = st.session_state.get("cap_researcher_name")
-self.service.save_annotation(bill_id, code, direction, researcher_id=researcher_name)  # BUG!
-```
-The `cap_user_id` is the database primary key used for all annotation operations. The `cap_researcher_name` is only for UI display.
-
-### Session Security
-
-**Session Timeout**: Sessions expire after 2 hours (configurable via `SESSION_TIMEOUT_HOURS` in `auth_handler.py`). The `is_session_valid()` method checks both authentication status and timeout.
-
-**Active User Validation**: `check_authentication()` optionally validates the user is still active in the database. Pass `user_service` parameter to enable:
-```python
-# With active user check (recommended for sensitive operations)
-is_auth, name = CAPAuthHandler.check_authentication(user_service=user_service)
-
-# Without active user check (faster, for read-only operations)
-is_auth, name = CAPAuthHandler.check_authentication()
-```
-
-**Fail-Secure**: If database errors occur during active user check, the session is invalidated (returns False).
-
-### Database Tables
-
-| Table | Purpose |
-|-------|---------|
-| `UserResearchers` | User accounts (ID, username, password hash, role, active status) |
-| `UserCAPTaxonomy` | Category codes (Major/Minor topics with Hebrew/English labels) |
-| `UserBillCAP` | Annotations with multi-annotator support (see schema below) |
-
-**UserBillCAP Schema** (multi-annotator):
-```sql
-CREATE TABLE UserBillCAP (
-    AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
-    BillID INTEGER NOT NULL,
-    ResearcherID INTEGER NOT NULL,  -- FK to UserResearchers
-    CAPMinorCode INTEGER NOT NULL,
-    Direction INTEGER NOT NULL DEFAULT 0,
-    AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    Confidence VARCHAR DEFAULT 'Medium',
-    Notes VARCHAR,
-    Source VARCHAR DEFAULT 'Database',
-    SubmissionDate VARCHAR,
-    UNIQUE(BillID, ResearcherID)  -- One annotation per researcher per bill
-);
-```
-
-**Direction Values**: +1 = strengthens democracy, -1 = weakens, 0 = neutral
-
-### Admin Panel Features
-
-Accessible only to users with `role='admin'`:
-- View all researchers with status (active/inactive, last login)
-- Add new researchers with role assignment
-- Edit display names
-- Reset passwords
-- Change roles (researcher ↔ admin)
-- Deactivate users (soft delete - preserves annotations)
-- Permanently delete users (only if no annotations exist)
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/ui/services/cap/taxonomy.py` | Table creation, schema migration, taxonomy loading |
-| `src/ui/services/cap/repository.py` | CRUD operations with researcher_id filtering |
-| `src/ui/services/cap/statistics.py` | Analytics (uses COUNT(DISTINCT BillID) for accuracy) |
-| `src/ui/services/cap/user_service.py` | User CRUD, authentication, password hashing |
-| `src/ui/renderers/cap/form_renderer.py` | Annotation form rendering, delegates to sub-components |
-| `src/ui/renderers/cap/bill_queue_renderer.py` | Bill queue UI with search, filters, status badges |
-| `src/ui/renderers/cap/pdf_viewer.py` | Embedded PDF document viewing |
-| `src/ui/renderers/cap/category_selector.py` | Hierarchical CAP category selection UI |
-| `src/ui/renderers/cap/coded_bills_renderer.py` | Coded bills list with annotation counts |
-| `src/ui/renderers/cap/auth_handler.py` | Login form, session management |
-| `src/ui/renderers/cap/admin_renderer.py` | Admin panel UI |
-
-**Cache**: Call `_clear_query_cache()` after annotation changes to refresh predefined queries.
+**Quick Reference**:
+- Roles: `admin` (full access) / `researcher` (annotate only)
+- 🔴 Always use `cap_user_id` (int), not `cap_researcher_name` (string) for operations
+- Tables: `UserResearchers`, `UserCAPTaxonomy`, `UserBillCAP`
 
 ## Network Charts
 
@@ -400,6 +288,15 @@ if 'credentials_base64' in gcp_secrets:
 - Without GCS: Data lost on app reboot
 
 **Upload local data to GCS**: `GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json" python upload_to_gcs.py`
+
+**Sync Local ↔ Cloud Database**:
+
+| Direction | Command |
+|-----------|---------|
+| Upload local → cloud | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python upload_to_gcs.py` |
+| Download cloud → local | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python download_from_gcs.py` |
+
+**🔴 Local vs Cloud are independent databases** - researchers/annotations added on Streamlit Cloud won't appear locally until you run `download_from_gcs.py`.
 
 ## Streamlit Patterns
 
@@ -569,6 +466,8 @@ with st.sidebar.status("Processing...", expanded=True) as status:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
+| Researchers added on cloud not visible locally | Local and cloud databases are independent | Run `download_from_gcs.py` with GCP credentials |
+| `No module named 'bcrypt'` | bcrypt not in venv | `.venv/bin/pip install bcrypt` |
 | `MalformedError: missing client_email` | GCS credentials TOML parsing failed | Use `credentials_base64` instead of multi-line private_key |
 | `Table does not have column AssignedBy` | Old schema query | Use `ResearcherID` JOIN to `UserResearchers` |
 | `NOT NULL constraint on ResearcherID` | Missing researcher_id in INSERT | Use `nextval('seq_researcher_id')` explicitly |

@@ -848,7 +848,7 @@ class TestCAPBillQueueRendererIntegration:
         # Return DataFrame without ResearcherID column
         mock_service.get_all_annotations_for_bill.return_value = pd.DataFrame({
             "BillID": [1],
-            "Direction": [1],
+            "CAPMinorCode": [101],
         })
 
         renderer = CAPBillQueueRenderer(mock_service, logger_obj=mock_logger)

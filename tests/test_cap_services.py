@@ -220,7 +220,6 @@ class TestCAPAnnotationRepository:
         result = repo.save_annotation(
             bill_id=1,
             cap_minor_code=101,
-            direction=1,
             researcher_id="John Doe",  # Wrong! Should be int
         )
 
@@ -254,7 +253,6 @@ class TestCAPAnnotationRepository:
         result_zero = repo.save_annotation(
             bill_id=1,
             cap_minor_code=101,
-            direction=1,
             researcher_id=0,
         )
         assert result_zero is False
@@ -263,7 +261,6 @@ class TestCAPAnnotationRepository:
         result_negative = repo.save_annotation(
             bill_id=1,
             cap_minor_code=101,
-            direction=1,
             researcher_id=-1,
         )
         assert result_negative is False
@@ -348,7 +345,6 @@ class TestCAPAnnotationRepository:
         result = repo.save_annotation(
             bill_id=1,
             cap_minor_code=101,
-            direction=1,
             researcher_id=1,  # Use researcher_id instead of assigned_by
             confidence="High",
             notes="Test annotation"
@@ -382,7 +378,6 @@ class TestCAPAnnotationRepository:
         repo.save_annotation(
             bill_id=1,
             cap_minor_code=101,
-            direction=-1,
             researcher_id=1  # Use researcher_id instead of assigned_by
         )
 
@@ -391,7 +386,6 @@ class TestCAPAnnotationRepository:
         assert annotation is not None
         assert annotation['BillID'] == 1
         assert annotation['CAPMinorCode'] == 101
-        assert annotation['Direction'] == -1
 
     def test_delete_annotation(self, initialized_db, mock_logger):
         """Test deleting an annotation."""
@@ -411,7 +405,7 @@ class TestCAPAnnotationRepository:
         conn.close()
 
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=0, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
 
         # Verify annotation exists
         assert repo.get_annotation_by_bill_id(1, researcher_id=1) is not None
@@ -443,15 +437,15 @@ class TestCAPAnnotationRepository:
 
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
-        # Researcher 1 annotates bill 1 with code 101 and direction +1
+        # Researcher 1 annotates bill 1 with code 101
         result1 = repo.save_annotation(
-            bill_id=1, cap_minor_code=101, direction=1, researcher_id=1
+            bill_id=1, cap_minor_code=101, researcher_id=1
         )
         assert result1 is True
 
-        # Researcher 2 annotates the SAME bill with different code and direction
+        # Researcher 2 annotates the SAME bill with different code
         result2 = repo.save_annotation(
-            bill_id=1, cap_minor_code=102, direction=-1, researcher_id=2
+            bill_id=1, cap_minor_code=102, researcher_id=2
         )
         assert result2 is True
 
@@ -462,9 +456,7 @@ class TestCAPAnnotationRepository:
         assert ann1 is not None
         assert ann2 is not None
         assert ann1['CAPMinorCode'] == 101
-        assert ann1['Direction'] == 1
         assert ann2['CAPMinorCode'] == 102
-        assert ann2['Direction'] == -1
 
     def test_get_all_annotations_for_bill(self, initialized_db, mock_logger):
         """Test retrieving all annotations for a bill from all researchers."""
@@ -486,8 +478,8 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Two researchers annotate the same bill
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=2)
 
         # Get all annotations
         all_annotations = repo.get_all_annotations_for_bill(1)
@@ -515,7 +507,7 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Researcher 1 annotates bill 1
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
 
         # Researcher 1 should see 2 uncoded bills (bills 2 and 3)
         uncoded_r1 = repo.get_uncoded_bills(researcher_id=1)
@@ -548,14 +540,14 @@ class TestCAPAnnotationRepository:
 
         # First annotation
         result1 = repo.save_annotation(
-            bill_id=1, cap_minor_code=101, direction=1, researcher_id=1,
+            bill_id=1, cap_minor_code=101, researcher_id=1,
             notes="First annotation"
         )
         assert result1 is True
 
         # Same researcher updates their annotation on the same bill
         result2 = repo.save_annotation(
-            bill_id=1, cap_minor_code=102, direction=-1, researcher_id=1,
+            bill_id=1, cap_minor_code=102, researcher_id=1,
             notes="Updated annotation"
         )
         assert result2 is True
@@ -564,7 +556,6 @@ class TestCAPAnnotationRepository:
         annotation = repo.get_annotation_by_bill_id(1, researcher_id=1)
         assert annotation is not None
         assert annotation['CAPMinorCode'] == 102  # Updated value
-        assert annotation['Direction'] == -1  # Updated value
         assert annotation['Notes'] == "Updated annotation"  # Updated value
 
         # Verify only one annotation exists (not two)
@@ -591,8 +582,8 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Both annotations should succeed (upsert handles duplicates)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
 
         # Verify database integrity - only one annotation per researcher per bill
         all_for_bill = repo.get_all_annotations_for_bill(1)
@@ -624,11 +615,11 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Bill 1: annotated by 2 researchers
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=2)
 
         # Bill 2: annotated by 1 researcher
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=0, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         coded_bills = repo.get_coded_bills()
 
@@ -673,7 +664,7 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Researcher 1 annotates bill 1
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
 
         # Get bills with status for researcher 1 (include coded)
         bills_r1 = repo.get_bills_with_status(include_coded=True, researcher_id=1)
@@ -707,9 +698,9 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Create several annotations
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
-        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=3, cap_minor_code=101, researcher_id=2)
 
         # Get recent annotations (limit 2)
         recent = repo.get_recent_annotations(limit=2)
@@ -740,11 +731,11 @@ class TestCAPAnnotationRepository:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Researcher 1 annotates bills 1 and 2
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         # Researcher 2 annotates bill 3
-        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+        repo.save_annotation(bill_id=3, cap_minor_code=101, researcher_id=2)
 
         # Get all coded bills
         all_coded = repo.get_coded_bills()
@@ -786,7 +777,6 @@ class TestCAPAnnotationValidation:
         result = repo.save_annotation(
             bill_id=12345,
             cap_minor_code=100,
-            direction=0,
             researcher_id=99999,  # Non-existent researcher
             confidence="Medium",
             notes="Test",
@@ -822,7 +812,6 @@ class TestCAPAnnotationValidation:
         result = repo.save_annotation(
             bill_id=12345,
             cap_minor_code=100,
-            direction=0,
             researcher_id=999,  # Inactive researcher
             confidence="Medium",
             notes="Test",
@@ -845,7 +834,6 @@ class TestCAPAnnotationValidation:
         result = repo.save_annotation(
             bill_id=12345,
             cap_minor_code=99999,  # Non-existent CAP code
-            direction=0,
             researcher_id=1,  # Valid researcher from initialized_db
             confidence="Medium",
             notes="Test",
@@ -876,7 +864,6 @@ class TestCAPAnnotationValidation:
         result = repo.save_annotation(
             bill_id=1,  # Valid bill from initialized_db
             cap_minor_code=100,  # Valid CAP code
-            direction=0,
             researcher_id=1,  # Valid, active researcher from initialized_db
             confidence="Medium",
             notes="Test",
@@ -924,8 +911,8 @@ class TestCAPStatisticsService:
 
         # Add annotations from researcher 1
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         stats_service = CAPStatisticsService(initialized_db, mock_logger)
         result = stats_service.get_annotation_stats()
@@ -971,12 +958,12 @@ class TestCAPStatisticsService:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Bill 1: annotated by 3 different researchers (should count as 1 bill)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=0, researcher_id=3)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=3)
 
         # Bill 2: annotated by 1 researcher (should count as 1 bill)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         stats_service = CAPStatisticsService(initialized_db, mock_logger)
         result = stats_service.get_annotation_stats()
@@ -1013,11 +1000,11 @@ class TestCAPUserService:
 
         # Create annotations for researcher 1 (ID=1)
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=-1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         # Create annotation for researcher 2 (ID=2)
-        repo.save_annotation(bill_id=3, cap_minor_code=101, direction=0, researcher_id=2)
+        repo.save_annotation(bill_id=3, cap_minor_code=101, researcher_id=2)
 
         user_service = CAPUserService(initialized_db, mock_logger)
 
@@ -1120,8 +1107,8 @@ class TestCAPStatisticsServiceAdditional:
 
         # Create annotations
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1, notes="Test note")
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1, notes="Test note")
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=2)
 
         # Export
         stats_service = CAPStatisticsService(initialized_db, mock_logger)
@@ -1137,7 +1124,6 @@ class TestCAPStatisticsServiceAdditional:
         assert 'BillID' in exported_df.columns
         assert 'ResearcherID' in exported_df.columns
         assert 'ResearcherName' in exported_df.columns
-        assert 'Direction' in exported_df.columns
         assert set(exported_df['BillID'].tolist()) == {1}  # Both annotations for bill 1
         assert set(exported_df['ResearcherID'].tolist()) == {1, 2}  # Two researchers
 
@@ -1181,9 +1167,9 @@ class TestCAPAnnotationCountsCache:
         clear_annotation_counts_cache()
 
         # Add annotations
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=-1, researcher_id=2)
-        repo.save_annotation(bill_id=2, cap_minor_code=101, direction=0, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=2)
+        repo.save_annotation(bill_id=2, cap_minor_code=101, researcher_id=1)
 
         counts = repo.get_annotation_counts()
 
@@ -1226,7 +1212,7 @@ class TestCAPRepositoryAdditional:
         repo = CAPAnnotationRepository(initialized_db, mock_logger)
 
         # Researcher 1 annotates bill 1
-        repo.save_annotation(bill_id=1, cap_minor_code=101, direction=1, researcher_id=1)
+        repo.save_annotation(bill_id=1, cap_minor_code=101, researcher_id=1)
 
         # Simulate API bills DataFrame (bills 1, 2, and a new bill 999)
         api_bills = pd.DataFrame({
@@ -1278,13 +1264,14 @@ class TestCAPServiceFacade:
 
         assert result is True
 
-    def test_facade_constants_re_exported(self):
-        """Test that direction constants are re-exported on facade."""
+    def test_facade_has_required_methods(self):
+        """Test that facade has the required methods."""
         from ui.services.cap_service import CAPAnnotationService
 
-        assert CAPAnnotationService.DIRECTION_STRENGTHENING == 1
-        assert CAPAnnotationService.DIRECTION_WEAKENING == -1
-        assert CAPAnnotationService.DIRECTION_NEUTRAL == 0
+        # Verify key methods exist on the facade
+        assert hasattr(CAPAnnotationService, 'ensure_tables_exist')
+        assert hasattr(CAPAnnotationService, 'save_annotation')
+        assert hasattr(CAPAnnotationService, 'get_annotation_stats')
 
 
 class TestCAPUserServiceActiveStatus:

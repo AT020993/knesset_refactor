@@ -131,7 +131,6 @@ class TestCAPAnnotationWorkflow:
         result = repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=1,
             researcher_id=researcher_a_id,
             confidence="High",
             notes="Test annotation by Researcher A",
@@ -156,7 +155,6 @@ class TestCAPAnnotationWorkflow:
         result = repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=-1,  # Different direction than A
             researcher_id=researcher_b_id,
             confidence="Medium",
             notes="Test annotation by Researcher B",
@@ -173,8 +171,6 @@ class TestCAPAnnotationWorkflow:
         b_annotation = all_annotations[all_annotations["ResearcherID"] == researcher_b_id]
         assert len(a_annotation) == 1, "Expected 1 annotation from Researcher A"
         assert len(b_annotation) == 1, "Expected 1 annotation from Researcher B"
-        assert a_annotation.iloc[0]["Direction"] == 1, "Researcher A direction should be 1"
-        assert b_annotation.iloc[0]["Direction"] == -1, "Researcher B direction should be -1"
 
     def test_annotation_visible_to_other_researchers(self, setup_system):
         """Test that one researcher's annotations are visible to others."""
@@ -193,7 +189,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=200,
             cap_minor_code=valid_minor_code,
-            direction=0,
             researcher_id=user_a["id"],
             confidence="Low",
             notes="Annotation visible to other researchers",
@@ -233,7 +228,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=1,
             researcher_id=user_a["id"],
             source="Database",
         )
@@ -267,7 +261,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=300,
             cap_minor_code=code_1,
-            direction=1,
             researcher_id=user_a["id"],
             notes="Original annotation",
             source="Database",
@@ -277,7 +270,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=300,
             cap_minor_code=code_2,
-            direction=-1,
             researcher_id=user_a["id"],
             notes="Updated annotation",
             source="Database",
@@ -287,7 +279,6 @@ class TestCAPAnnotationWorkflow:
         all_annotations = repository.get_all_annotations_for_bill(300)
         assert len(all_annotations) == 1, "Should have 1 annotation, not duplicates"
         assert all_annotations.iloc[0]["CAPMinorCode"] == code_2, "Should have updated code"
-        assert all_annotations.iloc[0]["Direction"] == -1, "Should have updated direction"
         assert all_annotations.iloc[0]["Notes"] == "Updated annotation", "Should have updated notes"
 
     def test_authentication_failure_with_wrong_password(self, setup_system):
@@ -334,7 +325,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=1,
             researcher_id=user_a["id"],
             notes="A's annotation",
             source="Database",
@@ -342,7 +332,6 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=-1,
             researcher_id=user_b["id"],
             notes="B's annotation",
             source="Database",
@@ -351,13 +340,11 @@ class TestCAPAnnotationWorkflow:
         # Get A's annotation specifically
         a_annotation = repository.get_annotation_by_bill_id(100, researcher_id=user_a["id"])
         assert a_annotation is not None
-        assert a_annotation["Direction"] == 1
         assert a_annotation["Notes"] == "A's annotation"
 
         # Get B's annotation specifically
         b_annotation = repository.get_annotation_by_bill_id(100, researcher_id=user_b["id"])
         assert b_annotation is not None
-        assert b_annotation["Direction"] == -1
         assert b_annotation["Notes"] == "B's annotation"
 
     def test_delete_annotation_per_researcher(self, setup_system):
@@ -379,14 +366,12 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=1,
             researcher_id=user_a["id"],
             source="Database",
         )
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=-1,
             researcher_id=user_b["id"],
             source="Database",
         )
@@ -402,7 +387,6 @@ class TestCAPAnnotationWorkflow:
         # B's annotation still exists
         b_annotation = repository.get_annotation_by_bill_id(100, researcher_id=user_b["id"])
         assert b_annotation is not None, "B's annotation should still exist"
-        assert b_annotation["Direction"] == -1
 
     def test_coded_bills_list_with_annotation_count(self, setup_system):
         """Test that coded bills include annotation count badge info."""
@@ -423,14 +407,12 @@ class TestCAPAnnotationWorkflow:
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=1,
             researcher_id=user_a["id"],
             source="Database",
         )
         repository.save_annotation(
             bill_id=100,
             cap_minor_code=valid_minor_code,
-            direction=-1,
             researcher_id=user_b["id"],
             source="Database",
         )

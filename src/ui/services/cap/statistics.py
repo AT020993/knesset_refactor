@@ -2,7 +2,7 @@
 CAP Statistics and Export Service
 
 Handles analytics and data export for bill annotations:
-- Annotation statistics by category, direction, Knesset
+- Annotation statistics by category, Knesset
 - CSV export functionality
 """
 
@@ -36,7 +36,6 @@ class CAPStatisticsService:
             - total_bills: Total bills in database
             - total_researchers: Number of researchers with annotations
             - by_major_category: Breakdown by major category (unique bills)
-            - by_direction: Breakdown by direction (all annotations)
             - by_knesset: Breakdown by Knesset number (unique bills)
             - by_researcher: Breakdown by researcher
         """
@@ -80,13 +79,8 @@ class CAPStatisticsService:
                 """).fetchdf()
                 stats["by_major_category"] = by_major.to_dict("records")
 
-                # By direction (count all annotations to show researcher perspectives)
-                by_direction = conn.execute("""
-                    SELECT Direction, COUNT(*) as count
-                    FROM UserBillCAP
-                    GROUP BY Direction
-                """).fetchdf()
-                stats["by_direction"] = by_direction.to_dict("records")
+                # By direction - deprecated, return empty list for backwards compatibility
+                stats["by_direction"] = []
 
                 # By Knesset (count unique bills)
                 by_knesset = conn.execute("""
@@ -146,12 +140,6 @@ class CAPStatisticsService:
                     T.MajorTopic_EN AS CAPMajorTopic_EN,
                     T.MinorTopic_HE AS CAPMinorTopic_HE,
                     T.MinorTopic_EN AS CAPMinorTopic_EN,
-                    CAP.Direction,
-                    CASE CAP.Direction
-                        WHEN 1 THEN 'הרחבה/חיזוק'
-                        WHEN -1 THEN 'צמצום/פגיעה'
-                        ELSE 'אחר'
-                    END AS Direction_HE,
                     CAP.ResearcherID,
                     R.DisplayName AS ResearcherName,
                     R.Username AS ResearcherUsername,
