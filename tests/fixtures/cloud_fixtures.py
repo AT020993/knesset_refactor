@@ -32,6 +32,46 @@ MOCK_GCS_CREDENTIALS_BASE64 = base64.b64encode(
 ).decode()
 
 
+class DictLikeWrapper:
+    """
+    Wrapper that makes a dict behave like Streamlit secrets.
+
+    Supports:
+    - 'in' checks (key in wrapper)
+    - dict-style access (wrapper[key])
+    - .get() method
+    - .keys() method
+    - dict() conversion
+    """
+
+    def __init__(self, data: Dict[str, Any]):
+        self._data = data
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def __getitem__(self, key):
+        value = self._data[key]
+        if isinstance(value, dict):
+            return DictLikeWrapper(value)
+        return value
+
+    def get(self, key, default=None):
+        value = self._data.get(key, default)
+        if isinstance(value, dict):
+            return DictLikeWrapper(value)
+        return value
+
+    def keys(self):
+        return self._data.keys()
+
+    def items(self):
+        return self._data.items()
+
+    def __iter__(self):
+        return iter(self._data)
+
+
 @pytest.fixture
 def mock_streamlit_secrets():
     """
@@ -54,7 +94,7 @@ def mock_streamlit_secrets():
         use_base64: bool = True,
         bucket_name: str = "test-bucket",
         cap_enabled: bool = True,
-    ) -> MagicMock:
+    ) -> DictLikeWrapper:
         """
         Create a mock secrets object.
 
@@ -65,23 +105,34 @@ def mock_streamlit_secrets():
             cap_enabled: Whether CAP annotation is enabled
 
         Returns:
-            MagicMock configured to behave like st.secrets
+            DictLikeWrapper configured to behave like st.secrets
         """
-        secrets = MagicMock()
-
         # Build the secrets structure
+        # When use_base64=True, use base64-encoded credentials
+        # When use_base64=False, use direct field credentials
+        if use_base64:
+            gcp_service_account_data = {
+                "credentials_base64": MOCK_GCS_CREDENTIALS_BASE64,
+            }
+        else:
+            # Direct fields format - no credentials_base64 key
+            gcp_service_account_data = {
+                "type": MOCK_GCS_CREDENTIALS["type"],
+                "project_id": MOCK_GCS_CREDENTIALS["project_id"],
+                "private_key": MOCK_GCS_CREDENTIALS["private_key"],
+                "private_key_id": MOCK_GCS_CREDENTIALS["private_key_id"],
+                "client_email": MOCK_GCS_CREDENTIALS["client_email"],
+                "client_id": MOCK_GCS_CREDENTIALS["client_id"],
+                "auth_uri": MOCK_GCS_CREDENTIALS["auth_uri"],
+                "token_uri": MOCK_GCS_CREDENTIALS["token_uri"],
+            }
+
         secrets_data = {
             "storage": {
                 "gcs_bucket_name": bucket_name if gcs_enabled else "",
                 "enable_cloud_storage": gcs_enabled,
             },
-            "gcp_service_account": {
-                "credentials_base64": MOCK_GCS_CREDENTIALS_BASE64 if use_base64 else None,
-                "type": None if use_base64 else MOCK_GCS_CREDENTIALS["type"],
-                "project_id": None if use_base64 else MOCK_GCS_CREDENTIALS["project_id"],
-                "private_key": None if use_base64 else MOCK_GCS_CREDENTIALS["private_key"],
-                "client_email": None if use_base64 else MOCK_GCS_CREDENTIALS["client_email"],
-            },
+            "gcp_service_account": gcp_service_account_data,
             "cap_annotation": {
                 "enabled": cap_enabled,
                 "bootstrap_admin_username": "admin",
@@ -90,30 +141,7 @@ def mock_streamlit_secrets():
             },
         }
 
-        # Configure .get() method
-        def mock_get(key, default=None):
-            return secrets_data.get(key, default)
-
-        secrets.get = mock_get
-
-        # Allow dict-style access via __getitem__
-        def mock_getitem(key):
-            if key in secrets_data:
-                # Return a MagicMock that also supports nested access
-                section = MagicMock()
-                section_data = secrets_data[key]
-                section.get = lambda k, d=None: section_data.get(k, d)
-                section.__getitem__ = lambda k: section_data[k]
-                section.__contains__ = lambda k: k in section_data
-                return section
-            raise KeyError(key)
-
-        secrets.__getitem__ = mock_getitem
-
-        # Allow 'in' checks
-        secrets.__contains__ = lambda key: key in secrets_data
-
-        return secrets
+        return DictLikeWrapper(secrets_data)
 
     return _create_secrets
 
