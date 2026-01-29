@@ -364,7 +364,136 @@ class TestAsyncStreamlitPatterns:
     - CLI context (no running loop) works correctly
     - tqdm doesn't cause BrokenPipeError in threads
     """
-    pass
+
+    def test_async_in_cli_context_uses_asyncio_run(self, cli_context):
+        """In CLI context (no running loop), asyncio.run() should work."""
+        import asyncio
+
+        async def async_operation():
+            await asyncio.sleep(0.01)
+            return "completed"
+
+        with cli_context():
+            # Should be able to use asyncio.run directly
+            result = asyncio.run(async_operation())
+            assert result == "completed"
+
+    def test_async_in_streamlit_context_needs_thread_isolation(self, streamlit_context):
+        """In Streamlit context (running loop), thread isolation is required.
+
+        The streamlit_context fixture simulates the key behavior that matters for
+        our code: asyncio.get_running_loop() returns a loop (indicating we're in
+        Streamlit context). In real Streamlit, asyncio.run() would fail, but what
+        our code actually does is detect the running loop and use thread isolation.
+
+        This test verifies:
+        1. The streamlit_context properly makes get_running_loop() succeed
+        2. Thread isolation pattern works correctly for running async code
+        """
+        import asyncio
+        import concurrent.futures
+
+        async def async_operation():
+            await asyncio.sleep(0.01)
+            return "completed"
+
+        def run_in_thread():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(async_operation())
+            finally:
+                new_loop.close()
+
+        with streamlit_context():
+            # In Streamlit context, get_running_loop() returns a loop (doesn't raise)
+            # This is what our code uses to detect Streamlit context
+            try:
+                loop = asyncio.get_running_loop()
+                assert loop is not None, "Should have a running loop in Streamlit context"
+            except RuntimeError:
+                pytest.fail("get_running_loop() should succeed in Streamlit context")
+
+            # Thread isolation should work - run async code in a fresh thread with its own loop
+            # This is the pattern our code uses when it detects a running loop
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                result = future.result(timeout=5)
+                assert result == "completed"
+
+    def test_data_refresh_detects_streamlit_context(self, streamlit_context):
+        """DataRefreshService should detect Streamlit context and use threads."""
+        from data.services.data_refresh_service import DataRefreshService
+
+        # Create a mock service with mocked async method
+        with patch("data.services.data_refresh_service.ODataClient"):
+            with patch("data.services.data_refresh_service.DatabaseRepository"):
+                with patch("data.services.data_refresh_service.ResumeStateService"):
+                    with patch("data.services.data_refresh_service.StorageSyncService"):
+                        service = DataRefreshService(db_path=":memory:")
+
+                        # Mock the async refresh_tables method
+                        async def mock_refresh_tables(tables, progress_callback):
+                            return True
+
+                        with patch.object(service, "refresh_tables", mock_refresh_tables):
+                            with streamlit_context():
+                                # Should not raise "event loop already running"
+                                # The service should detect the running loop and use thread isolation
+                                try:
+                                    result = service.refresh_tables_sync(tables=["KNS_Person"])
+                                    # Should complete successfully using thread isolation
+                                    assert result is True
+                                except RuntimeError as e:
+                                    if "already running" in str(e):
+                                        pytest.fail("Should handle running event loop gracefully")
+                                    raise
+
+    def test_tqdm_in_thread_context_doesnt_crash(self):
+        """tqdm should not crash when stderr is not connected (thread context)."""
+        import sys
+        from io import StringIO
+
+        # Simulate thread context where stderr might not be a TTY
+        mock_stderr = StringIO()
+        mock_stderr.isatty = lambda: False
+
+        with patch.object(sys, "stderr", mock_stderr):
+            try:
+                from tqdm import tqdm
+                # Should use fallback or handle gracefully when disable=True
+                # (the pattern used in the codebase: disable=not sys.stderr.isatty())
+                with tqdm(total=10, disable=not sys.stderr.isatty()) as pbar:
+                    for i in range(10):
+                        pbar.update(1)
+            except BrokenPipeError:
+                pytest.fail("tqdm should handle non-TTY stderr gracefully")
+
+    def test_concurrent_database_operations_in_threads(self, tmp_path):
+        """Concurrent DB operations in threads should not conflict."""
+        import concurrent.futures
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create initial database
+        conn = duckdb.connect(str(db_path))
+        conn.execute("CREATE TABLE test (id INTEGER, value VARCHAR)")
+        conn.execute("INSERT INTO test VALUES (1, 'initial')")
+        conn.close()
+
+        def read_operation():
+            conn = duckdb.connect(str(db_path), read_only=True)
+            result = conn.execute("SELECT * FROM test").fetchall()
+            conn.close()
+            return len(result)
+
+        # Multiple concurrent reads should work
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(read_operation) for _ in range(5)]
+            results = [f.result(timeout=10) for f in futures]
+
+            assert all(r == 1 for r in results)
 
 
 class TestDatabasePersistence:
