@@ -212,7 +212,6 @@ class CAPAnnotationRepository:
                     T.MinorTopic_HE AS CAPTopic_HE,
                     T.MinorTopic_EN AS CAPTopic_EN,
                     T.MajorTopic_HE AS CAPMajorTopic_HE,
-                    CAP.Direction,
                     CAP.ResearcherID,
                     R.DisplayName AS AssignedBy,
                     strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M') AS AssignedDate,
@@ -287,7 +286,6 @@ class CAPAnnotationRepository:
                     COALESCE(B.Name, 'Bill #' || CAST(CAP.BillID AS VARCHAR)) AS BillName,
                     T.MinorCode,
                     T.MinorTopic_HE,
-                    CAP.Direction,
                     CAP.ResearcherID,
                     R.DisplayName AS AssignedBy,
                     strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M') AS AssignedDate
@@ -353,7 +351,6 @@ class CAPAnnotationRepository:
                     my_cap.CAPMinorCode,
                     T.MinorCode,
                     T.MinorTopic_HE,
-                    my_cap.Direction,
                     'https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid='
                         || CAST(B.BillID AS VARCHAR) AS BillURL,
                     COALESCE(ann_count.total, 0) AS AnnotationCount
@@ -435,7 +432,6 @@ class CAPAnnotationRepository:
                     CAP.AnnotationID,
                     CAP.BillID,
                     CAP.CAPMinorCode,
-                    CAP.Direction,
                     CAP.ResearcherID,
                     R.DisplayName AS AssignedBy,
                     strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M') AS AssignedDate,
@@ -496,7 +492,6 @@ class CAPAnnotationRepository:
                     T.MinorTopic_HE,
                     T.MinorTopic_EN,
                     T.MajorTopic_HE,
-                    CAP.Direction,
                     strftime(CAP.AssignedDate, '%Y-%m-%d %H:%M') AS AssignedDate,
                     CAP.Confidence,
                     CAP.Notes
@@ -523,7 +518,6 @@ class CAPAnnotationRepository:
         self,
         bill_id: int,
         cap_minor_code: int,
-        direction: int,
         researcher_id: int,
         confidence: str = "Medium",
         notes: str = "",
@@ -540,7 +534,6 @@ class CAPAnnotationRepository:
         Args:
             bill_id: The bill ID to annotate
             cap_minor_code: The CAP minor code (e.g., 101, 201, 301)
-            direction: Direction code (+1, -1, or 0)
             researcher_id: The researcher's database ID (int from cap_user_id).
                 IMPORTANT: Must be int, NOT cap_researcher_name string!
             confidence: Confidence level (High, Medium, Low)
@@ -605,7 +598,6 @@ class CAPAnnotationRepository:
                         """
                         UPDATE UserBillCAP SET
                             CAPMinorCode = ?,
-                            Direction = ?,
                             AssignedDate = CURRENT_TIMESTAMP,
                             Confidence = ?,
                             Notes = ?,
@@ -615,7 +607,6 @@ class CAPAnnotationRepository:
                     """,
                         [
                             cap_minor_code,
-                            direction,
                             confidence,
                             notes,
                             source,
@@ -632,14 +623,13 @@ class CAPAnnotationRepository:
                     conn.execute(
                         """
                         INSERT INTO UserBillCAP
-                        (BillID, ResearcherID, CAPMinorCode, Direction, Confidence, Notes, Source, SubmissionDate)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (BillID, ResearcherID, CAPMinorCode, Confidence, Notes, Source, SubmissionDate)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                         [
                             bill_id,
                             researcher_id,
                             cap_minor_code,
-                            direction,
                             confidence,
                             notes,
                             source,
