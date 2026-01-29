@@ -8,7 +8,6 @@ This module provides a research annotation system for classifying Knesset bills 
 The system enables researchers to:
 - **Browse uncoded bills** from the Knesset database
 - **Classify bills** using a structured taxonomy
-- **Track coding direction** (+1 strengthening, -1 weakening, 0 neutral)
 - **Export annotations** for analysis
 - **Monitor progress** through a statistics dashboard
 
@@ -52,13 +51,6 @@ The Democratic Erosion codebook has three major categories:
 | 307 | זכות לקניין | Right to Property |
 | 308 | זכות לחיים | Right to Life |
 
-### Direction Coding
-| Code | Hebrew | English | Description |
-|------|--------|---------|-------------|
-| +1 | הרחבה/חיזוק | Strengthening | Bill expands/strengthens the institution or right |
-| -1 | צמצום/פגיעה | Weakening | Bill restricts/weakens the institution or right |
-| 0 | אחר | Other/Neutral | Bill doesn't clearly affect the institution or right |
-
 ## Setup Instructions
 
 ### 1. Enable the Feature
@@ -96,9 +88,8 @@ Annotations are stored in the DuckDB database and automatically sync to Google C
 1. **Select a Bill**: Browse the uncoded bills queue
 2. **Review the Bill**: Click the link to view the full bill on the Knesset website
 3. **Choose Category**: Select the major and minor category
-4. **Set Direction**: Choose +1, -1, or 0
-5. **Add Submission Date**: Required for bills coded +1 or -1
-6. **Save**: Click save to record the annotation
+4. **Add Submission Date**: Date when the bill was first submitted
+5. **Save**: Click save to record the annotation
 
 ### Viewing Coded Bills
 
@@ -113,7 +104,6 @@ The statistics tab provides:
 - Total bills coded vs. total available
 - Coding percentage
 - Breakdown by category
-- Breakdown by direction
 - Progress by Knesset
 
 ## Database Schema
@@ -131,8 +121,7 @@ Stores the codebook taxonomy:
 Stores bill annotations:
 - `BillID`: Reference to KNS_Bill
 - `CAPMinorCode`: Selected minor category
-- `Direction`: +1, -1, or 0
-- `AssignedBy`: Researcher name
+- `ResearcherID`: Reference to UserResearchers
 - `AssignedDate`: Timestamp
 - `Confidence`: High/Medium/Low
 - `Notes`: Optional researcher notes
@@ -187,8 +176,7 @@ Key rules for coding:
 The CSV export includes:
 - Bill information (ID, name, Knesset number, type)
 - CAP classification (major code, minor code, category names)
-- Direction (numeric and Hebrew text)
-- Metadata (assigned by, date, confidence, notes)
+- Metadata (researcher, date, confidence, notes)
 - Submission date
 
 This format is compatible with statistical analysis tools and can be imported into Excel, R, Python, etc.

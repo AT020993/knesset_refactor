@@ -1703,7 +1703,6 @@ No commit needed - verification only.
 - [ ] PDF load failure shows error message (not blank)
 - [ ] Category selector shows all major categories
 - [ ] Minor categories filter based on major selection
-- [ ] Direction radio buttons work
 - [ ] Save button saves annotation
 - [ ] Success message appears after save
 - [ ] Cloud sync status shown (success or warning)

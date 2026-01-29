@@ -32,7 +32,6 @@ Manual testing checklist for verifying the CAP annotation platform before resear
 - [ ] PDF fallback link opens document in new tab
 - [ ] Category selector shows all 3 major categories
 - [ ] Minor categories filter based on major selection
-- [ ] Direction radio buttons work (+1, -1, 0)
 - [ ] Confidence dropdown works (High/Medium/Low)
 - [ ] Notes textarea accepts input
 - [ ] Save button saves annotation
@@ -65,7 +64,6 @@ Manual testing checklist for verifying the CAP annotation platform before resear
 
 - [ ] Summary metrics display correctly (Bills Coded / Total / Coverage %)
 - [ ] Category breakdown chart renders
-- [ ] Direction distribution chart renders
 - [ ] Coverage breakdown by Knesset displays
 - [ ] Zero annotations case handled gracefully (no division by zero errors)
 
