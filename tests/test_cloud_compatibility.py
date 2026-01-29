@@ -505,7 +505,139 @@ class TestDatabasePersistence:
     - Connection pooling doesn't leak
     - Database sync operations complete successfully
     """
-    pass
+
+    def test_connection_manager_context_manager(self, tmp_path):
+        """get_db_connection should work as context manager."""
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create table and insert data
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE TABLE test (id INTEGER)")
+            conn.execute("INSERT INTO test VALUES (1)")
+
+        # Connection should be closed, but data persisted
+        with get_db_connection(db_path, read_only=True) as conn:
+            result = conn.execute("SELECT COUNT(*) FROM test").fetchone()[0]
+            assert result == 1
+
+    def test_read_only_connection_prevents_writes(self, tmp_path):
+        """Read-only connections should prevent write operations."""
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create database first
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE TABLE test (id INTEGER)")
+
+        # Read-only should prevent writes
+        with get_db_connection(db_path, read_only=True) as conn:
+            with pytest.raises(Exception):  # DuckDB raises on write attempt
+                conn.execute("INSERT INTO test VALUES (1)")
+
+    def test_connection_leak_detection(self, tmp_path):
+        """ConnectionMonitor should detect leaked connections."""
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection, _connection_monitor
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Verify the mechanism exists - get initial count of active connections
+        initial_connections = _connection_monitor.get_active_connections()
+        initial_count = len(initial_connections)
+
+        # Open connection in context manager
+        with get_db_connection(db_path, read_only=False) as conn:
+            # Inside context, connection should be registered
+            during_connections = _connection_monitor.get_active_connections()
+            assert len(during_connections) == initial_count + 1
+
+        # After context, connection should be released
+        after_connections = _connection_monitor.get_active_connections()
+        assert len(after_connections) == initial_count
+
+        # Verify monitor has expected methods
+        assert hasattr(_connection_monitor, "get_active_connections")
+        assert hasattr(_connection_monitor, "register_connection")
+        assert hasattr(_connection_monitor, "unregister_connection")
+
+    def test_database_recovery_from_connection_error(self, tmp_path):
+        """Should recover gracefully from database connection errors."""
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection
+
+        # Path to non-existent directory (parent doesn't exist)
+        db_path = tmp_path / "nonexistent_dir" / "test.duckdb"
+
+        # Should handle missing directory gracefully
+        try:
+            with get_db_connection(db_path, read_only=False) as conn:
+                pass
+        except Exception as e:
+            # Should be a clear error, not a crash
+            error_str = str(e).lower()
+            assert any(keyword in error_str for keyword in [
+                "directory", "path", "permission", "no such file", "cannot open"
+            ]), f"Expected path-related error, got: {e}"
+
+    def test_concurrent_write_read_connections(self, tmp_path):
+        """Concurrent connections should be handled correctly based on DuckDB constraints.
+
+        DuckDB allows multiple read-only connections, but not mixed read/write simultaneously.
+        This test verifies:
+        1. Multiple read connections can be opened simultaneously
+        2. Sequential write-then-read access works correctly
+        """
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection
+        import concurrent.futures
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create database first
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE TABLE test (id INTEGER)")
+            conn.execute("INSERT INTO test VALUES (1)")
+
+        # Test 1: Multiple concurrent read connections should work
+        def read_count():
+            with get_db_connection(db_path, read_only=True) as conn:
+                return conn.execute("SELECT COUNT(*) FROM test").fetchone()[0]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(read_count) for _ in range(3)]
+            results = [f.result(timeout=10) for f in futures]
+            assert all(r == 1 for r in results), "All concurrent reads should return 1"
+
+        # Test 2: Sequential write-then-read works correctly
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("INSERT INTO test VALUES (2)")
+
+        with get_db_connection(db_path, read_only=True) as conn:
+            result = conn.execute("SELECT COUNT(*) FROM test").fetchone()[0]
+            assert result == 2
+
+    def test_sequence_persistence_across_connections(self, tmp_path):
+        """DuckDB sequences should persist across connections."""
+        from pathlib import Path
+        from backend.connection_manager import get_db_connection
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Create sequence and use it
+        with get_db_connection(db_path, read_only=False) as conn:
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_test START 1")
+            val1 = conn.execute("SELECT nextval('seq_test')").fetchone()[0]
+            assert val1 == 1
+
+        # Sequence should continue in new connection
+        with get_db_connection(db_path, read_only=False) as conn:
+            val2 = conn.execute("SELECT nextval('seq_test')").fetchone()[0]
+            assert val2 == 2
 
 
 class TestSessionStatePatterns:
