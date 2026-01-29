@@ -875,14 +875,13 @@ class CAPAdminRenderer:
                         # Ensure sequence exists
                         conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_annotation_id START 1")
 
-                        # Recreate table with proper schema
+                        # Recreate table with proper schema (without Direction column)
                         conn.execute("""
                             CREATE TABLE UserBillCAP (
                                 AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
                                 BillID INTEGER NOT NULL,
                                 ResearcherID INTEGER NOT NULL,
                                 CAPMinorCode INTEGER NOT NULL,
-                                Direction INTEGER NOT NULL DEFAULT 0,
                                 AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                 Confidence VARCHAR DEFAULT 'Medium',
                                 Notes VARCHAR,
@@ -896,9 +895,9 @@ class CAPAdminRenderer:
                             # Restore data
                             conn.execute("""
                                 INSERT INTO UserBillCAP
-                                (AnnotationID, BillID, ResearcherID, CAPMinorCode, Direction,
+                                (AnnotationID, BillID, ResearcherID, CAPMinorCode,
                                  AssignedDate, Confidence, Notes, Source, SubmissionDate)
-                                SELECT AnnotationID, BillID, ResearcherID, CAPMinorCode, Direction,
+                                SELECT AnnotationID, BillID, ResearcherID, CAPMinorCode,
                                        AssignedDate, Confidence, Notes, Source, SubmissionDate
                                 FROM UserBillCAP_backup
                             """)

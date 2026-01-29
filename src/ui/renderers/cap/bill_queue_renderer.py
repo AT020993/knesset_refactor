@@ -144,12 +144,11 @@ class CAPBillQueueRenderer:
 
         with st.expander("📝 My Recent Annotations (last 5)", expanded=False):
             for _, row in recent.iterrows():
-                direction_emoji = {1: "🟢", -1: "🔴", 0: "⚪"}.get(row["Direction"], "⚪")
                 bill_name = str(row["BillName"])[:50]
                 if len(str(row["BillName"])) > 50:
                     bill_name += "..."
                 st.markdown(
-                    f"{direction_emoji} **{row['BillID']}** - {bill_name} "
+                    f"📄 **{row['BillID']}** - {bill_name} "
                     f"[{row['MinorCode']}]"
                 )
 
@@ -182,8 +181,6 @@ class CAPBillQueueRenderer:
                 st.caption("Compare with other researchers' annotations:")
                 for _, ann in other_annotations.iterrows():
                     try:
-                        direction = ann.get("Direction", 0)
-                        direction_emoji = {1: "🟢", -1: "🔴", 0: "⚪"}.get(direction, "⚪")
                         researcher_name = ann.get("ResearcherName", "Unknown")
                         assigned_date = ann.get("AssignedDate", "N/A")
                         minor_topic = ann.get("MinorTopic_HE", "")
@@ -191,7 +188,7 @@ class CAPBillQueueRenderer:
 
                         st.markdown(
                             f"**{researcher_name}** ({assigned_date}): "
-                            f"{direction_emoji} {minor_topic} [{minor_code}]"
+                            f"{minor_topic} [{minor_code}]"
                         )
                         notes = ann.get("Notes")
                         if notes:

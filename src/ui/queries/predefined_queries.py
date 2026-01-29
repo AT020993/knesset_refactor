@@ -483,13 +483,6 @@ SELECT
     cap.CAPMinorCode AS CAPCode,
     capt.MajorTopic_HE AS CAPMajorCategory,
     capt.MinorTopic_HE AS CAPMinorCategory,
-    cap.Direction AS CAPDirection,
-    CASE cap.Direction
-        WHEN 1 THEN 'הרחבה/חיזוק (+1)'
-        WHEN -1 THEN 'צמצום/פגיעה (-1)'
-        WHEN 0 THEN 'אחר (0)'
-        ELSE NULL
-    END AS CAPDirectionLabel,
     cap.Confidence AS CAPConfidence,
     capr.DisplayName AS CAPAnnotator,
     strftime(cap.AssignedDate, '%Y-%m-%d') AS CAPAnnotationDate,
@@ -539,7 +532,7 @@ GROUP BY
     bd.EarlyDiscussionCount, bd.OtherDocCount,
     bfs.FirstSubmissionDate,
     cap.CAPMinorCode, capt.MajorTopic_HE, capt.MinorTopic_HE,
-    cap.Direction, cap.Confidence, capr.DisplayName, cap.AssignedDate, cap.Notes
+    cap.Confidence, capr.DisplayName, cap.AssignedDate, cap.Notes
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
 LIMIT 1000;
@@ -551,7 +544,7 @@ LIMIT 1000;
             "status details, committee session activity analysis, plenum session information "
             "with FirstPlenumDiscussionDate showing when each bill was first discussed in plenum, "
             "FirstBillSubmissionDate showing the earliest activity date (true submission: initiator assignment, committee, plenum, or publication), "
-            "and CAP annotation columns (CAPCode, CAPMajorCategory, CAPMinorCategory, CAPDirection, CAPDirectionLabel, CAPConfidence, CAPAnnotator, CAPAnnotationDate, CAPNotes) for bills that have been annotated"
+            "and CAP annotation columns (CAPCode, CAPMajorCategory, CAPMinorCategory, CAPConfidence, CAPAnnotator, CAPAnnotationDate, CAPNotes) for bills that have been annotated"
         ),
     },
 }
