@@ -60,8 +60,8 @@ def test_refresh_not_implemented_error():
     with mock.patch('src.cli.container', mock_container):
         result = runner.invoke(app, ["refresh"])
 
-        # Error messages go to stderr in Typer
-        output = result.stdout + (result.stderr or "")
+        # Use result.output which contains both stdout and stderr (mixed mode is default)
+        output = result.output
         assert error_message in output or "An unexpected error occurred" in output
         assert result.exit_code == 1
 
@@ -80,8 +80,8 @@ def test_refresh_generic_exception():
     with mock.patch('src.cli.container', mock_container):
         result = runner.invoke(app, ["refresh"])
 
-        # Error messages go to stderr in Typer
-        output = result.stdout + (result.stderr or "")
+        # Use result.output which contains both stdout and stderr (mixed mode is default)
+        output = result.output
         assert "An unexpected error occurred during refresh:" in output
         assert error_message in output
         assert result.exit_code == 1
