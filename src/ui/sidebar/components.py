@@ -106,6 +106,11 @@ def display_sidebar(
         ui_logger_arg: Logger instance
         format_exc_func_arg: Function to format exceptions
     """
+    # --- Cloud Sync Status ---
+    render_sync_status()
+
+    st.sidebar.divider()
+
     # --- Data Management Section ---
     _render_data_management_section(db_path_arg, ui_logger_arg, format_exc_func_arg)
 

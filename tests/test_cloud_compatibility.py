@@ -971,11 +971,13 @@ class TestGCSCredentialResolver:
         mock_st.secrets = {}
         delattr(mock_st, 'secrets')  # Remove secrets attribute
 
+        # Also mock _from_dotenv to return None (since .env file may exist in project)
         with patch.dict("sys.modules", {"streamlit": mock_st}):
-            credentials, bucket_name = GCSCredentialResolver.resolve()
+            with patch.object(GCSCredentialResolver, '_from_dotenv', return_value=(None, None)):
+                credentials, bucket_name = GCSCredentialResolver.resolve()
 
-            assert credentials is None
-            assert bucket_name is None
+                assert credentials is None
+                assert bucket_name is None
 
     def test_credential_resolver_from_dotenv(self, monkeypatch, tmp_path):
         """Credentials should be loaded from .env file."""
