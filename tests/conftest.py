@@ -4,6 +4,9 @@ import os
 import pytest
 from unittest import mock  # For patching
 
+# Register fixture plugins
+pytest_plugins = ["tests.fixtures.cloud_fixtures"]
+
 # Add these imports at the top (if not already present)
 import tempfile
 from pathlib import Path
