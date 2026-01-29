@@ -98,6 +98,23 @@ def initialized_db(temp_db_path):
 class TestCAPTaxonomyService:
     """Tests for the CAPTaxonomyService class."""
 
+    def test_direction_column_removed_from_schema(self, temp_db_path, mock_logger):
+        """Verify Direction column no longer exists in UserBillCAP table."""
+        from ui.services.cap.taxonomy import CAPTaxonomyService
+        from backend.connection_manager import get_db_connection
+
+        service = CAPTaxonomyService(temp_db_path, mock_logger)
+        service.ensure_tables_exist()
+
+        with get_db_connection(temp_db_path, read_only=True) as conn:
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'UserBillCAP'"
+            ).fetchdf()
+            column_names = columns["column_name"].str.lower().tolist()
+
+        assert "direction" not in column_names, "Direction column should be removed"
+
     def test_indexes_created_on_userbillcap(self, temp_db_path, mock_logger):
         """Test that performance indexes are created on UserBillCAP table."""
         from ui.services.cap.taxonomy import CAPTaxonomyService

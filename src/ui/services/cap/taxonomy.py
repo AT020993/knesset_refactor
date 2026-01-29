@@ -97,6 +97,9 @@ class CAPTaxonomyService:
                 # Check if we need to migrate from old schema
                 self._migrate_to_multi_annotator(conn)
 
+                # Remove Direction column if present (v2 simplification)
+                self._remove_direction_column(conn)
+
                 # Create performance indexes
                 self._ensure_indexes(conn)
 
@@ -205,7 +208,6 @@ class CAPTaxonomyService:
                     BillID INTEGER NOT NULL,
                     ResearcherID INTEGER NOT NULL,
                     CAPMinorCode INTEGER NOT NULL,
-                    Direction INTEGER NOT NULL DEFAULT 0,
                     AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     Confidence VARCHAR DEFAULT 'Medium',
                     Notes VARCHAR,
@@ -261,7 +263,6 @@ class CAPTaxonomyService:
                     BillID INTEGER NOT NULL,
                     ResearcherID INTEGER NOT NULL,
                     CAPMinorCode INTEGER NOT NULL,
-                    Direction INTEGER NOT NULL DEFAULT 0,
                     AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     Confidence VARCHAR DEFAULT 'Medium',
                     Notes VARCHAR,
@@ -304,7 +305,6 @@ class CAPTaxonomyService:
                 BillID INTEGER NOT NULL,
                 ResearcherID INTEGER NOT NULL,
                 CAPMinorCode INTEGER NOT NULL,
-                Direction INTEGER NOT NULL DEFAULT 0,
                 AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 Confidence VARCHAR DEFAULT 'Medium',
                 Notes VARCHAR,
@@ -320,13 +320,12 @@ class CAPTaxonomyService:
         # If no match found, use the first admin (ID 1) as fallback
         conn.execute("""
             INSERT INTO UserBillCAP_new
-            (BillID, ResearcherID, CAPMinorCode, Direction, AssignedDate,
+            (BillID, ResearcherID, CAPMinorCode, AssignedDate,
              Confidence, Notes, Source, SubmissionDate)
             SELECT
                 old.BillID,
                 COALESCE(r.ResearcherID, 1) AS ResearcherID,
                 old.CAPMinorCode,
-                COALESCE(old.Direction, 0),
                 old.AssignedDate,
                 COALESCE(old.Confidence, 'Medium'),
                 old.Notes,
@@ -355,6 +354,64 @@ class CAPTaxonomyService:
         self.logger.info(
             f"Successfully migrated {new_count} annotations to multi-annotator schema"
         )
+
+    def _remove_direction_column(self, conn) -> None:
+        """
+        Remove the Direction column from UserBillCAP table.
+        Uses safe table swap pattern.
+
+        This is part of the CAP simplification - researchers don't need to
+        record the direction of democratic erosion impact.
+        """
+        columns = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'UserBillCAP'"
+        ).fetchdf()
+        column_names = columns["column_name"].str.lower().tolist()
+
+        if "direction" not in column_names:
+            self.logger.info("Direction column already removed - skipping migration")
+            return
+
+        self.logger.info("Removing Direction column from UserBillCAP...")
+
+        existing_count = conn.execute("SELECT COUNT(*) FROM UserBillCAP").fetchone()[0]
+        conn.execute("DROP TABLE IF EXISTS UserBillCAP_new")
+
+        conn.execute("""
+            CREATE TABLE UserBillCAP_new (
+                AnnotationID INTEGER PRIMARY KEY DEFAULT nextval('seq_annotation_id'),
+                BillID INTEGER NOT NULL,
+                ResearcherID INTEGER NOT NULL,
+                CAPMinorCode INTEGER NOT NULL,
+                AssignedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                Confidence VARCHAR DEFAULT 'Medium',
+                Notes VARCHAR,
+                Source VARCHAR DEFAULT 'Database',
+                SubmissionDate VARCHAR,
+                FOREIGN KEY (CAPMinorCode) REFERENCES UserCAPTaxonomy(MinorCode),
+                FOREIGN KEY (ResearcherID) REFERENCES UserResearchers(ResearcherID),
+                UNIQUE(BillID, ResearcherID)
+            )
+        """)
+
+        conn.execute("""
+            INSERT INTO UserBillCAP_new
+            (AnnotationID, BillID, ResearcherID, CAPMinorCode, AssignedDate,
+             Confidence, Notes, Source, SubmissionDate)
+            SELECT AnnotationID, BillID, ResearcherID, CAPMinorCode, AssignedDate,
+                   Confidence, Notes, Source, SubmissionDate
+            FROM UserBillCAP
+        """)
+
+        new_count = conn.execute("SELECT COUNT(*) FROM UserBillCAP_new").fetchone()[0]
+        if new_count != existing_count:
+            conn.execute("DROP TABLE UserBillCAP_new")
+            raise RuntimeError(f"Migration failed: expected {existing_count}, got {new_count}")
+
+        conn.execute("DROP TABLE UserBillCAP")
+        conn.execute("ALTER TABLE UserBillCAP_new RENAME TO UserBillCAP")
+        self.logger.info(f"Removed Direction column ({new_count} annotations preserved)")
 
     def load_taxonomy_from_csv(self) -> bool:
         """
