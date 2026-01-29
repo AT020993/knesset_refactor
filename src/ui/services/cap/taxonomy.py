@@ -49,6 +49,7 @@ class CAPTaxonomyService:
         - UserCAPTaxonomy: The codebook taxonomy
         - UserBillCAP: Bill annotations (supports multiple annotations per bill)
         - UserResearchers: Researcher accounts
+        - _SyncMetadata: Internal table for tracking sync timestamps
 
         Returns:
             True if successful, False otherwise
@@ -64,6 +65,15 @@ class CAPTaxonomyService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
+                # Create sync metadata table (for tracking sync timestamps)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS _SyncMetadata (
+                        Key VARCHAR PRIMARY KEY,
+                        Value VARCHAR,
+                        UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
                 # Create taxonomy table
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS UserCAPTaxonomy (

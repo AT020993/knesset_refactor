@@ -16,6 +16,7 @@ from .sidebar import (
     get_table_display_name,
     get_table_name_from_display,
     display_sidebar,
+    render_sync_status,
     # Private functions exported for backward compatibility (used by tests)
     _handle_data_refresh_button_click,
     _handle_run_query_button_click,
@@ -29,6 +30,7 @@ __all__ = [
     'get_table_display_name',
     'get_table_name_from_display',
     'display_sidebar',
+    'render_sync_status',
     '_handle_data_refresh_button_click',
     '_handle_run_query_button_click',
     '_handle_explore_table_button_click',

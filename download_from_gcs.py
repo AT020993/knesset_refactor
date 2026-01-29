@@ -2,7 +2,7 @@
 """Download data files from Google Cloud Storage to local.
 
 Usage:
-    # Using Streamlit secrets (reads bucket name from .streamlit/secrets.toml)
+    # Use credential resolver (auto-detects from env, .env, or secrets)
     python download_from_gcs.py
 
     # Or set bucket name via environment variable
@@ -22,14 +22,18 @@ Usage:
 Prerequisites:
     1. Have access to the GCS bucket
     2. Either:
-       a. Configure .streamlit/secrets.toml with credentials, OR
-       b. Set GOOGLE_APPLICATION_CREDENTIALS environment variable
+       a. Set GOOGLE_APPLICATION_CREDENTIALS environment variable, OR
+       b. Create a .env file with credentials, OR
+       c. Configure .streamlit/secrets.toml
 """
 
 import argparse
 import os
 import sys
 from pathlib import Path
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 try:
     from google.cloud import storage
@@ -40,8 +44,23 @@ except ImportError:
     sys.exit(1)
 
 
+def get_credentials_from_resolver():
+    """Try to load credentials using the GCSCredentialResolver."""
+    try:
+        from data.storage.credential_resolver import GCSCredentialResolver
+        credentials_dict, bucket_name = GCSCredentialResolver.resolve()
+        if credentials_dict and bucket_name:
+            credentials = service_account.Credentials.from_service_account_info(credentials_dict)
+            return bucket_name, credentials
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Warning: Credential resolver error: {e}")
+    return None, None
+
+
 def get_credentials_from_streamlit_secrets():
-    """Try to load credentials from .streamlit/secrets.toml."""
+    """Try to load credentials from .streamlit/secrets.toml (legacy fallback)."""
     secrets_path = Path(__file__).parent / ".streamlit" / "secrets.toml"
 
     if not secrets_path.exists():
@@ -85,11 +104,12 @@ def get_credentials_from_streamlit_secrets():
 def get_bucket_and_credentials(args_bucket: str = None):
     """Get bucket name and credentials from various sources.
 
-    Priority: CLI argument > environment variable > Streamlit secrets
+    Priority: CLI argument > environment variable > credential resolver > Streamlit secrets
     """
-    credentials = None
+    # Try credential resolver first (handles env vars, .env)
+    resolver_bucket, resolver_credentials = get_credentials_from_resolver()
 
-    # Try Streamlit secrets first (for both bucket and credentials)
+    # Also try legacy Streamlit secrets
     secrets_bucket, secrets_credentials = get_credentials_from_streamlit_secrets()
 
     # Determine bucket name
@@ -97,6 +117,9 @@ def get_bucket_and_credentials(args_bucket: str = None):
         bucket_name = args_bucket
     elif os.environ.get("GCS_BUCKET_NAME"):
         bucket_name = os.environ["GCS_BUCKET_NAME"]
+    elif resolver_bucket:
+        bucket_name = resolver_bucket
+        print(f"Using bucket from credential resolver: {bucket_name}")
     elif secrets_bucket:
         bucket_name = secrets_bucket
         print(f"Using bucket from .streamlit/secrets.toml: {bucket_name}")
@@ -105,16 +128,16 @@ def get_bucket_and_credentials(args_bucket: str = None):
         print("\nPlease specify bucket name via:")
         print("  1. Command line: python download_from_gcs.py --bucket YOUR_BUCKET")
         print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
-        print("  3. Streamlit secrets: .streamlit/secrets.toml [storage] gcs_bucket_name")
+        print("  3. .env file: GCS_BUCKET_NAME=YOUR_BUCKET")
+        print("  4. Streamlit secrets: .streamlit/secrets.toml [storage] gcs_bucket_name")
         sys.exit(1)
 
-    # Determine credentials
-    if secrets_credentials:
-        credentials = secrets_credentials
-        print("Using credentials from .streamlit/secrets.toml")
+    # Determine credentials (resolver takes priority)
+    credentials = resolver_credentials or secrets_credentials
+
+    if credentials:
+        print("Using credentials from resolver or secrets")
     elif os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        # Let google-cloud-storage handle it via environment variable
-        credentials = None
         print(f"Using credentials from GOOGLE_APPLICATION_CREDENTIALS")
 
     return bucket_name, credentials

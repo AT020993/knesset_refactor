@@ -21,6 +21,7 @@ from .components import (
     get_table_display_name,
     get_table_name_from_display,
     display_sidebar,
+    render_sync_status,
 )
 
 # Re-export handler functions for backward compatibility
@@ -39,6 +40,7 @@ from .table_explorer_handler import (
 __all__ = [
     # Main display function
     "display_sidebar",
+    "render_sync_status",
     # Table config exports
     "TABLE_DISPLAY_NAMES",
     "TABLE_NAME_FROM_DISPLAY",

@@ -40,11 +40,42 @@ from ui.sidebar.table_explorer_handler import handle_explore_table_button_click
 # Re-export for backward compatibility
 __all__ = [
     "display_sidebar",
+    "render_sync_status",
     "TABLE_DISPLAY_NAMES",
     "TABLE_NAME_FROM_DISPLAY",
     "get_table_display_name",
     "get_table_name_from_display",
 ]
+
+
+def render_sync_status() -> None:
+    """Render cloud sync status indicator in sidebar.
+
+    Shows whether cloud sync is enabled and working. Called after user
+    login in CAP annotation section.
+    """
+    try:
+        from data.storage.credential_resolver import GCSCredentialResolver
+
+        # Check if sync is configured
+        bucket_name = GCSCredentialResolver.get_bucket_name()
+
+        if not bucket_name:
+            st.sidebar.caption("☁️ Cloud sync: Disabled")
+            with st.sidebar.expander("Enable sync", expanded=False):
+                st.caption(
+                    "Set `GOOGLE_APPLICATION_CREDENTIALS` and `GCS_BUCKET_NAME` "
+                    "environment variables, or configure Streamlit secrets."
+                )
+            return
+
+        # Sync is configured
+        st.sidebar.success("☁️ Cloud sync: Enabled")
+
+    except ImportError:
+        st.sidebar.caption("☁️ Cloud sync: Not available")
+    except Exception as e:
+        st.sidebar.caption(f"☁️ Cloud sync: Error - {e}")
 
 
 def display_sidebar(

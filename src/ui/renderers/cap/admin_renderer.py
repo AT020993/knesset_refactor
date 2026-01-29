@@ -12,11 +12,12 @@ Features:
 - Change role
 - Deactivate/Reactivate (soft delete)
 - Permanently delete (hard delete, only if no annotations)
+- Auto-sync to cloud after admin operations
 """
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -32,6 +33,7 @@ class CAPAdminRenderer:
         self.db_path = db_path
         self.logger = logger_obj or logging.getLogger(__name__)
         self._user_service: Optional[CAPUserService] = None
+        self._sync_service = None
 
     # Valid roles for the CAP system
     VALID_ROLES = {"admin", "researcher"}
@@ -42,6 +44,44 @@ class CAPAdminRenderer:
         if self._user_service is None:
             self._user_service = get_user_service(self.db_path, self.logger)
         return self._user_service
+
+    def _get_sync_service(self):
+        """Get or create the storage sync service (lazy loaded)."""
+        if self._sync_service is None:
+            try:
+                from data.services.storage_sync_service import StorageSyncService
+                self._sync_service = StorageSyncService(logger_obj=self.logger)
+            except Exception as e:
+                self.logger.debug(f"Could not create sync service: {e}")
+                self._sync_service = None
+        return self._sync_service
+
+    def _sync_after_admin_operation(self, operation_name: str) -> Tuple[bool, str]:
+        """
+        Sync database to cloud after admin operations.
+
+        Args:
+            operation_name: Name of the operation for logging
+
+        Returns:
+            Tuple of (success, message) - success is True if sync succeeded or was disabled
+        """
+        try:
+            sync_service = self._get_sync_service()
+            if sync_service is None or not sync_service.is_enabled():
+                return True, "local_only"
+
+            success = sync_service.upload_database_only()
+            if success:
+                self.logger.info(f"Synced to cloud after {operation_name}")
+                return True, "synced"
+            else:
+                self.logger.warning(f"Cloud sync failed after {operation_name}")
+                return False, "sync_failed"
+
+        except Exception as e:
+            self.logger.warning(f"Cloud sync error after {operation_name}: {e}")
+            return False, f"error: {e}"
 
     def _get_user_list(self) -> pd.DataFrame:
         """
@@ -245,6 +285,9 @@ class CAPAdminRenderer:
                         st.session_state.admin_action_running = True
                         if self.user_service.delete_user(selected_user_id):
                             st.success("User deactivated successfully")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("user deactivation")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                         else:
                             st.error("Failed to deactivate user")
                         st.session_state.admin_action_running = False
@@ -259,6 +302,9 @@ class CAPAdminRenderer:
                         st.session_state.admin_action_running = True
                         if self.user_service.reactivate_user(selected_user_id):
                             st.success("User reactivated successfully")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("user reactivation")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                         else:
                             st.error("Failed to reactivate user")
                         st.session_state.admin_action_running = False
@@ -294,6 +340,9 @@ class CAPAdminRenderer:
                     if st.button("Update Role", key="btn_update_role"):
                         if self.user_service.update_role(selected_user_id, new_role):
                             st.success(f"Role updated to {new_role}")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("role change")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                         else:
                             st.error("Failed to update role")
 
@@ -355,6 +404,14 @@ class CAPAdminRenderer:
                             st.error(f"❌ {error}")
                         else:
                             st.success(f"✅ User '{display_name.strip()}' created successfully!")
+                            # Auto-sync to cloud
+                            sync_ok, sync_msg = self._sync_after_admin_operation("user creation")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
+                            elif sync_msg == "local_only":
+                                st.caption("💾 Local only (cloud sync disabled)")
+                            else:
+                                st.caption(f"⚠️ Cloud sync failed: {sync_msg}")
 
     def _render_edit_dialog(self):
         """Render the edit display name dialog if triggered."""
@@ -393,6 +450,9 @@ class CAPAdminRenderer:
                     else:
                         if self.user_service.update_display_name(user_id, new_display_name):
                             st.success(f"Display name updated to '{new_display_name.strip()}'")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("display name update")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                             st.session_state.admin_show_edit_dialog = False
                             st.session_state.admin_edit_user_id = None
                         else:
@@ -446,6 +506,9 @@ class CAPAdminRenderer:
                     else:
                         if self.user_service.reset_password(user_id, new_password):
                             st.success(f"Password reset for {user['display_name']}")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("password reset")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                             st.session_state.admin_show_reset_dialog = False
                             st.session_state.admin_reset_user_id = None
                         else:
@@ -506,6 +569,9 @@ class CAPAdminRenderer:
                 if st.button("🚫 Deactivate Instead", key="btn_deactivate_instead", use_container_width=True):
                     if self.user_service.delete_user(user_id):
                         st.success("User deactivated successfully")
+                        sync_ok, sync_msg = self._sync_after_admin_operation("user deactivation")
+                        if sync_msg == "synced":
+                            st.caption("☁️ Synced to cloud")
                         st.session_state.admin_show_delete_dialog = False
                         st.session_state.admin_delete_user_id = None
                     else:
@@ -542,6 +608,9 @@ class CAPAdminRenderer:
                         self.logger.info(f"Attempting to delete user {user_id}")
                         if self.user_service.hard_delete_user(user_id):
                             st.success(f"User '{user['display_name']}' permanently deleted")
+                            sync_ok, sync_msg = self._sync_after_admin_operation("user deletion")
+                            if sync_msg == "synced":
+                                st.caption("☁️ Synced to cloud")
                             st.session_state.admin_show_delete_dialog = False
                             st.session_state.admin_delete_user_id = None
                         else:

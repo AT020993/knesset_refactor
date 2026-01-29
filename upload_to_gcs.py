@@ -2,7 +2,10 @@
 """Upload local data files to Google Cloud Storage.
 
 Usage:
-    # Set bucket name via environment variable
+    # Use credential resolver (auto-detects from env, .env, or secrets)
+    python upload_to_gcs.py
+
+    # Or set bucket name via environment variable
     export GCS_BUCKET_NAME="your-bucket-name"
     export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
     python upload_to_gcs.py
@@ -11,13 +14,16 @@ Usage:
     python upload_to_gcs.py --bucket your-bucket-name
 
     # Preview what would be uploaded without actually uploading
-    python upload_to_gcs.py --bucket your-bucket-name --dry-run
+    python upload_to_gcs.py --dry-run
 
 Prerequisites:
     1. Create a GCS bucket in Google Cloud Console
     2. Create a service account with Storage Admin role
     3. Download the JSON key file
-    4. Set GOOGLE_APPLICATION_CREDENTIALS environment variable
+    4. Either:
+       a. Set GOOGLE_APPLICATION_CREDENTIALS environment variable, OR
+       b. Create a .env file with credentials, OR
+       c. Configure .streamlit/secrets.toml
 """
 
 import argparse
@@ -25,37 +31,57 @@ import os
 import sys
 from pathlib import Path
 
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 from google.cloud import storage
+from google.oauth2 import service_account
 
 
-def get_bucket_name(args_bucket: str = None) -> str:
-    """Get bucket name from args, env var, or exit with error.
+def get_credentials_from_resolver():
+    """Try to load credentials using the GCSCredentialResolver."""
+    try:
+        from data.storage.credential_resolver import GCSCredentialResolver
+        credentials_dict, bucket_name = GCSCredentialResolver.resolve()
+        if credentials_dict and bucket_name:
+            credentials = service_account.Credentials.from_service_account_info(credentials_dict)
+            return bucket_name, credentials
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Warning: Credential resolver error: {e}")
+    return None, None
 
-    Priority: CLI argument > environment variable
 
-    Args:
-        args_bucket: Bucket name from command line argument
+def get_bucket_and_credentials(args_bucket: str = None):
+    """Get bucket name and credentials from various sources.
 
-    Returns:
-        The bucket name to use
-
-    Exits:
-        With error message if no bucket specified
+    Priority: CLI argument > environment variable > credential resolver
     """
-    # Priority: CLI arg > env var
+    # Try credential resolver first (handles Streamlit secrets, env vars, .env)
+    resolver_bucket, resolver_credentials = get_credentials_from_resolver()
+
+    # Determine bucket name
     if args_bucket:
-        return args_bucket
+        bucket_name = args_bucket
+    elif os.environ.get("GCS_BUCKET_NAME"):
+        bucket_name = os.environ["GCS_BUCKET_NAME"]
+    elif resolver_bucket:
+        bucket_name = resolver_bucket
+        print(f"Using bucket from credential resolver: {bucket_name}")
+    else:
+        print("ERROR: No GCS bucket specified.")
+        print("\nPlease specify bucket name via:")
+        print("  1. Command line: python upload_to_gcs.py --bucket YOUR_BUCKET")
+        print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
+        print("  3. .env file: GCS_BUCKET_NAME=YOUR_BUCKET")
+        print("  4. Streamlit secrets: .streamlit/secrets.toml [storage] gcs_bucket_name")
+        sys.exit(1)
 
-    env_bucket = os.environ.get("GCS_BUCKET_NAME")
-    if env_bucket:
-        return env_bucket
+    # Use resolved credentials if available, otherwise let GCS use env var
+    credentials = resolver_credentials
 
-    # No bucket specified - error out with helpful message
-    print("ERROR: No GCS bucket specified.")
-    print("\nPlease specify bucket name via:")
-    print("  1. Command line: python upload_to_gcs.py --bucket YOUR_BUCKET")
-    print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
-    sys.exit(1)
+    return bucket_name, credentials
 
 
 def main():
@@ -71,7 +97,7 @@ def main():
     )
     args = parser.parse_args()
 
-    bucket_name = get_bucket_name(args.bucket)
+    bucket_name, credentials = get_bucket_and_credentials(args.bucket)
     print(f"Using GCS bucket: {bucket_name}")
 
     # Project root for finding data files
@@ -105,7 +131,7 @@ def main():
 
     # Connect to GCS
     try:
-        client = storage.Client()
+        client = storage.Client(credentials=credentials)
         bucket = client.bucket(bucket_name)
         print(f"✓ Connected to bucket: {bucket_name}")
     except Exception as e:
