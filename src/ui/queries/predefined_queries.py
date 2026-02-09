@@ -54,7 +54,15 @@ SELECT
 
     -- Simplified minister lookup
     COALESCE(min_p.FirstName || ' ' || min_p.LastName, 'Unknown') AS ResponsibleMinisterName,
-    COALESCE(ml.DutyDesc, 'Unknown') AS ResponsibleMinisterPosition
+    COALESCE(ml.DutyDesc, 'Unknown') AS ResponsibleMinisterPosition,
+
+    -- Research coding columns (policy classification)
+    uqcoding.MajorIL AS CodingMajorIL,
+    uqcoding.MinorIL AS CodingMinorIL,
+    uqcoding.MajorCAP AS CodingMajorCAP,
+    uqcoding.MinorCAP AS CodingMinorCAP,
+    uqcoding.Religion AS CodingReligion,
+    uqcoding.Territories AS CodingTerritories
 
 FROM KNS_Query Q
 LEFT JOIN KNS_Person P ON Q.PersonID = P.PersonID
@@ -68,6 +76,7 @@ LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND Q.KnessetNum = ufs.KnessetNum
 LEFT JOIN MinisterLookup ml ON Q.GovMinistryID = ml.GovMinistryID AND ml.rn = 1
 LEFT JOIN KNS_Person min_p ON ml.PersonID = min_p.PersonID
+LEFT JOIN UserQueryCoding uqcoding ON Q.QueryID = uqcoding.QueryID
 
 ORDER BY Q.KnessetNum DESC, Q.QueryID DESC
 LIMIT 1000;
@@ -139,7 +148,14 @@ SELECT
     -- the Knesset stopped using מוכללת (Consolidated) classification and no longer
     -- records individual submissions linked to umbrella proposals.
     A.LeadingAgendaID,
-    LA.Name AS LeadingAgendaName
+    LA.Name AS LeadingAgendaName,
+
+    -- Research coding columns (policy classification)
+    uacoding.MajorIL AS CodingMajorIL,
+    uacoding.MinorIL AS CodingMinorIL,
+    uacoding.Religion AS CodingReligion,
+    uacoding.Territories AS CodingTerritories,
+    uacoding.MatchMethod AS CodingMatchMethod
 
 FROM KNS_Agenda A
 LEFT JOIN KNS_Person P ON A.InitiatorPersonID = P.PersonID
@@ -152,6 +168,7 @@ LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID
     AND A.KnessetNum = ufs.KnessetNum
 LEFT JOIN AgendaDocuments ad ON A.AgendaID = ad.AgendaID
 LEFT JOIN KNS_Agenda LA ON A.LeadingAgendaID = LA.AgendaID
+LEFT JOIN UserAgendaCoding uacoding ON A.AgendaID = uacoding.AgendaID
 
 ORDER BY A.KnessetNum DESC, A.AgendaID DESC
 LIMIT 1000;
@@ -486,7 +503,15 @@ SELECT
     cap.Confidence AS CAPConfidence,
     capr.DisplayName AS CAPAnnotator,
     strftime(cap.AssignedDate, '%Y-%m-%d') AS CAPAnnotationDate,
-    cap.Notes AS CAPNotes
+    cap.Notes AS CAPNotes,
+
+    -- Research coding columns (policy classification)
+    ubcoding.MajorIL AS CodingMajorIL,
+    ubcoding.MinorIL AS CodingMinorIL,
+    ubcoding.MajorCAP AS CodingMajorCAP,
+    ubcoding.MinorCAP AS CodingMinorCAP,
+    ubcoding.StateReligion AS CodingStateReligion,
+    ubcoding.Territories AS CodingTerritories
 
 FROM KNS_Bill B
 LEFT JOIN KNS_Committee C ON CAST(B.CommitteeID AS BIGINT) = C.CommitteeID
@@ -512,8 +537,9 @@ LEFT JOIN BillFirstSubmission bfs ON B.BillID = bfs.BillID
 LEFT JOIN UserBillCAP cap ON B.BillID = cap.BillID
 LEFT JOIN UserCAPTaxonomy capt ON cap.CAPMinorCode = capt.MinorCode
 LEFT JOIN UserResearchers capr ON cap.ResearcherID = capr.ResearcherID
+LEFT JOIN UserBillCoding ubcoding ON B.BillID = ubcoding.BillID
 
-GROUP BY 
+GROUP BY
     B.BillID, B.KnessetNum, B.Name, B.SubTypeID, B.SubTypeDesc, B.PrivateNumber,
     B.CommitteeID, C.Name, C.CommitteeTypeDesc, C.AdditionalTypeID, 
     C.AdditionalTypeDesc, C.CommitteeParentName, B.StatusID, S."Desc", B.Number, 
@@ -532,7 +558,9 @@ GROUP BY
     bd.EarlyDiscussionCount, bd.OtherDocCount,
     bfs.FirstSubmissionDate,
     cap.CAPMinorCode, capt.MajorTopic_HE, capt.MinorTopic_HE,
-    cap.Confidence, capr.DisplayName, cap.AssignedDate, cap.Notes
+    cap.Confidence, capr.DisplayName, cap.AssignedDate, cap.Notes,
+    ubcoding.MajorIL, ubcoding.MinorIL, ubcoding.MajorCAP,
+    ubcoding.MinorCAP, ubcoding.StateReligion, ubcoding.Territories
 
 ORDER BY B.KnessetNum DESC, B.BillID DESC
 LIMIT 1000;

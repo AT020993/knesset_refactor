@@ -34,6 +34,7 @@ TABLES = DatabaseConfig.TABLES
 from ui.renderers.data_refresh_page import DataRefreshPageRenderer
 from ui.renderers.plots_page import PlotsPageRenderer
 from ui.renderers.cap_annotation_page import CAPAnnotationPageRenderer
+from ui.renderers.research_coding_page import ResearchCodingPageRenderer
 from ui.queries.predefined_queries import PREDEFINED_QUERIES
 import ui.plot_generators as pg
 import ui.sidebar_components as sc
@@ -150,7 +151,7 @@ sc.display_sidebar(
 )
 
 # --- Section Navigation (lazy loading) ---
-SECTIONS = ["📊 Data Explorer", "📈 Visualizations", "🏷️ CAP Annotation"]
+SECTIONS = ["📊 Data Explorer", "📈 Visualizations", "🏷️ CAP Annotation", "📥 Research Coding"]
 
 # Initialize active section in session state
 if "active_main_section" not in st.session_state:
@@ -206,6 +207,17 @@ elif selected_section == "🏷️ CAP Annotation":
     except Exception as e:
         st.error(f"Error loading CAP annotation section: {e}")
         ui_logger.error(f"Error in CAP annotation section: {e}", exc_info=True)
+
+elif selected_section == "📥 Research Coding":
+    # Initialize renderer only when needed
+    if "research_coding_renderer" not in st.session_state:
+        st.session_state.research_coding_renderer = ResearchCodingPageRenderer(DB_PATH, ui_logger)
+
+    try:
+        st.session_state.research_coding_renderer.render()
+    except Exception as e:
+        st.error(f"Error loading research coding section: {e}")
+        ui_logger.error(f"Error in research coding section: {e}", exc_info=True)
 
 
 ui_logger.info("--- data_refresh.py script finished loading UI components ---")

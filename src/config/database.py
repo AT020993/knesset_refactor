@@ -13,6 +13,9 @@ class DatabaseConfig:
         "UserAgendaTopics",
         "UserQueryTopics",
         "UserBillTopics",
+        "UserBillCoding",
+        "UserQueryCoding",
+        "UserAgendaCoding",
     ]
 
     # Table definitions (fetched from Knesset OData API)

@@ -11,10 +11,12 @@ Guidance for Claude Code when working with this Knesset parliamentary data analy
 - [DuckDB Patterns](#duckdb-patterns) - Sequences, migrations, gotchas
 - [Bill Analytics Rules](#bill-analytics-rules) - Status categories, date matching
 - [CAP Annotation System](#cap-annotation-system) - Summary → full docs in `src/ui/services/cap/`
+- [Research Coding System](#research-coding-system) - Imported policy classifications
 - [Streamlit Cloud Deployment](#streamlit-cloud-deployment) - GCS, secrets
 - [Streamlit Patterns](#streamlit-patterns) - Performance, widgets, async
 - [Quick Troubleshooting](#quick-troubleshooting) - Common errors
 - [Security Patterns](#security-patterns) - SQL injection, validation, atomic writes
+- [Documentation](#documentation) - Architecture, deployment, researcher guides
 - [Test Status](#test-status) - Current test coverage
 
 ## Learning System (Auto-Check)
@@ -43,6 +45,14 @@ PYTHONPATH="./src" python -m backend.fetch_table --all
 
 # Launch app
 streamlit run src/ui/data_refresh.py --server.port 8501
+
+# Launch (alternative scripts)
+python launch_knesset.py          # Full app launcher
+python researcher_launcher.py     # Researcher-focused launcher
+./start-knesset.sh                # Shell script launcher
+
+# Diagnostics
+python diagnose_db.py             # Database health check
 ```
 
 **Git Commit Messages** (🔴 Sandbox Limitation):
@@ -65,14 +75,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ## Architecture
 
-**Data Flow**: Knesset OData API → DuckDB/Parquet → Processing → Streamlit UI (21+ visualizations)
+**Data Flow**: Knesset OData API → DuckDB/Parquet → Processing → Streamlit UI (12 chart classes)
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
 | API | `src/api/` | Async OData client with circuit breaker |
+| Core | `src/core/` | Dependency injection (`dependencies.py`) |
 | Data | `src/data/` | Repository pattern with DI |
+| Storage | `src/data/storage/` | Cloud storage, credential resolution |
+| Backend | `src/backend/` | Connection manager, table configs, data fetch |
+| Config | `src/config/` | Database, API, settings, table config |
+| Utils | `src/utils/` | Validators, resolvers, exporters, layout helpers |
 | UI | `src/ui/` | Component-based Streamlit |
-| Charts | `src/ui/charts/` | BaseChart-derived visualizations |
+| State | `src/ui/state/` | Session state management |
+| Sidebar | `src/ui/sidebar/` | Sidebar components, refresh/query/explorer handlers |
+| Renderers | `src/ui/renderers/` | Page renderers (plots/, data_refresh/, cap/) |
+| Charts | `src/ui/charts/` | BaseChart-derived with mixins (comparison/, network/) |
 | Queries | `src/ui/queries/` | SQL templates and predefined queries |
 
 ## Connection Management
@@ -254,6 +272,32 @@ Multi-user bill classification for democratic erosion research. **Full documenta
 - 5 failed login attempts → 15-minute account lockout
 - Lockout is per-username, tracked in session state
 
+## Research Coding System
+
+Imported policy classification data (MajorIL, MinorIL, CAP codes, Religion, Territories) from researcher-provided files.
+
+**Tables**: `UserBillCoding`, `UserQueryCoding`, `UserAgendaCoding`
+
+**Import service**: `src/utils/research_coding_importer.py`
+- Bulk upsert via DuckDB `register()` + `INSERT ... ON CONFLICT`
+- Case-insensitive column mapping (handles UPPERCASE, mixedCase, lowercase source files)
+- Sentinel value cleaning (`-99` → NULL)
+- Agenda matching: K19-20 by `id2` column, K23-24 by 3-tier title matching (exact → normalized → fuzzy)
+
+**CLI import**: `import_research_coding.py` — bulk import with gap analysis output
+```bash
+PYTHONPATH="./src" python import_research_coding.py \
+  --bills path/to/bills.xlsx \
+  --queries path/to/queries.xlsx \
+  --agendas path/to/agendas.xlsx
+```
+
+**UI**: "📥 Research Coding" tab in main app (`src/ui/renderers/research_coding_page.py`)
+
+**Predefined queries**: All 3 queries include LEFT JOINs to coding tables, adding `Coding*` columns to exports.
+
+**Known data gaps**: Knesset OData API has no queries for K10-K18 (1981-2013). See `data/gap_analysis/IMPORT_SUMMARY.md`.
+
 ## Network Charts
 
 4 collaboration visualizations in `src/ui/charts/network/`:
@@ -279,15 +323,19 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 
 | Category | Files |
 |----------|-------|
-| **Charts** | `comparison.py`, `time_series.py`, `distribution.py`, `network/*.py` |
-| **Base** | `base.py` (BaseChart, `@chart_error_handler`) |
-| **Queries** | `predefined_queries.py`, `sql_templates.py` |
-| **CAP** | `cap_annotation_page.py`, `cap_service.py`, `cap_api_service.py`, `user_service.py`, `admin_renderer.py` |
-| **UI** | `plots_page.py`, `data_refresh_page.py`, `sidebar_components.py` |
-| **Data Refresh** | `data_refresh_service.py`, `data_refresh_handler.py`, `odata_client.py` |
-| **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/*.csv` |
+| **Charts** | `src/ui/charts/comparison/`, `time_series.py`, `distribution.py`, `network/` |
+| **Chart Base** | `src/ui/charts/base.py` (BaseChart, `@chart_error_handler`), `mixins/` |
+| **Queries** | `src/ui/queries/predefined_queries.py`, `sql_templates.py` |
+| **CAP Services** | `src/ui/services/cap/` (cap_service.py, cap_api_service.py, user_service.py) |
+| **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py, auth_handler.py, bill_queue_renderer.py) |
+| **UI Renderers** | `src/ui/renderers/plots_page.py`, `renderers/data_refresh/`, `renderers/cap_annotation_page.py`, `renderers/research_coding_page.py` |
+| **Research Coding** | `src/utils/research_coding_importer.py`, `import_research_coding.py` |
+| **Sidebar** | `src/ui/sidebar/components.py`, `data_refresh_handler.py`, `query_handler.py` |
+| **Data Refresh** | `src/data/services/data_refresh_service.py`, `storage_sync_service.py`, `src/api/odata_client.py` |
+| **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/democratic_erosion_codebook.csv` |
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
+| **Launchers** | `launch_knesset.py`, `researcher_launcher.py`, `start-knesset.sh` |
 
 ## Streamlit Cloud Deployment
 
@@ -472,6 +520,19 @@ with st.sidebar.status("Processing...", expanded=True) as status:
     status.update(label="Complete!", state="complete")
 ```
 
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `ARCHITECTURE.md` | System architecture overview |
+| `ARCHITECTURE_DIAGRAM.md` | Visual architecture diagrams |
+| `DEPLOYMENT_GUIDE.md` | Deployment instructions |
+| `DEPLOYMENT_OPTIONS.md` | Deployment platform comparison |
+| `RESEARCHER_GUIDE.md` | Guide for researchers using CAP system |
+| `PERFORMANCE_OPTIMIZATIONS.md` | Performance tuning details |
+| `docs/CAP_ANNOTATION_GUIDE.md` | CAP annotation workflow guide |
+| `docs/FULL_DATASET_DOWNLOAD.md` | Full dataset download instructions |
+
 ## Claude Code Automations
 
 **Local config** (gitignored in `.claude/`):
@@ -594,3 +655,14 @@ Key behaviors tested:
 - Rate limiting and account lockout
 
 **Test Passwords**: Tests use passwords like `Password1`, `TestPass1` that meet complexity requirements (8+ chars, upper, lower, digit).
+
+**Research Coding Tests** (29 tests in `test_research_coding_importer.py`):
+- Table creation and idempotency (2 tests)
+- File reading: CSV, Excel, missing file, unsupported format (4 tests)
+- Bill import: full import, updates, missing columns (3 tests)
+- Query import: full import, sentinel value cleaning (2 tests)
+- Agenda import: ID matching, title matching, unmatched items (3 tests)
+- Text normalization: whitespace, punctuation, Hebrew, Unicode NFC (4 tests)
+- Gap analysis: empty and populated states (3 tests)
+- Statistics and clear operations (3 tests)
+- Edge cases: empty files, duplicate IDs, mixed case columns, NaN values (5 tests)
