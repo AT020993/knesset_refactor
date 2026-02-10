@@ -41,7 +41,7 @@ def refresh(
         tables_to_process: Optional[List[str]] = [table]
     else:
         typer.echo("Attempting to refresh all relevant tables.")
-        tables_to_process: Optional[List[str]] = None
+        tables_to_process = None
 
     try:
         # Use the data refresh service from dependency container

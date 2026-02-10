@@ -27,7 +27,7 @@ from typing import Optional
 
 import streamlit as st
 
-from ui.services.cap_service import get_cap_service
+from ui.services.cap_service import CAPAnnotationService, get_cap_service
 from ui.renderers.cap import (
     CAPAuthHandler,
     CAPStatsRenderer,
@@ -44,17 +44,17 @@ class CAPAnnotationPageRenderer:
         """Initialize the renderer."""
         self.db_path = db_path
         self.logger = logger_obj or logging.getLogger(__name__)
-        self._service = None
-        self._auth_handler = None
+        self._service: CAPAnnotationService | None = None
+        self._auth_handler: CAPAuthHandler | None = None
 
         # Initialize component renderers (lazy)
-        self._stats_renderer = None
-        self._form_renderer = None
-        self._coded_bills_renderer = None
-        self._admin_renderer = None
+        self._stats_renderer: CAPStatsRenderer | None = None
+        self._form_renderer: CAPFormRenderer | None = None
+        self._coded_bills_renderer: CAPCodedBillsRenderer | None = None
+        self._admin_renderer: CAPAdminRenderer | None = None
 
     @property
-    def service(self):
+    def service(self) -> CAPAnnotationService:
         """Get or create the CAP service."""
         if self._service is None:
             self._service = get_cap_service(self.db_path, self.logger)
@@ -114,7 +114,7 @@ class CAPAnnotationPageRenderer:
         # Clear Streamlit's data cache
         st.cache_data.clear()
 
-    def render_cap_annotation_section(self):
+    def render_cap_annotation_section(self) -> None:
         """Main render method for the CAP annotation section."""
         st.header("🏛️ Democratic Bill Annotation")
 
@@ -146,10 +146,14 @@ class CAPAnnotationPageRenderer:
         # Tab navigation with persistent state
         self._render_tab_navigation(researcher_name)
 
-    def _render_tab_navigation(self, researcher_name: str):
+    def _render_tab_navigation(self, researcher_name: str) -> None:
         """Render tab navigation and content."""
         # Get researcher_id from session state (used for all annotation operations)
         researcher_id = st.session_state.get("cap_user_id")
+        if not isinstance(researcher_id, int):
+            st.error("Invalid user session. Please sign in again.")
+            self.logger.warning("Missing or invalid cap_user_id in session state")
+            return
 
         # Base tabs available to all users
         tab_options = [

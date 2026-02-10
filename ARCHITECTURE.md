@@ -2,7 +2,8 @@
 
 ## Overview
 
-Clean, modular architecture following dependency injection and separation of concerns. Refactored from monolithic 624-line structure to focused modules (80% code reduction).
+Clean, modular architecture with dependency injection and separation of concerns.  
+Recent refactor waves focused on splitting large service/renderer/query modules into stable facades plus focused operation modules.
 
 ## Architecture Principles
 
@@ -30,13 +31,13 @@ src/
 │   └── dependencies.py # DI container
 ├── data/                # Data layer
 │   ├── repositories/   # Data access
-│   └── services/      # Business logic
+│   └── services/      # Business logic + sync/data orchestration
 └── ui/                 # Modular UI
     ├── charts/        # Factory pattern charts
-    ├── pages/        # Page components
-    ├── queries/      # SQL definitions
+    ├── renderers/    # Page/component renderers
+    ├── queries/      # SQL query packs + registry + executor
     ├── services/     # UI services
-    └── state/        # Session management
+    └── state/        # Session state contracts + manager
 ```
 
 ## Layer Responsibilities
@@ -60,13 +61,21 @@ src/
 
 ### Data Layer (`src/data/`)
 **Repositories**: Abstract data access, query building, transaction management
-**Services**: Business logic, data transformation, cross-cutting concerns
+**Services**: Business logic, refresh orchestration, and cloud sync.
+
+Notable modules:
+- `storage_sync_service.py` facade with split ops:
+  - `storage_sync_transfer_ops.py`
+  - `storage_sync_metadata_ops.py`
+  - `storage_sync_startup_ops.py`
+- `sync_types.py` typed sync contracts
+- `sync_data_refresh_service.py` sync wrapper for async refresh flow
 
 ### UI Layer (`src/ui/`)
 **Charts**: Factory pattern with inheritance hierarchy, modular design
-**Pages**: Single responsibility renderers with reusable components
-**Queries**: Extracted SQL with metadata, smart initiator detection, coalition status integration
-**State**: Centralized session management with type safety
+**Renderers**: Stable page facades with extracted ops for heavy logic
+**Queries**: Query packs (`ui/queries/packs/*`) composed by registry
+**State**: `session_manager.py` plus typed state contracts in `state_contracts.py`
 
 ## Key Improvements
 
@@ -77,7 +86,7 @@ src/
 - Tight UI-database coupling
 - Limited testability
 
-### After Refactoring (80% Reduction)
+### After Refactoring
 - Modular architecture with focused modules
 - Centralized SQL queries with metadata
 - Type-safe session state management
@@ -86,6 +95,10 @@ src/
 - Repository, Factory, Circuit Breaker, DI patterns
 - Smart initiator detection and coalition analysis
 - Legislative continuity tracking with bill merge relationships
+- Backward-compatible facades over decomposed modules:
+  - CAP user/repository/taxonomy services
+  - data refresh and plots renderers
+  - storage sync service
 
 ## Data Flow
 
@@ -165,17 +178,19 @@ pytest -m e2e --base-url http://localhost:8501  # E2E tests
 
 ### Completed
 - ✅ Main UI refactoring (624 → 120 lines)
-- ✅ Query extraction to dedicated modules
+- ✅ Query extraction to dedicated modules and pack registry
 - ✅ Centralized state management
 - ✅ Configuration system
 - ✅ Service layer separation
 - ✅ Dependency injection implementation
 - ✅ E2E testing with Playwright
 - ✅ Project cleanup
+- ✅ CAP domain decomposition (user/repository/taxonomy split)
+- ✅ Storage sync service decomposition (transfer/metadata/startup ops)
 
 ### In Progress
-- 🔄 Chart system migration
-- 🔄 Legacy deprecation
+- 🔄 Additional chart module cleanup
+- 🔄 Legacy compatibility deprecation path
 
 ### Planned
 - ⏳ Legacy code removal

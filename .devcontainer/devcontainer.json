@@ -1,7 +1,7 @@
 {
-  "name": "Python 3",
+  "name": "Knesset Refactor (Python 3.12)",
   // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "customizations": {
     "codespaces": {
       "openFiles": [
@@ -17,9 +17,9 @@
       ]
     }
   },
-  "updateContentCommand": "[ -f packages.txt ] && sudo apt update && sudo apt upgrade -y && sudo xargs apt install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; pip3 install --user streamlit; echo '✅ Packages installed and Requirements met'",
+  "updateContentCommand": "python -m pip install --upgrade pip && [ -f requirements.txt ] && python -m pip install --user -r requirements.txt && [ -f requirements-dev.txt ] && python -m pip install --user -r requirements-dev.txt; echo '✅ Dependencies installed'",
   "postAttachCommand": {
-    "server": "streamlit run src/ui/data_refresh.py --server.enableCORS false --server.enableXsrfProtection false"
+    "server": "PYTHONPATH=./src streamlit run src/ui/data_refresh.py --server.enableCORS false --server.enableXsrfProtection false"
   },
   "portsAttributes": {
     "8501": {

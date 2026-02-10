@@ -1,33 +1,28 @@
-"""
-Query execution logic with filtering and session state management.
+"""Query execution logic with typed contracts and parameterized filtering."""
 
-This module handles the execution of predefined queries with dynamic filtering
-and manages the results in Streamlit session state.
-"""
+from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
-from typing import List, Optional, Callable, Dict, Any, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 import streamlit as st
 
-from .predefined_queries import get_query_info, get_query_sql, get_filter_columns
+from backend.connection_manager import get_db_connection, safe_execute_query
+from .predefined_queries import get_query_definition
+from .types import PaginationSpec, QueryRequest
 
 
 class QueryExecutor:
-    """Handles execution of predefined queries with filtering capabilities."""
-    
-    def __init__(self, db_path: Path, connect_func: Callable, logger: logging.Logger):
-        """
-        Initialize the query executor.
-        
-        Args:
-            db_path: Path to the database
-            connect_func: Function to create database connections
-            logger: Logger instance for error reporting
-        """
+    """Handles execution of predefined queries with safe filtering."""
+
+    def __init__(
+        self,
+        db_path: Path,
+        connect_func: Optional[Callable[..., Any]],
+        logger: logging.Logger,
+    ):
         self.db_path = db_path
         self.connect_func = connect_func
         self.logger = logger
@@ -37,120 +32,42 @@ class QueryExecutor:
         query_name: str,
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[int]] = None,
-        safe_execute_func: Optional[Callable] = None
+        safe_execute_func: Optional[Callable[..., pd.DataFrame]] = None,
+        document_type_filter: Optional[List[str]] = None,
+        page_offset: int = 0,
     ) -> Tuple[pd.DataFrame, str, List[str]]:
-        """
-        Execute a predefined query with optional filters.
-        
-        Args:
-            query_name: Name of the predefined query to execute
-            knesset_filter: List of Knesset numbers to filter by
-            faction_filter: List of faction IDs to filter by
-            safe_execute_func: Function to safely execute SQL queries
-            
-        Returns:
-            Tuple of (results_df, executed_sql, applied_filters_info)
-        """
-        query_info = get_query_info(query_name)
-        if not query_info:
-            self.logger.error(f"Query '{query_name}' not found in predefined queries")
+        """Execute a predefined query with optional filters and pagination."""
+        definition = get_query_definition(query_name)
+        if not definition:
+            self.logger.error("Query '%s' not found", query_name)
             return pd.DataFrame(), "", ["Error: Query not found"]
 
-        base_sql = get_query_sql(query_name)
-        knesset_col, faction_col = get_filter_columns(query_name)
+        request = QueryRequest(
+            definition=definition,
+            knesset_numbers=tuple(knesset_filter or []),
+            faction_ids=tuple(faction_filter or []),
+            document_types=tuple(document_type_filter or []),
+            pagination=PaginationSpec(
+                limit=self._extract_default_limit(definition.sql),
+                offset=max(page_offset, 0),
+            ),
+        )
 
-        # Create filter_columns dict for backward compatibility
-        filter_columns = {
-            "knesset_filter_column": knesset_col,
-            "faction_filter_column": faction_col
-        }
-        
-        # Build dynamic filters
-        where_conditions = []
-        applied_filters_info = []
-        
-        # Add Knesset filter
-        if knesset_filter and filter_columns.get("knesset_filter_column"):
-            if len(knesset_filter) == 1:
-                where_conditions.append(f"{filter_columns['knesset_filter_column']} = {knesset_filter[0]}")
-                applied_filters_info.append(f"Knesset(s): {knesset_filter[0]}")
-            else:
-                knesset_list = ", ".join(map(str, knesset_filter))
-                where_conditions.append(f"{filter_columns['knesset_filter_column']} IN ({knesset_list})")
-                applied_filters_info.append(f"Knesset(s): {knesset_list}")
-        else:
-            applied_filters_info.append("Knesset(s): All")
-        
-        # Add Faction filter
-        if faction_filter and filter_columns.get("faction_filter_column"):
-            if len(faction_filter) == 1:
-                where_conditions.append(f"{filter_columns['faction_filter_column']} = {faction_filter[0]}")
-            else:
-                faction_list = ", ".join(map(str, faction_filter))
-                where_conditions.append(f"{filter_columns['faction_filter_column']} IN ({faction_list})")
-            applied_filters_info.append(f"Faction(s): {len(faction_filter)} selected")
-        else:
-            applied_filters_info.append("Faction(s): All")
-        
-        # Construct final SQL with filters
-        if where_conditions:
-            # Remove the existing LIMIT and add WHERE clause before ORDER BY
-            sql_parts = base_sql.rsplit("ORDER BY", 1)
-            if len(sql_parts) == 2:
-                main_query = sql_parts[0].rstrip()
-                order_clause = "ORDER BY " + sql_parts[1]
-                
-                # Remove LIMIT from order clause if present
-                order_parts = order_clause.rsplit("LIMIT", 1)
-                order_clause = order_parts[0].rstrip()
-                limit_clause = "LIMIT " + order_parts[1].strip() if len(order_parts) > 1 else "LIMIT 1000"
-                
-                where_clause = " WHERE " + " AND ".join(where_conditions)
-                final_sql = main_query + where_clause + " " + order_clause + " " + limit_clause
-            else:
-                # Fallback: append WHERE conditions at the end
-                final_sql = base_sql.rstrip()
-                if final_sql.endswith(";"):
-                    final_sql = final_sql[:-1]
-                final_sql += " WHERE " + " AND ".join(where_conditions) + ";"
-        else:
-            final_sql = base_sql
-        
-        # Execute the query
-        con = None
-        try:
-            con = self.connect_func(read_only=True)
-            if safe_execute_func:
-                results_df = safe_execute_func(con, final_sql, _logger_obj=self.logger)
-            else:
-                results_df = pd.read_sql_query(final_sql, con)
-            
-            self.logger.info(f"Query '{query_name}' executed successfully, returned {len(results_df)} rows")
-            return results_df, final_sql, applied_filters_info
-            
-        except Exception as e:
-            self.logger.error(f"Error executing query '{query_name}': {e}", exc_info=True)
-            return pd.DataFrame(), final_sql, applied_filters_info + [f"Error: {str(e)}"]
-        finally:
-            if con:
-                con.close()
+        sql, params, applied_filters = self._build_query(request)
+        result_df = self._run_query(sql, params, safe_execute_func)
+        self.logger.info(
+            "Executed query '%s' with %d rows", query_name, len(result_df)
+        )
+        return result_df, sql, applied_filters
 
     def update_session_state_with_results(
         self,
         query_name: str,
         results_df: pd.DataFrame,
         executed_sql: str,
-        applied_filters_info: List[str]
+        applied_filters_info: List[str],
     ) -> None:
-        """
-        Update Streamlit session state with query results.
-        
-        Args:
-            query_name: Name of the executed query
-            results_df: Query results dataframe
-            executed_sql: The SQL that was executed
-            applied_filters_info: List of filter descriptions
-        """
+        """Update Streamlit session state with query results."""
         st.session_state.executed_query_name = query_name
         st.session_state.query_results_df = results_df
         st.session_state.last_executed_sql = executed_sql
@@ -163,103 +80,197 @@ class QueryExecutor:
         knesset_filter: Optional[List[int]] = None,
         faction_filter: Optional[List[int]] = None,
         faction_display_map: Optional[Dict[str, int]] = None,
-        safe_execute_func: Optional[Callable] = None
+        safe_execute_func: Optional[Callable[..., pd.DataFrame]] = None,
     ) -> Tuple[pd.DataFrame, bool]:
-        """
-        Execute table exploration with filters.
-        
-        Args:
-            table_name: Name of the table to explore
-            knesset_filter: List of Knesset numbers to filter by
-            faction_filter: List of faction names (display format) to filter by
-            faction_display_map: Mapping from display names to faction IDs
-            safe_execute_func: Function to safely execute SQL queries
-            
-        Returns:
-            Tuple of (results_df, success_flag)
-        """
+        """Execute table exploration with optional filters."""
         try:
-            # Build base query
             base_query = f"SELECT * FROM {table_name}"
-            where_conditions = []
-            
-            # Add filters if the table has relevant columns
-            con = self.connect_func(read_only=True)
-            
-            # Check for KnessetNum column
-            if knesset_filter:
-                try:
-                    # Test if KnessetNum column exists
-                    test_query = f"SELECT KnessetNum FROM {table_name} LIMIT 1"
-                    if safe_execute_func:
-                        safe_execute_func(con, test_query, _logger_obj=self.logger)
-                    else:
-                        pd.read_sql_query(test_query, con)
+            where_conditions: list[str] = []
+            params: list[Any] = []
 
-                    if len(knesset_filter) == 1:
-                        where_conditions.append(f"KnessetNum = {knesset_filter[0]}")
-                    else:
-                        knesset_list = ", ".join(map(str, knesset_filter))
-                        where_conditions.append(f"KnessetNum IN ({knesset_list})")
-                except Exception as e:
-                    # KnessetNum column doesn't exist, skip this filter
-                    self.logger.debug(f"Table '{table_name}' doesn't have KnessetNum column: {e}")
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                if knesset_filter:
+                    placeholders = ", ".join(["?"] * len(knesset_filter))
+                    where_conditions.append(f"KnessetNum IN ({placeholders})")
+                    params.extend(knesset_filter)
 
-            # Add filters for faction if applicable
-            if faction_filter and faction_display_map:
-                faction_ids = [faction_display_map[name] for name in faction_filter if name in faction_display_map]
-                if faction_ids:
-                    try:
-                        # Test if FactionID column exists
-                        test_query = f"SELECT FactionID FROM {table_name} LIMIT 1"
-                        if safe_execute_func:
-                            safe_execute_func(con, test_query, _logger_obj=self.logger)
-                        else:
-                            pd.read_sql_query(test_query, con)
+                if faction_filter and faction_display_map:
+                    where_conditions.append("FactionID IN (" + ", ".join(["?"] * len(faction_filter)) + ")")
+                    params.extend(faction_filter)
 
-                        if len(faction_ids) == 1:
-                            where_conditions.append(f"FactionID = {faction_ids[0]}")
-                        else:
-                            faction_list = ", ".join(map(str, faction_ids))
-                            where_conditions.append(f"FactionID IN ({faction_list})")
-                    except Exception as e:
-                        # FactionID column doesn't exist, skip this filter
-                        self.logger.debug(f"Table '{table_name}' doesn't have FactionID column: {e}")
-            
-            # Construct final query
-            if where_conditions:
-                final_query = base_query + " WHERE " + " AND ".join(where_conditions) + " LIMIT 1000"
-            else:
-                final_query = base_query + " LIMIT 1000"
-            
-            # Execute query
-            if safe_execute_func:
-                results_df = safe_execute_func(con, final_query, _logger_obj=self.logger)
-            else:
-                results_df = pd.read_sql_query(final_query, con)
-            
-            con.close()
-            self.logger.info(f"Table exploration for '{table_name}' returned {len(results_df)} rows")
+                final_query = base_query
+                if where_conditions:
+                    final_query += " WHERE " + " AND ".join(where_conditions)
+                final_query += " LIMIT 1000"
+
+                execute = safe_execute_func or safe_execute_query
+                results_df = execute(con, final_query, logger_obj=self.logger, params=params)
+
             return results_df, True
-            
         except Exception as e:
-            self.logger.error(f"Error exploring table '{table_name}': {e}", exc_info=True)
-            if 'con' in locals() and con:
-                con.close()
+            self.logger.error("Error exploring table '%s': %s", table_name, e, exc_info=True)
             return pd.DataFrame(), False
 
     def update_session_state_with_table_results(
         self,
         table_name: str,
-        results_df: pd.DataFrame
+        results_df: pd.DataFrame,
     ) -> None:
-        """
-        Update Streamlit session state with table exploration results.
-        
-        Args:
-            table_name: Name of the explored table
-            results_df: Table exploration results dataframe
-        """
+        """Update Streamlit session state with table exploration results."""
         st.session_state.executed_table_explorer_name = table_name
         st.session_state.table_explorer_df = results_df
         st.session_state.show_table_explorer_results = True
+
+    def _run_query(
+        self,
+        sql: str,
+        params: Sequence[Any],
+        safe_execute_func: Optional[Callable[..., pd.DataFrame]],
+    ) -> pd.DataFrame:
+        execute = safe_execute_func or safe_execute_query
+
+        with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+            return execute(con, sql, logger_obj=self.logger, params=list(params))
+
+    def _build_query(self, request: QueryRequest) -> tuple[str, list[Any], list[str]]:
+        base_sql, default_limit = self._strip_trailing_limit(request.definition.sql)
+
+        params: list[Any] = []
+        conditions: list[str] = []
+        applied_filters: list[str] = []
+
+        if request.knesset_numbers and request.definition.knesset_filter_column:
+            clause, clause_params = self._build_in_clause(
+                request.definition.knesset_filter_column,
+                request.knesset_numbers,
+            )
+            conditions.append(clause)
+            params.extend(clause_params)
+            applied_filters.append(
+                f"KnessetNum IN ({', '.join(map(str, request.knesset_numbers))})"
+            )
+
+        faction_col = request.definition.faction_filter_column
+        if request.faction_ids and faction_col and faction_col != "NULL":
+            clause, clause_params = self._build_in_clause(faction_col, request.faction_ids)
+            conditions.append(clause)
+            params.extend(clause_params)
+            applied_filters.append(
+                f"FactionID IN ({', '.join(map(str, request.faction_ids))})"
+            )
+
+        document_clause = self._build_document_filter_clause(request.document_types)
+        if document_clause:
+            conditions.append(document_clause)
+            applied_filters.append(
+                f"Document Types: {', '.join(request.document_types)}"
+            )
+
+        query = f"SELECT * FROM ({base_sql}) AS base_query"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query_limit = request.pagination.limit or default_limit
+        if query_limit:
+            query += " LIMIT ?"
+            params.append(query_limit)
+
+        if request.pagination.offset > 0:
+            query += " OFFSET ?"
+            params.append(request.pagination.offset)
+            applied_filters.append(f"Offset: {request.pagination.offset}")
+
+        return query, params, applied_filters
+
+    @staticmethod
+    def _build_in_clause(column: str, values: Sequence[int]) -> tuple[str, list[int]]:
+        placeholders = ", ".join(["?"] * len(values))
+        return f"{column} IN ({placeholders})", list(values)
+
+    @staticmethod
+    def _build_document_filter_clause(document_types: Sequence[str]) -> str:
+        if not document_types:
+            return ""
+
+        doc_type_conditions: list[str] = []
+        for doc_type in document_types:
+            if doc_type == "Published Law":
+                doc_type_conditions.append("BillPublishedLawDocCount > 0")
+            elif doc_type == "First Reading":
+                doc_type_conditions.append("BillFirstReadingDocCount > 0")
+            elif doc_type in ["2nd/3rd Reading", "Second & Third Reading"]:
+                doc_type_conditions.append("BillSecondThirdReadingDocCount > 0")
+            elif doc_type in ["Early Discussion", "Early Stage Discussion"]:
+                doc_type_conditions.append("BillEarlyDiscussionDocCount > 0")
+            elif doc_type == "Other":
+                doc_type_conditions.append("BillOtherDocCount > 0")
+
+        if not doc_type_conditions:
+            return ""
+        return "(" + " OR ".join(doc_type_conditions) + ")"
+
+    @staticmethod
+    def _extract_default_limit(sql: str) -> int:
+        _, default_limit = QueryExecutor._strip_trailing_limit(sql)
+        return default_limit or 1000
+
+    @staticmethod
+    def _strip_trailing_limit(sql: str) -> tuple[str, int | None]:
+        cleaned_sql = sql.strip().rstrip(";")
+        limit_pos = QueryExecutor._find_top_level_keyword(cleaned_sql, "LIMIT")
+
+        if limit_pos == -1:
+            return cleaned_sql, None
+
+        limit_section = cleaned_sql[limit_pos + len("LIMIT"):].strip()
+        if not limit_section:
+            return cleaned_sql, None
+
+        first_token = limit_section.split()[0]
+        try:
+            limit_value = int(first_token)
+        except ValueError:
+            return cleaned_sql, None
+
+        base_sql = cleaned_sql[:limit_pos].rstrip()
+        return base_sql, limit_value
+
+    @staticmethod
+    def _find_top_level_keyword(sql: str, keyword: str) -> int:
+        target = keyword.lower()
+        sql_lower = sql.lower()
+
+        depth = 0
+        in_single = False
+        in_double = False
+
+        for idx, char in enumerate(sql):
+            if char == "'" and not in_double:
+                in_single = not in_single
+                continue
+            if char == '"' and not in_single:
+                in_double = not in_double
+                continue
+            if in_single or in_double:
+                continue
+
+            if char == "(":
+                depth += 1
+                continue
+            if char == ")":
+                depth = max(depth - 1, 0)
+                continue
+
+            if depth != 0:
+                continue
+
+            if sql_lower.startswith(target, idx):
+                prev_char = sql_lower[idx - 1] if idx > 0 else " "
+                next_pos = idx + len(target)
+                next_char = sql_lower[next_pos] if next_pos < len(sql_lower) else " "
+                if not (prev_char.isalnum() or prev_char == "_") and not (
+                    next_char.isalnum() or next_char == "_"
+                ):
+                    return idx
+
+        return -1

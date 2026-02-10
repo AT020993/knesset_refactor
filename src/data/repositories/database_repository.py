@@ -60,7 +60,10 @@ class DatabaseRepository:
         """Execute a query and return results."""
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
-                return safe_execute_query(conn, query, self.logger)
+                result = safe_execute_query(conn, query, self.logger)
+                if isinstance(result, pd.DataFrame):
+                    return result
+                return None
         except Exception as e:
             self.logger.error(f"Error executing query: {e}", exc_info=True)
             return None

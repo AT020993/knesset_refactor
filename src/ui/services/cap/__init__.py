@@ -14,10 +14,28 @@ For backward compatibility, the main CAPAnnotationService class is available
 at the package level.
 """
 
+from logging import Logger
+from pathlib import Path
+
 from .taxonomy import CAPTaxonomyService
 from .repository import CAPAnnotationRepository
 from .statistics import CAPStatisticsService
-from .user_service import CAPUserService, get_user_service
+
+try:
+    from .user_service import CAPUserService, get_user_service
+except ModuleNotFoundError as exc:
+    if exc.name != "bcrypt":
+        raise
+
+    class CAPUserService:  # type: ignore[no-redef]
+        """Placeholder when optional dependency bcrypt is unavailable."""
+
+    def get_user_service(
+        db_path: Path, logger_obj: Logger | None = None
+    ) -> CAPUserService:  # type: ignore[no-redef]
+        raise ModuleNotFoundError(
+            "CAP user service requires optional dependency 'bcrypt'."
+        ) from exc
 
 __all__ = [
     "CAPTaxonomyService",

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Any, Callable, Optional, List
 import logging
 import pandas as pd
 import plotly.express as px
@@ -381,9 +381,9 @@ class TimeSeriesCharts(BaseChart):
 
             return fig
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested time series chart."""
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "queries_by_time": self.plot_queries_by_time_period,
             "agendas_by_time": self.plot_agendas_by_time_period,
             "bills_by_time": self.plot_bills_by_time_period,

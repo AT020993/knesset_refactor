@@ -107,7 +107,7 @@ class DocumentHandler:
         Returns:
             Dictionary for st.dataframe column_config parameter
         """
-        config = {}
+        config: Dict[str, Any] = {}
 
         # Configure primary document URL as clickable link
         if 'BillPrimaryDocumentURL' in df.columns:
@@ -232,7 +232,13 @@ class DocumentHandler:
 
             for bill_row_idx, (_, row) in enumerate(multi_doc_bills.iterrows()):
                 bill_name = row.get('BillName', 'Unknown Bill')
-                bill_id = row.get('BillID')
+                bill_id_raw = row.get('BillID')
+                if bill_id_raw is None or pd.isna(bill_id_raw):
+                    continue
+                try:
+                    bill_id = int(bill_id_raw)
+                except (TypeError, ValueError):
+                    continue
                 doc_count = row.get('BillDocumentCount', 0)
 
                 st.markdown(f"**{bill_name}** (Bill ID: {bill_id}) - {doc_count} documents")

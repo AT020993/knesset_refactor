@@ -65,7 +65,7 @@ class FactionExporter:
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
                 result = safe_execute_query(conn, query, self.logger)
-                if result is not None:
+                if isinstance(result, pd.DataFrame):
                     self.logger.info(f"Retrieved {len(result)} faction records")
                     return result
                 return pd.DataFrame()
@@ -131,7 +131,7 @@ class FactionExporter:
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
                 result = safe_execute_query(conn, query, self.logger)
-                if result is not None and not result.empty:
+                if isinstance(result, pd.DataFrame) and not result.empty:
                     return result['KnessetNum'].tolist()
                 return []
         except Exception as e:

@@ -1,14 +1,14 @@
 """Dependency injection container for the application."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 import logging
 
 from config.settings import Settings
 from utils.logger_setup import setup_logging
 
-# Import the sync wrapper from UI services (works with both sync and async contexts)
-from ui.services.data_service import SyncDataRefreshService
+# Import the sync wrapper from data services to keep layering boundaries intact.
+from data.services.sync_data_refresh_service import SyncDataRefreshService
 
 
 class DependencyContainer:
@@ -22,7 +22,7 @@ class DependencyContainer:
         Settings.ensure_directories()
 
         # Initialize services lazily
-        self._data_refresh_service = None
+        self._data_refresh_service: SyncDataRefreshService | None = None
 
     @property
     def data_refresh_service(self) -> SyncDataRefreshService:
@@ -37,4 +37,4 @@ class DependencyContainer:
         """Get a logger instance."""
         if name:
             return logging.getLogger(name)
-        return self.logger
+        return cast(logging.Logger, self.logger)

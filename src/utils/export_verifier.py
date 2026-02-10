@@ -231,4 +231,4 @@ class ExportVerifier:
             self.logger.warning(f"Unknown format type: {format_type}")
             return False
 
-        return result.get('is_valid', False)
+        return bool(result.get('is_valid', False))

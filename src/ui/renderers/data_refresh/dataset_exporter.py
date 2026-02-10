@@ -86,7 +86,10 @@ class DatasetExporter:
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                return safe_execute_query(con, full_sql_no_limit, self.logger)
+                result = safe_execute_query(con, full_sql_no_limit, self.logger)
+                if isinstance(result, pd.DataFrame):
+                    return result
+                return None
         except Exception as e:
             self.logger.error(f"Error fetching full dataset: {e}", exc_info=True)
             return None

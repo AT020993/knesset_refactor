@@ -1,8 +1,8 @@
-name: CI - Automated Testing for AI-Generated Branches
+name: CI - Quality and Test Gates
 
 on:
   push:
-    branches: ["*"] # Trigger on all branches, especially AI-generated ones
+    branches: ["*"]
   pull_request:
     branches: [main, master]
 
@@ -12,251 +12,133 @@ env:
   STREAMLIT_CACHE_DISABLED: "1"
 
 jobs:
-  test:
-    name: Test Suite
+  quality:
+    name: Quality Gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - name: ⚡ Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 📦 Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 🧪 Run critical tests only (fast)
-        timeout-minutes: 5
-        run: |
-          # Set PYTHONPATH for imports
-          export PYTHONPATH="./src:$PYTHONPATH"
-
-          # Run critical tests covering core functionality
-          pytest --tb=short --maxfail=5 -x \
-            tests/test_cli.py \
-            tests/test_fetch_table.py \
-            tests/test_connection_leaks.py \
-            tests/test_ui_utils.py \
-            tests/test_views.py || true
-          echo "✅ Quick test check completed"
-
-      - name: ✅ Quick verification
-        run: |
-          export PYTHONPATH="./src:$PYTHONPATH"
-          python -c "import streamlit, duckdb, pandas; print('✅ Core imports OK')"
-
-  code-quality:
-    name: Code Quality Checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Run in parallel with tests, not after
-    # needs: test
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-
-      - name: 📦 Install dependencies and quality tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          # Install development dependencies if file exists
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
-          else
-            # Fallback to individual installs (current behavior)
-            pip install flake8 black isort mypy
-          fi
-
-      - name: 🎨 Check code formatting with Black (optional)
-        continue-on-error: true
-        run: |
-          black --check --diff src/ tests/ || {
-            echo "⚠️ Code formatting suggestions available. Run 'black src/ tests/' to auto-format."
-          }
-
-      - name: 📏 Check import sorting with isort (optional)
-        continue-on-error: true
-        run: |
-          isort --check-only --diff src/ tests/ || {
-            echo "⚠️ Import sorting suggestions available. Run 'isort src/ tests/' to fix."
-          }
-
-      - name: 🔍 Lint with flake8 (non-blocking)
-        continue-on-error: true
-        run: |
-          # Run basic syntax check only (non-blocking)
-          flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics || {
-            echo "⚠️ Linting suggestions available (non-blocking)"
-          }
-
-      - name: 🎯 Type checking with mypy (optional)
-        continue-on-error: true
-        run: |
-          export PYTHONPATH="./src:$PYTHONPATH"
-          mypy src/ --ignore-missing-imports --no-strict-optional || {
-            echo "⚠️ Type checking suggestions available (non-blocking)"
-          }
-
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Run in parallel, not after tests
-    # needs: test
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-
-      - name: 🔒 Install security tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install safety bandit
-
-      - name: 🛡️ Check dependencies for known vulnerabilities
-        continue-on-error: true
-        run: |
-          safety check -r requirements.txt || {
-            echo "⚠️ Security vulnerabilities found in dependencies (non-blocking)"
-          }
-
-      - name: 🔍 Run Bandit security analysis
-        continue-on-error: true
-        run: |
-          bandit -r src/ -f json -o bandit-report.json || {
-            echo "⚠️ Security issues found in code (non-blocking)"
-            cat bandit-report.json || true
-          }
-
-  e2e-tests:
-    name: End-to-End Tests
-    needs: test # Run only after unit tests succeed
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: 🎭 Install Playwright Browsers
+      - name: Ruff (wave scope)
+        run: |
+          ruff check \
+            src/ui/queries \
+            src/ui/sidebar/query_handler.py \
+            src/data/services/storage_sync_service.py \
+            src/data/services/sync_data_refresh_service.py \
+            src/data/services/sync_types.py \
+            src/core/dependencies.py
+
+      - name: Mypy (wave scope)
+        run: |
+          mypy \
+            src/ui/queries \
+            src/ui/sidebar/query_handler.py \
+            src/data/services/storage_sync_service.py \
+            src/data/services/sync_data_refresh_service.py \
+            src/data/services/sync_types.py \
+            src/core/dependencies.py \
+            --ignore-missing-imports
+
+  unit-tests:
+    name: Unit and Integration Gates
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Critical regression suite
+        run: |
+          pytest --tb=short --maxfail=1 -x \
+            tests/test_cli.py \
+            tests/test_fetch_table.py \
+            tests/test_connection_leaks.py \
+            tests/test_ui_utils.py \
+            tests/test_views.py
+
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install Playwright browsers
         run: playwright install --with-deps
 
-      - name: 🚀 Run Streamlit app in background
+      - name: Start Streamlit app
         run: |
           export PYTHONPATH="./src:$PYTHONPATH"
           streamlit run src/ui/data_refresh.py --server.port 8501 &
-          echo "Waiting for Streamlit to start..."
           sleep 20
-          curl -f http://localhost:8501 || (echo "Streamlit failed to start" && exit 1)
+          curl -f http://localhost:8501
 
-      - name: 🧪 Run E2E tests
+      - name: Run E2E tests
         run: |
           export PYTHONPATH="./src:$PYTHONPATH"
           pytest -m e2e --base-url http://localhost:8501 --timeout=300
 
-      - name: 📸 Upload screenshots on failure
+      - name: Upload screenshots on failure
         uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-screenshots
           path: test-results/
 
-  ai-branch-notification:
-    name: AI Branch Testing Summary
+  summary:
+    name: CI Summary
     runs-on: ubuntu-latest
-    needs: [test, code-quality, security-scan, e2e-tests]
+    needs: [quality, unit-tests, e2e-tests]
     if: always()
 
     steps:
-      - name: 📋 Generate comprehensive test report
+      - name: Build summary
         run: |
-          echo "## 🤖 AI Branch Testing Summary" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ **Unit Tests**: All tests passed with required coverage (60%+)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Unit Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [[ "${{ needs.e2e-tests.result }}" == "success" ]]; then
-            echo "✅ **E2E Tests**: All end-to-end tests passed" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.e2e-tests.result }}" == "failure" ]]; then
-            echo "❌ **E2E Tests**: Failed - Check logs for details" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.e2e-tests.result }}" == "skipped" ]]; then
-            echo "⏭️ **E2E Tests**: Skipped due to unit test failures" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Quality Checks" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.code-quality.result }}" == "success" ]]; then
-            echo "✅ **Code Quality**: No critical issues found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ **Code Quality**: Check logs for suggestions" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [[ "${{ needs.security-scan.result }}" == "success" ]]; then
-            echo "🔒 **Security**: No critical vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ **Security**: Check logs for potential issues" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Merge Readiness" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.test.result }}" == "success" && "${{ needs.e2e-tests.result }}" == "success" ]]; then
-            echo "🎉 **Status**: This branch passes all required tests and is ready for review!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Unit tests passed" >> $GITHUB_STEP_SUMMARY
-            echo "✅ End-to-end tests passed" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Core functionality verified" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Database operations working" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Next steps:** Manual code review and merge when ready." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Status**: This branch has failing tests and needs attention before merge." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Required fixes:** Review test failures in the logs above." >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Quality: ${{ needs.quality.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit/Integration: ${{ needs.unit-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- E2E: ${{ needs.e2e-tests.result }}" >> $GITHUB_STEP_SUMMARY

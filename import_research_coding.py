@@ -17,14 +17,15 @@ import logging
 import sys
 from pathlib import Path
 
-# Ensure src is on path
 _project_root = Path(__file__).resolve().parent
-_src_dir = _project_root / "src"
-if str(_src_dir) not in sys.path:
-    sys.path.insert(0, str(_src_dir))
 
-from config.settings import Settings
-from utils.research_coding_importer import ResearchCodingImporter, ImportResult
+try:
+    from config.settings import Settings
+    from utils.research_coding_importer import ResearchCodingImporter, ImportResult
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "Import failed. Run with `PYTHONPATH=./src python import_research_coding.py ...`."
+    ) from exc
 
 
 def setup_logger() -> logging.Logger:

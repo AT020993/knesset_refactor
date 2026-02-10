@@ -1,24 +1,22 @@
 """
-CAP User Service
+CAP User Service facade.
 
-Handles researcher authentication and user management for the CAP annotation system.
-Uses bcrypt for secure password hashing with proper salt handling.
-
-Roles:
-- 'admin': Can manage other users (create, delete, reset passwords)
-- 'researcher': Can annotate bills but cannot manage users
+This module keeps the public CAPUserService API stable while delegating
+implementation details to focused operation modules.
 """
 
+from __future__ import annotations
+
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Optional
 
-import bcrypt
 import pandas as pd
-import streamlit as st
 
-from backend.connection_manager import get_db_connection, safe_execute_query
+from backend.connection_manager import get_db_connection
+from . import user_service_auth_ops as auth_ops
+from . import user_service_catalog_ops as catalog_ops
+from . import user_service_management_ops as management_ops
 
 
 class CAPUserService:
@@ -27,7 +25,6 @@ class CAPUserService:
     ROLE_ADMIN = "admin"
     ROLE_RESEARCHER = "researcher"
 
-    # Password policy constants
     MIN_PASSWORD_LENGTH = 8
     PASSWORD_REQUIREMENTS = (
         "Password must be at least 8 characters and contain: "
@@ -35,25 +32,12 @@ class CAPUserService:
     )
 
     def __init__(self, db_path: Path, logger_obj: Optional[logging.Logger] = None):
-        """Initialize the user service."""
         self.db_path = db_path
         self.logger = logger_obj or logging.getLogger(__name__)
         self._table_ensured = False
 
     def ensure_table_exists(self) -> bool:
-        """
-        Ensure the UserResearchers table exists with proper sequence for ID generation.
-
-        This is called automatically before any database queries to handle
-        the case where the table hasn't been created yet.
-
-        Note: Uses a DuckDB sequence for thread-safe ID generation instead of
-        MAX()+1, which prevents race conditions when multiple admins create
-        users simultaneously.
-
-        Returns:
-            True if table exists or was created, False on error
-        """
+        """Ensure UserResearchers table and sequence exist."""
         if self._table_ensured:
             return True
 
@@ -61,34 +45,30 @@ class CAPUserService:
             with get_db_connection(
                 self.db_path, read_only=False, logger_obj=self.logger
             ) as conn:
-                # Check if table already exists (for migration handling)
                 table_exists = conn.execute(
                     "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserResearchers'"
                 ).fetchone()
 
                 if table_exists:
-                    # Table exists - ensure sequence exists and is set correctly
                     seq_exists = conn.execute(
                         "SELECT 1 FROM duckdb_sequences() WHERE sequence_name = 'seq_researcher_id'"
                     ).fetchone()
 
                     if not seq_exists:
-                        # Migration: create sequence starting after max existing ID
-                        max_id = conn.execute(
+                        row = conn.execute(
                             "SELECT COALESCE(MAX(ResearcherID), 0) FROM UserResearchers"
-                        ).fetchone()[0]
-                        conn.execute(f"CREATE SEQUENCE seq_researcher_id START {max_id + 1}")
+                        ).fetchone()
+                        max_id = int(row[0]) if row else 0
+                        conn.execute(
+                            f"CREATE SEQUENCE seq_researcher_id START {max_id + 1}"
+                        )
                         self.logger.info(
                             f"Created seq_researcher_id starting at {max_id + 1} for existing table"
                         )
-                    # Note: We don't try to ALTER TABLE to add DEFAULT because DuckDB
-                    # doesn't allow altering tables with FK dependencies. Instead,
-                    # create_user() explicitly uses nextval('seq_researcher_id').
                 else:
-                    # New installation - create sequence starting at 1
                     conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_researcher_id START 1")
-
-                    conn.execute("""
+                    conn.execute(
+                        """
                         CREATE TABLE IF NOT EXISTS UserResearchers (
                             ResearcherID INTEGER PRIMARY KEY DEFAULT nextval('seq_researcher_id'),
                             Username VARCHAR NOT NULL UNIQUE,
@@ -100,252 +80,44 @@ class CAPUserService:
                             LastLoginAt TIMESTAMP,
                             CreatedBy VARCHAR
                         )
-                    """)
+                        """
+                    )
 
                 self._table_ensured = True
                 self.logger.debug("UserResearchers table ensured with sequence")
                 return True
-
-        except Exception as e:
-            self.logger.error(f"Error ensuring UserResearchers table: {e}", exc_info=True)
+        except Exception as exc:
+            self.logger.error(
+                f"Error ensuring UserResearchers table: {exc}", exc_info=True
+            )
             return False
-
-    # --- Password Hashing ---
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """
-        Hash a password using bcrypt with cost factor 12.
-
-        Args:
-            password: Plain text password
-
-        Returns:
-            Hashed password string
-        """
-        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+        return auth_ops.hash_password(password)
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
-        """
-        Verify a password against its hash.
-
-        Args:
-            password: Plain text password to verify
-            password_hash: Stored bcrypt hash
-
-        Returns:
-            True if password matches, False otherwise
-        """
-        try:
-            return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-        except Exception:
-            return False
+        return auth_ops.verify_password(password, password_hash)
 
     @classmethod
     def validate_password_strength(cls, password: str) -> Optional[str]:
-        """
-        Validate password meets strength requirements.
+        return auth_ops.validate_password_strength(password, cls.MIN_PASSWORD_LENGTH)
 
-        Requirements:
-        - At least 8 characters
-        - At least one uppercase letter
-        - At least one lowercase letter
-        - At least one digit
-
-        Args:
-            password: Password to validate
-
-        Returns:
-            Error message if invalid, None if valid
-        """
-        if not password:
-            return "Password is required"
-
-        if len(password) < cls.MIN_PASSWORD_LENGTH:
-            return f"Password must be at least {cls.MIN_PASSWORD_LENGTH} characters"
-
-        has_upper = any(c.isupper() for c in password)
-        has_lower = any(c.islower() for c in password)
-        has_digit = any(c.isdigit() for c in password)
-
-        if not has_upper:
-            return "Password must contain at least one uppercase letter"
-        if not has_lower:
-            return "Password must contain at least one lowercase letter"
-        if not has_digit:
-            return "Password must contain at least one digit"
-
-        return None  # Valid
-
-    # --- Authentication ---
-
-    def authenticate(self, username: str, password: str) -> Optional[Dict[str, Any]]:
-        """
-        Authenticate a user by username and password.
-
-        Args:
-            username: User's username
-            password: Plain text password
-
-        Returns:
-            User dict with id, username, display_name, role if successful, None otherwise
-        """
-        self.ensure_table_exists()
-        user_data = None
-        researcher_id = None
-
-        try:
-            # First: verify credentials with read-only connection
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    """
-                    SELECT ResearcherID, Username, DisplayName, PasswordHash, Role
-                    FROM UserResearchers
-                    WHERE Username = ? AND IsActive = TRUE
-                    """,
-                    [username],
-                ).fetchone()
-
-                if result and self.verify_password(password, result[3]):
-                    researcher_id = result[0]
-                    user_data = {
-                        "id": result[0],
-                        "username": result[1],
-                        "display_name": result[2],
-                        "role": result[4],
-                    }
-
-            # Second: update last login AFTER read connection is closed
-            # This avoids DuckDB's "different configuration" error
-            if researcher_id is not None:
-                self._update_last_login(researcher_id)
-
-            return user_data
-
-        except Exception as e:
-            self.logger.error(f"Authentication error: {e}", exc_info=True)
-            return None
+    def authenticate(self, username: str, password: str) -> Optional[dict[str, Any]]:
+        return auth_ops.authenticate(self, username, password)
 
     def _update_last_login(self, researcher_id: int) -> None:
-        """Update the last login timestamp for a user."""
-        try:
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET LastLoginAt = ?
-                    WHERE ResearcherID = ?
-                    """,
-                    [datetime.now(), researcher_id],
-                )
-        except Exception as e:
-            self.logger.warning(f"Failed to update last login: {e}")
+        auth_ops.update_last_login(self, researcher_id)
 
-    # --- User Management ---
-
-    def get_active_researchers(self) -> List[Dict[str, Any]]:
-        """
-        Get list of active researchers for login dropdown.
-
-        Returns:
-            List of dicts with username and display_name
-        """
-        self.ensure_table_exists()
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    """
-                    SELECT Username, DisplayName
-                    FROM UserResearchers
-                    WHERE IsActive = TRUE
-                    ORDER BY DisplayName
-                    """
-                ).fetchall()
-
-                return [
-                    {"username": row[0], "display_name": row[1]}
-                    for row in result
-                ]
-
-        except Exception as e:
-            self.logger.error(f"Error getting active researchers: {e}", exc_info=True)
-            return []
+    def get_active_researchers(self) -> list[dict[str, Any]]:
+        return management_ops.get_active_researchers(self)
 
     def get_all_users(self) -> pd.DataFrame:
-        """
-        Get all users (including inactive) for admin view.
+        return management_ops.get_all_users(self)
 
-        Returns:
-            DataFrame with all user information (excluding password hash)
-        """
-        self.ensure_table_exists()
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = safe_execute_query(
-                    conn,
-                    """
-                    SELECT
-                        ResearcherID,
-                        Username,
-                        DisplayName,
-                        Role,
-                        IsActive,
-                        CreatedAt,
-                        LastLoginAt,
-                        CreatedBy
-                    FROM UserResearchers
-                    ORDER BY IsActive DESC, DisplayName
-                    """,
-                    self.logger,
-                )
-                return result if result is not None else pd.DataFrame()
-
-        except Exception as e:
-            self.logger.error(f"Error getting all users: {e}", exc_info=True)
-            return pd.DataFrame()
-
-    def get_user_by_id(self, researcher_id: int) -> Optional[Dict[str, Any]]:
-        """Get a user by their ID."""
-        self.ensure_table_exists()
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    """
-                    SELECT ResearcherID, Username, DisplayName, Role, IsActive,
-                           CreatedAt, LastLoginAt, CreatedBy
-                    FROM UserResearchers
-                    WHERE ResearcherID = ?
-                    """,
-                    [researcher_id],
-                ).fetchone()
-
-                if result:
-                    return {
-                        "id": result[0],
-                        "username": result[1],
-                        "display_name": result[2],
-                        "role": result[3],
-                        "is_active": result[4],
-                        "created_at": result[5],
-                        "last_login_at": result[6],
-                        "created_by": result[7],
-                    }
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Error getting user by ID: {e}", exc_info=True)
-            return None
+    def get_user_by_id(self, researcher_id: int) -> Optional[dict[str, Any]]:
+        return management_ops.get_user_by_id(self, researcher_id)
 
     def create_user(
         self,
@@ -355,540 +127,45 @@ class CAPUserService:
         role: str = ROLE_RESEARCHER,
         created_by: Optional[str] = None,
     ) -> bool:
-        """
-        Create a new user account.
-
-        Args:
-            username: Unique username for login
-            display_name: Display name shown in UI
-            password: Plain text password (will be hashed)
-            role: 'admin' or 'researcher'
-            created_by: Username of admin who created this account
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Validate inputs
-            if not username or not display_name or not password:
-                self.logger.error("Missing required fields for user creation")
-                return False
-
-            if role not in [self.ROLE_ADMIN, self.ROLE_RESEARCHER]:
-                self.logger.error(f"Invalid role: {role}")
-                return False
-
-            # Validate password strength
-            password_error = self.validate_password_strength(password)
-            if password_error:
-                self.logger.error(f"Password validation failed: {password_error}")
-                return False
-
-            password_hash = self.hash_password(password)
-
-            self.ensure_table_exists()
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                # Explicitly use nextval() for ResearcherID since we can't ALTER existing
-                # tables with FK dependencies to add DEFAULT clause
-                conn.execute(
-                    """
-                    INSERT INTO UserResearchers
-                    (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
-                    VALUES (nextval('seq_researcher_id'), ?, ?, ?, ?, TRUE, ?, ?)
-                    """,
-                    [username, display_name, password_hash, role, datetime.now(), created_by],
-                )
-                self.logger.info(f"Created user: {username} with role: {role}")
-                return True
-
-        except Exception as e:
-            if "UNIQUE constraint" in str(e):
-                self.logger.error(f"Username already exists: {username}")
-            else:
-                self.logger.error(f"Error creating user: {e}", exc_info=True)
-            return False
+        return management_ops.create_user(
+            self,
+            username=username,
+            display_name=display_name,
+            password=password,
+            role=role,
+            created_by=created_by,
+        )
 
     def delete_user(self, researcher_id: int) -> bool:
-        """
-        Soft delete a user (sets IsActive=FALSE).
-
-        This preserves the audit trail - annotations keep the original AssignedBy value.
-
-        Args:
-            researcher_id: ID of user to delete
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET IsActive = FALSE
-                    WHERE ResearcherID = ?
-                    """,
-                    [researcher_id],
-                )
-                self.logger.info(f"Soft deleted user ID: {researcher_id}")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error deleting user: {e}", exc_info=True)
-            return False
+        return management_ops.delete_user(self, researcher_id)
 
     def reactivate_user(self, researcher_id: int) -> bool:
-        """
-        Reactivate a soft-deleted user.
-
-        Args:
-            researcher_id: ID of user to reactivate
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET IsActive = TRUE
-                    WHERE ResearcherID = ?
-                    """,
-                    [researcher_id],
-                )
-                self.logger.info(f"Reactivated user ID: {researcher_id}")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error reactivating user: {e}", exc_info=True)
-            return False
+        return management_ops.reactivate_user(self, researcher_id)
 
     def reset_password(self, researcher_id: int, new_password: str) -> bool:
-        """
-        Reset a user's password.
-
-        Args:
-            researcher_id: ID of user
-            new_password: New plain text password (will be hashed)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Validate password strength
-            password_error = self.validate_password_strength(new_password)
-            if password_error:
-                self.logger.error(f"Password validation failed: {password_error}")
-                return False
-
-            password_hash = self.hash_password(new_password)
-
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET PasswordHash = ?
-                    WHERE ResearcherID = ?
-                    """,
-                    [password_hash, researcher_id],
-                )
-                self.logger.info(f"Reset password for user ID: {researcher_id}")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error resetting password: {e}", exc_info=True)
-            return False
+        return management_ops.reset_password(self, researcher_id, new_password)
 
     def update_role(self, researcher_id: int, new_role: str) -> bool:
-        """
-        Update a user's role.
-
-        Args:
-            researcher_id: ID of user
-            new_role: New role ('admin' or 'researcher')
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if new_role not in [self.ROLE_ADMIN, self.ROLE_RESEARCHER]:
-                self.logger.error(f"Invalid role: {new_role}")
-                return False
-
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET Role = ?
-                    WHERE ResearcherID = ?
-                    """,
-                    [new_role, researcher_id],
-                )
-                self.logger.info(f"Updated role for user ID {researcher_id} to: {new_role}")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error updating role: {e}", exc_info=True)
-            return False
+        return management_ops.update_role(self, researcher_id, new_role)
 
     def update_display_name(self, researcher_id: int, new_display_name: str) -> bool:
-        """
-        Update a user's display name.
-
-        Args:
-            researcher_id: ID of user
-            new_display_name: New display name
-
-        Returns:
-            True if successful, False otherwise
-        """
-        self.ensure_table_exists()
-        try:
-            if not new_display_name or not new_display_name.strip():
-                self.logger.error("Display name cannot be empty")
-                return False
-
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                conn.execute(
-                    """
-                    UPDATE UserResearchers
-                    SET DisplayName = ?
-                    WHERE ResearcherID = ?
-                    """,
-                    [new_display_name.strip(), researcher_id],
-                )
-                self.logger.info(f"Updated display name for user ID {researcher_id}")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error updating display name: {e}", exc_info=True)
-            return False
+        return management_ops.update_display_name(self, researcher_id, new_display_name)
 
     def hard_delete_user(self, researcher_id: int) -> bool:
-        """
-        Permanently delete a user from the database.
-
-        WARNING: This is irreversible! Use delete_user() for soft delete instead.
-        Note: This will fail if the user has annotations to preserve data integrity.
-
-        Args:
-            researcher_id: ID of user to permanently delete
-
-        Returns:
-            True if successful, False otherwise
-        """
-        import duckdb
-
-        self.ensure_table_exists()
-
-        try:
-            # Check annotation count first (this handles its own errors gracefully)
-            annotation_count = self.get_user_annotation_count(researcher_id)
-            self.logger.info(f"User {researcher_id} has {annotation_count} annotations")
-            if annotation_count > 0:
-                self.logger.warning(
-                    f"Cannot hard delete user ID {researcher_id}: "
-                    f"has {annotation_count} annotations. Use soft delete instead."
-                )
-                return False
-
-            # Use raw duckdb.connect() to bypass any wrapper issues
-            self.logger.info(f"Attempting to delete user {researcher_id} using raw connection")
-            conn = duckdb.connect(str(self.db_path), read_only=False)
-            try:
-                # First verify user exists
-                user_exists = conn.execute(
-                    "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
-                    [researcher_id],
-                ).fetchone()
-
-                if not user_exists:
-                    self.logger.warning(f"User {researcher_id} does not exist")
-                    return False
-
-                # Try to delete directly first
-                try:
-                    conn.execute(
-                        "DELETE FROM UserResearchers WHERE ResearcherID = ?",
-                        [researcher_id],
-                    )
-
-                    # Verify deletion
-                    still_exists = conn.execute(
-                        "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
-                        [researcher_id],
-                    ).fetchone()
-
-                    if not still_exists:
-                        self.logger.info(f"Successfully deleted user ID: {researcher_id}")
-                        return True
-
-                except Exception as delete_e:
-                    error_str = str(delete_e)
-                    self.logger.error(f"Delete failed: {error_str}")
-
-                    # If UserBillCAP_new error, use EXPORT/IMPORT to rebuild catalog
-                    if "UserBillCAP_new" in error_str:
-                        self.logger.warning(
-                            "Corrupted catalog detected - using EXPORT/IMPORT to fix"
-                        )
-                        conn.close()
-                        conn = None
-
-                        if self._rebuild_database_catalog(researcher_id):
-                            return True
-                        return False
-
-                    raise
-
-                self.logger.error(f"Delete executed but user {researcher_id} still exists!")
-                return False
-
-            finally:
-                if conn:
-                    conn.close()
-
-        except Exception as e:
-            self.logger.error(f"Error hard deleting user: {e}", exc_info=True)
-            return False
+        return catalog_ops.hard_delete_user(self, researcher_id)
 
     def _rebuild_database_catalog(self, researcher_id_to_delete: int) -> bool:
-        """
-        Rebuild database catalog using EXPORT/IMPORT to fix corrupted FK references.
-
-        DuckDB's catalog can become corrupted when migrations are interrupted,
-        leaving dangling FK references to non-existent tables. EXPORT DATABASE
-        exports all data as Parquet and schema as SQL, then IMPORT DATABASE
-        recreates everything with a clean catalog.
-
-        Args:
-            researcher_id_to_delete: User to delete after rebuild
-
-        Returns:
-            True if rebuild and delete succeeded
-        """
-        import duckdb
-        import shutil
-        import tempfile
-        import os
-
-        self.logger.info("Starting database catalog rebuild...")
-
-        # Create temp directory for export
-        export_dir = tempfile.mkdtemp(prefix="duckdb_export_")
-        db_path_str = str(self.db_path)
-        backup_path = db_path_str + ".backup"
-
-        try:
-            # Step 1: Export the entire database
-            self.logger.info(f"Exporting database to {export_dir}...")
-            conn = duckdb.connect(db_path_str, read_only=False)
-            try:
-                # Export with Parquet format for data integrity
-                conn.execute(f"EXPORT DATABASE '{export_dir}' (FORMAT PARQUET)")
-                self.logger.info("Export completed")
-            finally:
-                conn.close()
-
-            # Step 2: Backup original database file
-            self.logger.info("Backing up original database...")
-            shutil.copy2(db_path_str, backup_path)
-
-            # Step 3: Delete original database to get clean slate
-            self.logger.info("Removing original database...")
-            os.remove(db_path_str)
-
-            # Also remove WAL file if exists
-            wal_path = db_path_str + ".wal"
-            if os.path.exists(wal_path):
-                os.remove(wal_path)
-
-            # Step 4: Create fresh database and import
-            self.logger.info("Creating fresh database and importing...")
-            conn = duckdb.connect(db_path_str, read_only=False)
-            try:
-                conn.execute(f"IMPORT DATABASE '{export_dir}'")
-                self.logger.info("Import completed")
-
-                # Step 5: Now delete the user (should work with clean catalog)
-                self.logger.info(f"Deleting user {researcher_id_to_delete}...")
-                conn.execute(
-                    "DELETE FROM UserResearchers WHERE ResearcherID = ?",
-                    [researcher_id_to_delete],
-                )
-
-                # Verify deletion
-                still_exists = conn.execute(
-                    "SELECT 1 FROM UserResearchers WHERE ResearcherID = ?",
-                    [researcher_id_to_delete],
-                ).fetchone()
-
-                if still_exists:
-                    raise RuntimeError("Delete succeeded but user still exists")
-
-                # Force checkpoint to persist changes
-                conn.execute("CHECKPOINT")
-
-                self.logger.info(
-                    f"Successfully deleted user {researcher_id_to_delete} after catalog rebuild"
-                )
-
-                # Remove backup since we succeeded
-                if os.path.exists(backup_path):
-                    os.remove(backup_path)
-
-                return True
-
-            except Exception as import_e:
-                self.logger.error(f"Import or delete failed: {import_e}")
-                conn.close()
-                conn = None
-
-                # Restore from backup
-                if os.path.exists(backup_path):
-                    self.logger.info("Restoring from backup...")
-                    if os.path.exists(db_path_str):
-                        os.remove(db_path_str)
-                    shutil.move(backup_path, db_path_str)
-
-                raise
-
-            finally:
-                if conn:
-                    conn.close()
-
-        except Exception as e:
-            self.logger.error(f"Catalog rebuild failed: {e}", exc_info=True)
-            return False
-
-        finally:
-            # Clean up export directory
-            if os.path.exists(export_dir):
-                shutil.rmtree(export_dir, ignore_errors=True)
+        return catalog_ops.rebuild_database_catalog(self, researcher_id_to_delete)
 
     def get_user_annotation_count(self, researcher_id: int) -> int:
-        """Get the number of annotations made by a user."""
-        import duckdb
-        import traceback
-
-        self.logger.info(f"get_user_annotation_count called for researcher_id={researcher_id}")
-        self.ensure_table_exists()
-
-        conn = None
-        try:
-            # Use raw duckdb.connect() to bypass connection wrapper issues
-            # The wrapper has problems with corrupted catalog state
-            conn = duckdb.connect(str(self.db_path), read_only=False)
-
-            self.logger.info("Checking if UserBillCAP table exists...")
-            # Check if UserBillCAP table exists
-            table_check = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name = 'UserBillCAP'"
-            ).fetchone()
-
-            if not table_check:
-                # No annotations table means no annotations
-                self.logger.info("UserBillCAP table does not exist, returning 0")
-                return 0
-
-            self.logger.info("Querying annotation count...")
-            result = conn.execute(
-                """
-                SELECT COUNT(*) FROM UserBillCAP
-                WHERE ResearcherID = ?
-                """,
-                [researcher_id],
-            ).fetchone()
-            self.logger.info(f"Query succeeded, count={result[0] if result else 0}")
-            return result[0] if result else 0
-
-        except Exception as e:
-            error_str = str(e)
-            # Log full traceback to understand where the error comes from
-            self.logger.error(
-                f"Error in get_user_annotation_count: {error_str}\n"
-                f"Full traceback:\n{traceback.format_exc()}"
-            )
-            # On ANY error, return 0 to allow delete to proceed
-            # This is safe because we're just checking if user has annotations
-            if "UserBillCAP_new" in error_str:
-                self.logger.error(
-                    "CRITICAL: UserBillCAP_new reference detected! "
-                    "Returning 0 to allow delete to proceed."
-                )
-            return 0
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+        return catalog_ops.get_user_annotation_count(self, researcher_id)
 
     def user_exists(self, username: str) -> bool:
-        """
-        Check if a username already exists.
-
-        Args:
-            username: Username to check
-
-        Returns:
-            True if user exists or on error (fail secure), False if user doesn't exist
-        """
-        self.ensure_table_exists()
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    "SELECT 1 FROM UserResearchers WHERE Username = ?",
-                    [username],
-                ).fetchone()
-                return result is not None
-
-        except Exception as e:
-            self.logger.error(f"Error checking user existence: {e}", exc_info=True)
-            # Fail secure: if we can't check, assume user exists to prevent duplicates
-            return True
+        return management_ops.user_exists(self, username)
 
     @staticmethod
     def validate_username(username: str) -> Optional[str]:
-        """
-        Validate username format.
-
-        Args:
-            username: Username to validate
-
-        Returns:
-            Error message if invalid, None if valid
-        """
-        import re
-
-        if not username:
-            return "Username is required"
-
-        username = username.strip()
-
-        if len(username) < 3:
-            return "Username must be at least 3 characters"
-
-        # Only allow alphanumeric and underscore
-        if not re.match(r"^[a-zA-Z0-9_]+$", username):
-            return "Username can only contain letters, numbers, and underscores"
-
-        return None
+        return management_ops.validate_username(username)
 
     def create_user_with_validation(
         self,
@@ -898,204 +175,23 @@ class CAPUserService:
         role: str,
         created_by: Optional[str] = None,
     ) -> tuple[Optional[int], Optional[str]]:
-        """
-        Create user with pre-validation checks.
-
-        This method performs all validations before attempting database insertion,
-        providing clear error messages instead of relying on DB constraint errors.
-
-        Args:
-            username: Unique username for login (alphanumeric + underscore, min 3 chars)
-            display_name: Display name shown in UI (non-empty after strip)
-            password: Plain text password (min 6 chars, will be hashed)
-            role: 'admin' or 'researcher'
-            created_by: Username of admin who created this account
-
-        Returns:
-            Tuple of (user_id, error_message).
-            - On success: (user_id, None)
-            - On error: (None, "Error description")
-        """
-        # Validate username format
-        username_error = self.validate_username(username)
-        if username_error:
-            return None, username_error
-
-        # Normalize username
-        username = username.strip().lower()
-
-        # Validate password strength
-        password_error = self.validate_password_strength(password)
-        if password_error:
-            return None, password_error
-
-        # Validate display name
-        if not display_name or not display_name.strip():
-            return None, "Display name is required"
-
-        # Validate role
-        if role not in [self.ROLE_ADMIN, self.ROLE_RESEARCHER]:
-            return None, f"Role must be '{self.ROLE_ADMIN}' or '{self.ROLE_RESEARCHER}'"
-
-        # Check if username already exists (before attempting insert)
-        if self.user_exists(username):
-            return None, f"Username '{username}' already exists"
-
-        # All validations passed - create the user
-        password_hash = self.hash_password(password)
-
-        try:
-            self.ensure_table_exists()
-            with get_db_connection(
-                self.db_path, read_only=False, logger_obj=self.logger
-            ) as conn:
-                # Insert user and return the new ID
-                conn.execute(
-                    """
-                    INSERT INTO UserResearchers
-                    (ResearcherID, Username, DisplayName, PasswordHash, Role, IsActive, CreatedAt, CreatedBy)
-                    VALUES (nextval('seq_researcher_id'), ?, ?, ?, ?, TRUE, ?, ?)
-                    """,
-                    [username, display_name.strip(), password_hash, role, datetime.now(), created_by],
-                )
-
-                # Get the ID of the newly created user
-                result = conn.execute(
-                    "SELECT ResearcherID FROM UserResearchers WHERE Username = ?",
-                    [username],
-                ).fetchone()
-
-                if result:
-                    user_id = result[0]
-                    self.logger.info(f"Created user: {username} with role: {role}")
-                    return user_id, None
-                else:
-                    return None, "User created but ID could not be retrieved"
-
-        except Exception as e:
-            if "UNIQUE constraint" in str(e):
-                # Race condition: another process created the user between our check and insert
-                return None, f"Username '{username}' already exists"
-            self.logger.error(f"Error creating user: {e}", exc_info=True)
-            return None, f"Failed to create user: {str(e)}"
+        return management_ops.create_user_with_validation(
+            self,
+            username=username,
+            display_name=display_name,
+            password=password,
+            role=role,
+            created_by=created_by,
+        )
 
     def is_user_active(self, user_id: int) -> bool:
-        """
-        Check if a user is currently active.
-
-        This is used to validate that a logged-in user hasn't been deactivated
-        by an admin since their last login. If a user is deactivated, they
-        should be logged out on their next request.
-
-        Args:
-            user_id: The user's database ID (ResearcherID)
-
-        Returns:
-            True if user exists and is active, False otherwise.
-            Returns False on database errors (fail secure).
-        """
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    """
-                    SELECT IsActive FROM UserResearchers
-                    WHERE ResearcherID = ?
-                    """,
-                    [user_id],
-                ).fetchone()
-
-                if result is None:
-                    # User doesn't exist
-                    return False
-
-                return bool(result[0])
-
-        except Exception as e:
-            # Fail secure - if we can't check, assume inactive
-            self.logger.error(f"Error checking user active status: {e}", exc_info=True)
-            return False
+        return management_ops.is_user_active(self, user_id)
 
     def get_user_count(self) -> int:
-        """Get count of all users (for bootstrap check)."""
-        self.ensure_table_exists()
-        try:
-            with get_db_connection(
-                self.db_path, read_only=True, logger_obj=self.logger
-            ) as conn:
-                result = conn.execute(
-                    "SELECT COUNT(*) FROM UserResearchers"
-                ).fetchone()
-                return result[0] if result else 0
-
-        except Exception as e:
-            self.logger.warning(f"Error getting user count: {e}")
-            return 0
+        return management_ops.get_user_count(self)
 
     def bootstrap_admin_from_secrets(self) -> bool:
-        """
-        Bootstrap an admin user from secrets.toml if no users exist.
-
-        This is only called on first run when UserResearchers table is empty.
-        After bootstrap, admin should change their password and create other users.
-
-        Returns:
-            True if admin was created or users already exist, False on error
-        """
-        try:
-            # Check if users already exist
-            if self.get_user_count() > 0:
-                return True  # Already bootstrapped
-
-            # Get bootstrap config from secrets (handle multiple formats)
-            try:
-                # Try standard section format first: [cap_annotation]
-                cap_secrets = st.secrets.get("cap_annotation", {})
-
-                # If empty, try dotted key format: cap_annotation.enabled
-                if not cap_secrets:
-                    # Check if secrets has dotted keys directly
-                    all_secrets = dict(st.secrets)
-                    cap_secrets = {
-                        k.replace("cap_annotation.", ""): v
-                        for k, v in all_secrets.items()
-                        if k.startswith("cap_annotation.")
-                    }
-
-                username = cap_secrets.get("bootstrap_admin_username", "admin")
-                display_name = cap_secrets.get("bootstrap_admin_display_name", "Administrator")
-                password = cap_secrets.get("bootstrap_admin_password")
-
-                # Fall back to legacy password field
-                if not password:
-                    password = cap_secrets.get("password")
-
-                if not password:
-                    self.logger.warning("No bootstrap password configured - skipping admin creation")
-                    self.logger.debug(f"Available secrets keys: {list(st.secrets.keys())}")
-                    return False
-
-            except Exception as e:
-                self.logger.warning(f"Could not read secrets for bootstrap: {e}")
-                return False
-
-            # Create the bootstrap admin
-            success = self.create_user(
-                username=username,
-                display_name=display_name,
-                password=password,
-                role=self.ROLE_ADMIN,
-                created_by="System Bootstrap",
-            )
-
-            if success:
-                self.logger.info(f"Bootstrap admin '{username}' created successfully")
-            return success
-
-        except Exception as e:
-            self.logger.error(f"Error bootstrapping admin: {e}", exc_info=True)
-            return False
+        return management_ops.bootstrap_admin_from_secrets(self)
 
 
 def get_user_service(

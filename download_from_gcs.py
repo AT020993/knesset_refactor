@@ -32,9 +32,6 @@ import os
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
 try:
     from google.cloud import storage
     from google.oauth2 import service_account
@@ -53,7 +50,9 @@ def get_credentials_from_resolver():
             credentials = service_account.Credentials.from_service_account_info(credentials_dict)
             return bucket_name, credentials
     except ImportError:
-        pass
+        print(
+            "Import failed. Run with `PYTHONPATH=./src python download_from_gcs.py ...`."
+        )
     except Exception as e:
         print(f"Warning: Credential resolver error: {e}")
     return None, None

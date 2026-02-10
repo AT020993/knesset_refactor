@@ -55,6 +55,10 @@ class CAPCodedBillsRenderer:
                 # Cloud storage not enabled - nothing to do
                 return True
 
+            if sync_service.gcs_manager is None:
+                self.logger.warning("Cloud sync enabled but GCS manager is not initialized")
+                return False
+
             # Upload just the database file
             from config.settings import Settings
 
@@ -411,6 +415,9 @@ class CAPCodedBillsRenderer:
                 delete = st.form_submit_button("🗑️ Delete Annotation", type="secondary")
 
             if submitted:
+                if selected_minor is None:
+                    st.error("❌ Please select a valid minor category")
+                    return False
                 submission_date = current_annotation.get("SubmissionDate", "")
 
                 # Use researcher_id for the update

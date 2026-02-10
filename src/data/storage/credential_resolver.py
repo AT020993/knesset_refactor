@@ -215,7 +215,7 @@ class GCSCredentialResolver:
             if hasattr(st, 'secrets') and 'storage' in st.secrets:
                 bucket = st.secrets['storage'].get('gcs_bucket_name')
                 if bucket:
-                    return bucket
+                    return str(bucket)
         except ImportError:
             pass
         except Exception:

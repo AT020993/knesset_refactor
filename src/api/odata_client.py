@@ -2,14 +2,16 @@
 
 import asyncio
 import sys
+import inspect
 from contextlib import contextmanager
 from math import ceil
-from typing import List, Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 from urllib.parse import urlparse
 import logging
 
 import aiohttp
 import backoff
+from backoff._typing import Details
 import pandas as pd
 from tqdm import tqdm
 
@@ -22,14 +24,14 @@ from .circuit_breaker import circuit_breaker_manager
 _module_logger = logging.getLogger(__name__)
 
 
-def _backoff_handler(details: Dict[str, Any]) -> None:
+def _backoff_handler(details: Details) -> None:
     """Module-level handler for logging backoff attempts with error categorization.
 
     Note: This is at module level because backoff decorators are evaluated at
     class definition time, not instance creation time, so we can't use self.
     """
     exception = details.get('exception')
-    if exception:
+    if isinstance(exception, Exception):
         error_category = categorize_error(exception)
         _module_logger.warning(
             f"Backing off {details['wait']:.1f}s after {error_category.value} error "
@@ -39,6 +41,21 @@ def _backoff_handler(details: Dict[str, Any]) -> None:
         _module_logger.warning(
             f"Backing off {details['wait']:.1f}s (attempt {details['tries']}/{APIConfig.MAX_RETRIES})"
         )
+
+
+async def _maybe_await(value: Any) -> Any:
+    """Await value when it is awaitable, otherwise return as-is."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def _raise_for_status(response: aiohttp.ClientResponse) -> None:
+    """Call ``raise_for_status`` for sync and async-compatible response mocks."""
+    raise_for_status = cast(Any, response.raise_for_status)
+    result = raise_for_status()
+    if inspect.isawaitable(result):
+        await result
 
 
 class _DummyProgressBar:
@@ -101,7 +118,9 @@ class ODataClient:
         base=APIConfig.RETRY_BASE_DELAY,
         max_value=APIConfig.RETRY_MAX_DELAY,
     )
-    async def fetch_json(self, session: aiohttp.ClientSession, url: str) -> dict:
+    async def fetch_json(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> dict[str, Any]:
         """Fetch JSON data from a URL with retries and circuit breaker."""
         # Get base URL for circuit breaker - use proper URL parsing for safety
         try:
@@ -118,8 +137,10 @@ class ODataClient:
         try:
             timeout = aiohttp.ClientTimeout(total=self.config.REQUEST_TIMEOUT)
             async with session.get(url, timeout=timeout) as resp:
-                resp.raise_for_status()
+                await _raise_for_status(resp)
                 result = await resp.json(content_type=None)
+                if not isinstance(result, dict):
+                    raise ValueError("Unexpected JSON payload type: expected object")
                 
                 # Record success
                 circuit_breaker_manager.record_success(base_url)
@@ -207,7 +228,7 @@ class ODataClient:
             # Get total count
             count_url = self.config.get_count_url(entity)
             total_records_resp = await session.get(count_url, timeout=aiohttp.ClientTimeout(total=30))
-            total_records_resp.raise_for_status()
+            await _raise_for_status(total_records_resp)
             total_records = int(await total_records_resp.text())
         except Exception as e:
             self.logger.warning(f"Could not get count for {table}: {e}. Using sequential download.")
@@ -222,7 +243,7 @@ class ODataClient:
         with self._get_progress_bar(desc=f"Fetching {table} (skip)", total=total_records) as pbar:
             semaphore = asyncio.Semaphore(self.config.CONCURRENCY_LIMIT)
             
-            async def fetch_page(page_index: int):
+            async def fetch_page(page_index: int) -> Tuple[int, Optional[pd.DataFrame]]:
                 async with semaphore:
                     skip_val = page_index * self.config.PAGE_SIZE
                     page_url = f"{self.config.BASE_URL}/{entity}?$format=json&$skip={skip_val}&$top={self.config.PAGE_SIZE}"
@@ -242,15 +263,16 @@ class ODataClient:
             
             # Fetch all pages
             tasks = [fetch_page(i) for i in range(num_pages)]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            gathered = await asyncio.gather(*tasks, return_exceptions=True)
+            results = cast(List[Tuple[int, Optional[pd.DataFrame]] | BaseException], gathered)
         
         # Process results
-        valid_dfs = []
+        valid_dfs: List[Tuple[int, pd.DataFrame]] = []
         for res in results:
-            if isinstance(res, Exception):
+            if isinstance(res, BaseException):
                 self.logger.error(f"Page fetch failed: {res}")
-            elif res is not None and res[1] is not None:
-                valid_dfs.append(res)
+            elif res[1] is not None:
+                valid_dfs.append((res[0], res[1]))
         
         valid_dfs.sort(key=lambda x: x[0])  # Sort by page index
         final_dfs = [df for _, df in valid_dfs]

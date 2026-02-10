@@ -88,23 +88,50 @@ def mock_session():
 # NOTE: fetch_json, download_table, and store functions have been refactored
 # into the ODataClient and DataRefreshService classes. These tests are skipped.
 
-@pytest.mark.skip(reason="load_and_store_faction_statuses is a placeholder in legacy module")
 def test_load_and_store_faction_statuses(mock_db, tmp_path):
-    """Test loading and storing faction status data - skipped as function is placeholder."""
-    pass
+    """Test load_and_store_faction_statuses delegates to repository layer."""
+    with mock.patch("src.backend.fetch_table.DatabaseRepository") as mock_repo_cls:
+        mock_repo = mock_repo_cls.return_value
+        mock_repo.load_faction_coalition_status.return_value = True
+
+        result = load_and_store_faction_statuses()
+
+        assert result is True
+        mock_repo_cls.assert_called_once()
+        mock_repo.load_faction_coalition_status.assert_called_once()
 
 
-@pytest.mark.skip(reason="refresh_tables is a placeholder in legacy module")
 @pytest.mark.asyncio
 async def test_refresh_tables(mock_session, mock_db):
-    """Test the refresh_tables function - skipped as function is placeholder."""
-    pass
+    """Test refresh_tables delegates to DataRefreshService with adapted callback."""
+    with mock.patch("src.backend.fetch_table.DataRefreshService") as mock_service_cls:
+        mock_service = mock_service_cls.return_value
+        mock_service.refresh_tables = mock.AsyncMock(return_value=True)
+        progress_cb = mock.Mock()
+
+        result = await refresh_tables(tables=["KNS_Person"], progress_cb=progress_cb)
+
+        assert result is True
+        mock_service_cls.assert_called_once()
+        mock_service.refresh_tables.assert_awaited_once()
+        callback = mock_service.refresh_tables.await_args.kwargs["progress_callback"]
+        callback("KNS_Person", 42)
+        progress_cb.assert_called_once_with("KNS_Person", 42)
 
 
-@pytest.mark.skip(reason="ensure_latest wraps placeholder refresh_tables")
 def test_ensure_latest(mock_db):
-    """Test the ensure_latest function - skipped as function wraps placeholder."""
-    pass
+    """Test ensure_latest delegates to DataRefreshService.refresh_tables_sync."""
+    with mock.patch("src.backend.fetch_table.DataRefreshService") as mock_service_cls:
+        mock_service = mock_service_cls.return_value
+        mock_service.refresh_tables_sync.return_value = True
+
+        result = ensure_latest(tables=["KNS_Person"])
+
+        assert result is True
+        mock_service_cls.assert_called_once()
+        mock_service.refresh_tables_sync.assert_called_once_with(
+            tables=["KNS_Person"]
+        )
 
 
 @pytest.mark.skip(reason="fetch_json does not exist in legacy module")
@@ -364,25 +391,34 @@ class TestLegacyModuleStructure:
 
 
 @pytest.mark.asyncio
-async def test_refresh_tables_placeholder_runs():
-    """Test that the placeholder refresh_tables at least runs without error."""
+async def test_refresh_tables_runs_with_mocked_service():
+    """Test refresh_tables returns service result without hitting network."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        # Should not raise
-        await refresh_tables(tables=["KNS_Person"])
+        with mock.patch("src.backend.fetch_table.DataRefreshService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.refresh_tables = mock.AsyncMock(return_value=False)
+            result = await refresh_tables(tables=["KNS_Person"])
+            assert result is False
 
 
-def test_ensure_latest_placeholder_runs():
-    """Test that the placeholder ensure_latest at least runs without error."""
+def test_ensure_latest_runs_with_mocked_service():
+    """Test ensure_latest returns service result without running network fetch."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        # Should not raise
-        ensure_latest(tables=["KNS_Person"])
+        with mock.patch("src.backend.fetch_table.DataRefreshService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.refresh_tables_sync.return_value = False
+            result = ensure_latest(tables=["KNS_Person"])
+            assert result is False
 
 
-def test_load_and_store_faction_statuses_placeholder_runs():
-    """Test that the placeholder load_and_store_faction_statuses runs without error."""
+def test_load_and_store_faction_statuses_runs_with_mocked_repo():
+    """Test faction status loader returns repository result."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        # Should not raise
-        load_and_store_faction_statuses()
+        with mock.patch("src.backend.fetch_table.DatabaseRepository") as mock_repo_cls:
+            mock_repo = mock_repo_cls.return_value
+            mock_repo.load_faction_coalition_status.return_value = True
+            result = load_and_store_faction_statuses()
+            assert result is True

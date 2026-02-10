@@ -6,11 +6,18 @@ of the application work together as expected.
 """
 
 import re
+import os
 import pytest
 from playwright.sync_api import Page, expect
 
 # Mark all tests in this file as E2E tests
-pytestmark = pytest.mark.e2e
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        os.environ.get("RUN_E2E") != "1",
+        reason="E2E tests require Playwright browser runtime; set RUN_E2E=1 to enable.",
+    ),
+]
 
 
 def test_main_page_title_and_header(page: Page):

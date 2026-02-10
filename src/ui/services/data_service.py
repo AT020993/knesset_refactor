@@ -1,89 +1,14 @@
 """Data service for UI layer."""
 
-import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 import pandas as pd
 
 # Use the real repository from data layer
+from data.services.sync_data_refresh_service import SyncDataRefreshService
 from data.repositories.database_repository import DatabaseRepository
 from config.settings import Settings
-
-
-class SyncDataRefreshService:
-    """
-    Synchronous wrapper for data refresh operations.
-
-    This provides a sync interface for UI code that needs to call
-    refresh operations. It wraps the async DataRefreshService or
-    falls back to legacy refresh methods.
-    """
-
-    def __init__(
-        self,
-        db_path: Optional[Path] = None,
-        logger_obj: Optional[logging.Logger] = None
-    ):
-        self.db_path = db_path or Settings.get_db_path()
-        self.logger = logger_obj or logging.getLogger(__name__)
-        self._async_service = None
-
-    def _get_async_service(self):
-        """Lazy-load the async service to avoid circular imports."""
-        if self._async_service is None:
-            try:
-                from data.services.data_refresh_service import DataRefreshService
-                self._async_service = DataRefreshService(self.db_path, self.logger)
-            except ImportError as e:
-                self.logger.warning(f"Could not import DataRefreshService: {e}")
-        return self._async_service
-
-    def refresh_tables_sync(
-        self,
-        tables: Optional[List[str]] = None,
-        progress_callback=None
-    ) -> bool:
-        """
-        Synchronously refresh data tables.
-
-        Args:
-            tables: List of table names to refresh. If None, refreshes all.
-            progress_callback: Optional callback for progress updates.
-
-        Returns:
-            True if refresh successful, False otherwise.
-        """
-        try:
-            async_service = self._get_async_service()
-            if async_service:
-                # Run async refresh in event loop
-                return asyncio.run(
-                    async_service.refresh_tables(tables, progress_callback)
-                )
-            else:
-                # Fallback to legacy method
-                from backend.fetch_table import ensure_latest
-                ensure_latest(tables=tables, db_path=self.db_path)
-                return True
-        except Exception as e:
-            self.logger.error(f"Error in refresh_tables_sync: {e}", exc_info=True)
-            return False
-
-    def refresh_faction_status_only(self) -> bool:
-        """
-        Refresh only the faction coalition status data.
-
-        Returns:
-            True if refresh successful, False otherwise.
-        """
-        try:
-            # Use the repository to load faction status from CSV
-            repo = DatabaseRepository(self.db_path, self.logger)
-            return repo.load_faction_coalition_status()
-        except Exception as e:
-            self.logger.error(f"Error refreshing faction status: {e}", exc_info=True)
-            return False
 
 
 class DataService:

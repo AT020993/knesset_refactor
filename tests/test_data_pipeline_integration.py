@@ -11,14 +11,14 @@ import pandas as pd
 import aiohttp
 from typing import Dict, List, Any, Optional
 
-from src.data.services.data_refresh_service import DataRefreshService
-from src.data.repositories.database_repository import DatabaseRepository
-from src.api.odata_client import ODataClient
-from src.api.circuit_breaker import CircuitBreaker, circuit_breaker_manager
-from src.api.error_handling import categorize_error, ErrorCategory
-from src.backend.connection_manager import get_db_connection
-from src.config.database import DatabaseConfig
-from src.config.settings import Settings
+from data.services.data_refresh_service import DataRefreshService
+from data.repositories.database_repository import DatabaseRepository
+from api.odata_client import ODataClient
+from api.circuit_breaker import CircuitBreaker, circuit_breaker_manager
+from api.error_handling import categorize_error, ErrorCategory
+from backend.connection_manager import get_db_connection
+from config.database import DatabaseConfig
+from config.settings import Settings
 
 
 class TestEndToEndPipeline:
@@ -49,7 +49,7 @@ class TestEndToEndPipeline:
         ])
 
         # Mock cloud storage initialization to avoid Streamlit secrets error
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             # Mock the download_table method as AsyncMock
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.return_value = mock_person_data
@@ -97,7 +97,7 @@ class TestEndToEndPipeline:
             return pd.DataFrame()
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_table
 
@@ -127,7 +127,7 @@ class TestEndToEndPipeline:
         ])
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.return_value = mock_data
 
@@ -164,7 +164,7 @@ class TestResumeStateIntegration:
         ])
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.return_value = mock_data
 
@@ -219,16 +219,16 @@ class TestCircuitBreakerIntegration:
         # and each failed attempt increments the failure count
         assert failures >= 3  # At least threshold failures
         # Check state is OPEN (using enum value)
-        from src.config.api import CircuitBreakerState
+        from config.api import CircuitBreakerState
         assert test_breaker.state == CircuitBreakerState.OPEN
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_recovery(self):
         """Test circuit breaker recovery after failures."""
-        from src.config.api import CircuitBreakerState
+        from config.api import CircuitBreakerState
 
         # Mock time to avoid real sleep
-        with patch('src.api.circuit_breaker.time.time') as mock_time:
+        with patch('api.circuit_breaker.time.time') as mock_time:
             current_time = 0.0
             mock_time.return_value = current_time
 
@@ -269,7 +269,7 @@ class TestCircuitBreakerIntegration:
             raise aiohttp.ClientConnectionError("Network down")
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_table
 
@@ -310,7 +310,7 @@ class TestErrorHandlingIntegration:
                 raise error
 
             # Mock cloud storage initialization
-            with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+            with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
                 with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                     mock_download.side_effect = mock_download_table
 
@@ -337,7 +337,7 @@ class TestErrorHandlingIntegration:
             )
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_table
 
@@ -363,7 +363,7 @@ class TestErrorHandlingIntegration:
             raise json.JSONDecodeError("Invalid JSON", "test", 0)
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_table
 
@@ -482,7 +482,7 @@ class TestPerformanceIntegration:
             return pd.DataFrame()
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_table
 
@@ -556,7 +556,7 @@ class TestRealWorldScenarios:
         ])
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             service = DataRefreshService(test_db_path)
             repo = DatabaseRepository(test_db_path)
 
@@ -604,7 +604,7 @@ class TestRealWorldScenarios:
                 return pd.DataFrame.from_records(success_data["value"])
 
         # Mock cloud storage initialization
-        with patch('src.data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
+        with patch('data.services.storage_sync_service.create_gcs_manager_from_streamlit_secrets', return_value=None):
             with patch.object(ODataClient, 'download_table', new_callable=AsyncMock) as mock_download:
                 mock_download.side_effect = mock_download_with_failure
 

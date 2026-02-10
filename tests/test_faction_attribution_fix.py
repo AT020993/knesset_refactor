@@ -18,9 +18,6 @@ import pandas as pd
 from unittest.mock import MagicMock, patch
 
 # Import the chart class
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-
 from ui.charts.comparison import ComparisonCharts
 import logging
 

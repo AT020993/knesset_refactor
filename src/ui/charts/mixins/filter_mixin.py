@@ -101,7 +101,7 @@ class ChartFilterMixin:
                 - builder: SecureQueryBuilder with bound parameters
         """
         builder = SecureQueryBuilder()
-        filters = {}
+        filters: Dict[str, Any] = {}
 
         # Add table prefix with dot if provided
         prefix = f"{table_prefix}." if table_prefix else ""

@@ -151,9 +151,13 @@ class ChartDataMixin:
                         processed_query = processed_query.replace(f'${param_name}', '?', 1)
                         param_values.append(value)
 
-                    return safe_execute_query(con, processed_query, _self.logger, param_values)
+                    result = safe_execute_query(
+                        con, processed_query, _self.logger, param_values
+                    )
+                    return result if isinstance(result, pd.DataFrame) else None
                 else:
-                    return safe_execute_query(con, query, _self.logger)
+                    result = safe_execute_query(con, query, _self.logger)
+                    return result if isinstance(result, pd.DataFrame) else None
         except Exception as e:
             _self.logger.error(f"Error executing query: {e}", exc_info=True)
             _self.show_error(f"Error executing query: {e}")

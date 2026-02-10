@@ -12,7 +12,8 @@ Common utilities are in network_utils.py
 """
 
 import logging
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Callable, List, Optional
 
 import plotly.graph_objects as go
 
@@ -35,19 +36,20 @@ class NetworkCharts(BaseChart):
     For direct usage, consider importing the specific chart classes instead.
     """
 
-    def __init__(self, db_path: str, logger: Optional[logging.Logger] = None):
+    def __init__(self, db_path: Path, logger: Optional[logging.Logger] = None):
         """Initialize NetworkCharts with database path.
 
         Args:
             db_path: Path to the DuckDB database file
             logger: Optional logger instance
         """
-        super().__init__(db_path, logger)
+        logger_obj = logger or logging.getLogger(__name__)
+        super().__init__(db_path, logger_obj)
         # Initialize specialized chart instances
-        self._mk_network = MKCollaborationNetwork(db_path, logger)
-        self._faction_network = FactionCollaborationNetwork(db_path, logger)
-        self._coalition_breakdown = CoalitionBreakdownChart(db_path, logger)
-        self._collaboration_matrix = CollaborationMatrixChart(db_path, logger)
+        self._mk_network = MKCollaborationNetwork(db_path, logger_obj)
+        self._faction_network = FactionCollaborationNetwork(db_path, logger_obj)
+        self._coalition_breakdown = CoalitionBreakdownChart(db_path, logger_obj)
+        self._collaboration_matrix = CollaborationMatrixChart(db_path, logger_obj)
 
     def plot_mk_collaboration_network(
         self,
@@ -173,7 +175,7 @@ class NetworkCharts(BaseChart):
         """
         return get_layout_explanation()
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested network chart.
 
         Args:
@@ -183,7 +185,7 @@ class NetworkCharts(BaseChart):
         Returns:
             Plotly Figure object or None if unknown chart type
         """
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "mk_collaboration_network": self.plot_mk_collaboration_network,
             "faction_collaboration_network": self.plot_faction_collaboration_network,
             "faction_collaboration_matrix": self.plot_faction_collaboration_matrix,

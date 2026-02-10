@@ -69,8 +69,12 @@ class DataRefreshService:
                 self.logger.error(f"Failed to store table: {table_name}")
                 return False
                 
-        except Exception as e:
-            self.logger.error(f"Error refreshing table {table_name}: {e}", exc_info=True)
+        except Exception:
+            self.logger.error(
+                "Error refreshing table %s",
+                table_name,
+                exc_info=True,
+            )
             return False
     
     async def refresh_tables(
@@ -120,8 +124,8 @@ class DataRefreshService:
                         self.logger.info("Successfully synced data to cloud storage")
                     else:
                         self.logger.warning("Cloud storage sync completed with some errors")
-                except Exception as e:
-                    self.logger.error(f"Error during cloud sync: {e}", exc_info=True)
+                except Exception:
+                    self.logger.error("Error during cloud sync", exc_info=True)
                     # Don't fail the entire refresh if cloud sync fails
         else:
             self.logger.warning(f"Refresh completed with {success_count}/{len(tables_to_refresh)} table successes")
@@ -167,10 +171,10 @@ class DataRefreshService:
                     tables_to_refresh = tables
 
                     # Thread-safe logging callback (just logs, doesn't update UI)
-                    def logging_callback(table_name: str, row_count: int):
+                    def logging_callback(table_name: str, row_count: int) -> None:
                         service.logger.info(f"Downloaded {table_name}: {row_count:,} rows")
 
-                    def run_in_thread():
+                    def run_in_thread() -> bool:
                         service.logger.info("Thread started, creating new event loop")
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)
@@ -193,7 +197,7 @@ class DataRefreshService:
                         try:
                             result = future.result(timeout=600)  # 10 minute timeout
                             self.logger.info(f"Thread pool returned: {result}")
-                            return result
+                            return bool(result)
                         except concurrent.futures.TimeoutError:
                             self.logger.error("Data refresh timed out after 10 minutes")
                             raise RuntimeError(
@@ -206,8 +210,8 @@ class DataRefreshService:
                 self.logger.info("No existing event loop (CLI context)")
                 return asyncio.run(self.refresh_tables(tables, progress_callback))
 
-        except Exception as e:
-            self.logger.error(f"Error during synchronous refresh: {e}", exc_info=True)
+        except Exception:
+            self.logger.error("Error during synchronous refresh", exc_info=True)
             return False
     
     def refresh_faction_status_only(self) -> bool:

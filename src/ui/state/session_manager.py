@@ -10,12 +10,15 @@ import streamlit as st
 from typing import Optional, List, Any
 from datetime import date
 
+from .state_contracts import FilterState, PlotState, QueryState, TableExplorerState
+from .state_ops import initialize_state_keys, reset_state_group
+
 
 class SessionStateManager:
     """Manages Streamlit session state with type-safe accessors."""
-    
+
     # Session state key definitions for type safety
-    QUERY_KEYS = {
+    QUERY_KEYS: dict[str, Any] = {
         'selected_query_name': None,
         'executed_query_name': None,
         'executed_sql_string': "",
@@ -26,19 +29,19 @@ class SessionStateManager:
         'applied_filters_info_query': lambda: [],
     }
     
-    TABLE_EXPLORER_KEYS = {
+    TABLE_EXPLORER_KEYS: dict[str, Any] = {
         'selected_table_for_explorer': None,
         'executed_table_explorer_name': None,
         'table_explorer_df': lambda: pd.DataFrame(),
         'show_table_explorer_results': False,
     }
-    
-    FILTER_KEYS = {
+
+    FILTER_KEYS: dict[str, Any] = {
         'ms_knesset_filter': lambda: [],
         'ms_faction_filter': lambda: [],
     }
-    
-    PLOT_KEYS = {
+
+    PLOT_KEYS: dict[str, Any] = {
         'selected_plot_topic': "",
         'selected_plot_name_from_topic': "",
         'generated_plot_figure': None,
@@ -63,7 +66,7 @@ class SessionStateManager:
         'available_bill_statuses': lambda: [],
     }
     
-    CHART_BUILDER_KEYS = {
+    CHART_BUILDER_KEYS: dict[str, Any] = {
         'builder_selected_table': None,
         'builder_selected_table_previous_run': None,
     }
@@ -78,22 +81,13 @@ class SessionStateManager:
             **cls.PLOT_KEYS,
             **cls.CHART_BUILDER_KEYS
         }
-        
-        for key, default_value in all_keys.items():
-            if key not in st.session_state:
-                if callable(default_value):
-                    st.session_state[key] = default_value()
-                else:
-                    st.session_state[key] = default_value
+
+        initialize_state_keys(all_keys)
 
     @classmethod
     def reset_query_state(cls) -> None:
         """Reset all query-related session state."""
-        for key, default_value in cls.QUERY_KEYS.items():
-            if callable(default_value):
-                st.session_state[key] = default_value()
-            else:
-                st.session_state[key] = default_value
+        reset_state_group(cls.QUERY_KEYS)
 
     @classmethod
     def reset_plot_state(cls, keep_topic: bool = False) -> None:
@@ -114,11 +108,7 @@ class SessionStateManager:
     @classmethod
     def reset_table_explorer_state(cls) -> None:
         """Reset table explorer-related session state."""
-        for key, default_value in cls.TABLE_EXPLORER_KEYS.items():
-            if callable(default_value):
-                st.session_state[key] = default_value()
-            else:
-                st.session_state[key] = default_value
+        reset_state_group(cls.TABLE_EXPLORER_KEYS)
 
     # Type-safe getters
     @classmethod
@@ -255,3 +245,77 @@ class SessionStateManager:
         """Set the global filters."""
         st.session_state.ms_knesset_filter = knesset_filter
         st.session_state.ms_faction_filter = faction_filter
+
+    @classmethod
+    def get_query_state(cls) -> QueryState:
+        """Return grouped query state snapshot."""
+        return QueryState(
+            selected_query_name=st.session_state.get('selected_query_name'),
+            executed_query_name=st.session_state.get('executed_query_name'),
+            executed_sql_string=st.session_state.get('executed_sql_string', ""),
+            query_results_df=st.session_state.get('query_results_df', pd.DataFrame()),
+            show_query_results=st.session_state.get('show_query_results', False),
+            applied_knesset_filter_to_query=st.session_state.get(
+                'applied_knesset_filter_to_query', []
+            ),
+            last_executed_sql=st.session_state.get('last_executed_sql', ""),
+            applied_filters_info_query=st.session_state.get(
+                'applied_filters_info_query', []
+            ),
+        )
+
+    @classmethod
+    def get_plot_state(cls) -> PlotState:
+        """Return grouped plot state snapshot."""
+        return PlotState(
+            selected_plot_topic=st.session_state.get('selected_plot_topic', ""),
+            selected_plot_name_from_topic=st.session_state.get(
+                'selected_plot_name_from_topic', ""
+            ),
+            generated_plot_figure=st.session_state.get('generated_plot_figure'),
+            plot_main_knesset_selection=st.session_state.get(
+                'plot_main_knesset_selection', ""
+            ),
+            plot_aggregation_level=st.session_state.get(
+                'plot_aggregation_level', "Yearly"
+            ),
+            plot_show_average_line=st.session_state.get(
+                'plot_show_average_line', False
+            ),
+            plot_start_date=st.session_state.get('plot_start_date'),
+            plot_end_date=st.session_state.get('plot_end_date'),
+            plot_query_type_filter=st.session_state.get('plot_query_type_filter', []),
+            plot_query_status_filter=st.session_state.get('plot_query_status_filter', []),
+            plot_session_type_filter=st.session_state.get('plot_session_type_filter', []),
+            plot_agenda_status_filter=st.session_state.get(
+                'plot_agenda_status_filter', []
+            ),
+            plot_bill_type_filter=st.session_state.get('plot_bill_type_filter', []),
+            plot_bill_status_filter=st.session_state.get('plot_bill_status_filter', []),
+        )
+
+    @classmethod
+    def get_table_explorer_state(cls) -> TableExplorerState:
+        """Return grouped table-explorer state snapshot."""
+        return TableExplorerState(
+            selected_table_for_explorer=st.session_state.get('selected_table_for_explorer'),
+            executed_table_explorer_name=st.session_state.get(
+                'executed_table_explorer_name'
+            ),
+            table_explorer_df=st.session_state.get('table_explorer_df', pd.DataFrame()),
+            show_table_explorer_results=st.session_state.get(
+                'show_table_explorer_results', False
+            ),
+            builder_selected_table=st.session_state.get('builder_selected_table'),
+            builder_selected_table_previous_run=st.session_state.get(
+                'builder_selected_table_previous_run'
+            ),
+        )
+
+    @classmethod
+    def get_filter_state(cls) -> FilterState:
+        """Return grouped global filter state snapshot."""
+        return FilterState(
+            ms_knesset_filter=st.session_state.get('ms_knesset_filter', []),
+            ms_faction_filter=st.session_state.get('ms_faction_filter', []),
+        )

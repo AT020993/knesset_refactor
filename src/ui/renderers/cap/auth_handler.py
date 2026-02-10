@@ -94,14 +94,14 @@ class CAPAuthHandler:
 
         # Must have a login time recorded
         login_time = st.session_state.get("cap_login_time")
-        if login_time is None:
+        if login_time is None or not isinstance(login_time, datetime):
             return False
 
         # Check if session has expired
         session_age = datetime.now() - login_time
         max_age = timedelta(hours=SESSION_TIMEOUT_HOURS)
 
-        return session_age < max_age
+        return bool(session_age < max_age)
 
     @staticmethod
     def _clear_session():
@@ -148,7 +148,7 @@ class CAPAuthHandler:
     def _record_failed_attempt(username: str) -> int:
         """Record a failed login attempt and return the new count."""
         attempts_key = CAPAuthHandler._get_failed_attempts_key(username)
-        current_attempts = st.session_state.get(attempts_key, 0) + 1
+        current_attempts = int(st.session_state.get(attempts_key, 0)) + 1
         st.session_state[attempts_key] = current_attempts
 
         # Check if we should lock the account
@@ -346,7 +346,7 @@ class CAPAuthHandler:
     @staticmethod
     def is_feature_enabled() -> bool:
         """Check if CAP annotation feature is enabled."""
-        return _get_cap_secrets().get("enabled", False)
+        return bool(_get_cap_secrets().get("enabled", False))
 
     @staticmethod
     def render_disabled_message():

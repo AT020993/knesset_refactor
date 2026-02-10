@@ -7,6 +7,7 @@ Handles the logic for refreshing database tables from the Knesset API.
 import logging
 import time
 from pathlib import Path
+from typing import Callable
 
 import streamlit as st
 
@@ -22,8 +23,10 @@ SELECT_ALL_TABLES_OPTION = "🔄 Select/Deselect All Tables"
 
 
 def handle_data_refresh_button_click(
-    db_path: Path, ui_logger: logging.Logger, format_exc_func: callable
-):
+    db_path: Path,
+    ui_logger: logging.Logger,
+    format_exc_func: Callable[[], str],
+) -> None:
     """Handles the logic for the 'Refresh Selected Data' button click.
 
     Args:

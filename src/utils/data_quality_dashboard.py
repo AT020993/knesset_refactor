@@ -77,9 +77,10 @@ class DataQualityDashboard:
             # Get basic database stats
             try:
                 with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                    table_count = con.execute(
+                    row = con.execute(
                         "SELECT COUNT(*) as count FROM duckdb_tables() WHERE schema_name='main'"
-                    ).fetchone()[0]
+                    ).fetchone()
+                    table_count = int(row[0]) if row else 0
                     
                 st.metric("Tables Available", table_count)
             except Exception as e:
@@ -222,9 +223,10 @@ class DataQualityDashboard:
     
     def _run_quick_validation(self) -> Dict[str, Any]:
         """Run a quick validation check."""
-        results = {
+        checks_results: List[Dict[str, Any]] = []
+        results: Dict[str, Any] = {
             'timestamp': datetime.now().isoformat(),
-            'checks': []
+            'checks': checks_results
         }
         
         try:
@@ -240,14 +242,15 @@ class DataQualityDashboard:
                 
                 for check_name, query in checks:
                     try:
-                        result = con.execute(query).fetchone()[0]
-                        results['checks'].append({
+                        row = con.execute(query).fetchone()
+                        value = int(row[0]) if row else 0
+                        checks_results.append({
                             'name': check_name,
-                            'value': result,
+                            'value': value,
                             'status': 'success'
                         })
                     except Exception as e:
-                        results['checks'].append({
+                        checks_results.append({
                             'name': check_name,
                             'value': 0,
                             'status': 'error',

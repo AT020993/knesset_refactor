@@ -6,7 +6,7 @@ This module provides functionality for visualizing agenda analytics:
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -338,7 +338,7 @@ class AgendaComparisonCharts(BaseChart):
             st.error(f"Could not generate 'Agendas by Coalition Status' plot: {e}")
             return None
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested agenda comparison chart.
 
         Args:
@@ -348,7 +348,7 @@ class AgendaComparisonCharts(BaseChart):
         Returns:
             Plotly Figure object or None if unknown chart type
         """
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "agendas_per_faction": self.plot_agendas_per_faction,
             "agendas_by_coalition_status": self.plot_agendas_by_coalition_status,
         }

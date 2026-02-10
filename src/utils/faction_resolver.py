@@ -100,9 +100,9 @@ class FactionResolver:
         person_id_field: str = "PersonID",
         knesset_num_field: str = "KnessetNum",
         additional_joins: str = "",
-        select_fields: List[str] = None,
+        select_fields: Optional[List[str]] = None,
         where_clause: str = "1=1",
-        group_by_fields: List[str] = None,
+        group_by_fields: Optional[List[str]] = None,
         order_by_clause: str = ""
     ) -> str:
         """

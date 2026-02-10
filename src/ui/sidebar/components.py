@@ -83,11 +83,11 @@ def display_sidebar(
     exports_arg: Dict[str, Any],
     connect_func_arg: Callable[..., Any],
     get_db_table_list_func_arg: Callable[[], List[str]],
-    get_table_columns_func_arg: Callable[[str], List[str]],
-    get_filter_options_func_arg: Callable[[], Tuple[List[int], List[str]]],
+    get_table_columns_func_arg: Callable[[str], Tuple[List[str], List[str], List[str]]],
+    get_filter_options_func_arg: Callable[[], Tuple[List[int], Any]],
     faction_display_map_arg: Dict[str, int],
     ui_logger_arg: logging.Logger,
-    format_exc_func_arg: Callable[[Exception], str],
+    format_exc_func_arg: Callable[..., str],
 ) -> None:
     """Renders all sidebar components.
 
@@ -149,7 +149,7 @@ def display_sidebar(
 
 
 def _render_data_management_section(
-    db_path: Path, ui_logger: logging.Logger, format_exc_func: Callable[[Exception], str]
+    db_path: Path, ui_logger: logging.Logger, format_exc_func: Callable[..., str]
 ) -> None:
     """Render the data management section of the sidebar."""
     st.sidebar.header("💾 Data Management")
@@ -178,7 +178,7 @@ def _render_query_templates_section(
     db_path: Path,
     connect_func: Callable[..., Any],
     ui_logger: logging.Logger,
-    format_exc_func: Callable[[Exception], str],
+    format_exc_func: Callable[..., str],
     faction_display_map: Dict[str, int],
 ) -> None:
     """Render the query templates section of the sidebar."""
@@ -220,9 +220,9 @@ def _render_table_explorer_section(
     db_path: Path,
     connect_func: Callable[..., Any],
     get_db_table_list_func: Callable[[], List[str]],
-    get_table_columns_func: Callable[[str], List[str]],
+    get_table_columns_func: Callable[[str], Tuple[List[str], List[str], List[str]]],
     ui_logger: logging.Logger,
-    format_exc_func: Callable[[Exception], str],
+    format_exc_func: Callable[..., str],
     faction_display_map: Dict[str, int],
 ) -> None:
     """Render the table explorer section of the sidebar."""

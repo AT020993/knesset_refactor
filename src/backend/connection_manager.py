@@ -186,13 +186,13 @@ def get_db_connection(
             "warning"
         )
 
-        conn = duckdb.connect(database=":memory:", read_only=False)
-        _connection_monitor.register_connection(conn, ":memory:")
+        fallback_conn = duckdb.connect(database=":memory:", read_only=False)
+        _connection_monitor.register_connection(fallback_conn, ":memory:")
         try:
-            yield conn
+            yield fallback_conn
         finally:
-            _connection_monitor.unregister_connection(conn)
-            conn.close()
+            _connection_monitor.unregister_connection(fallback_conn)
+            fallback_conn.close()
             logger_obj.debug("Closed in-memory fallback connection")
         return
 
@@ -200,7 +200,7 @@ def get_db_connection(
         logger_obj.info(f"Database {db_path} does not exist. It will be created.")
         ui_notify(f"Database {db_path} will be created during write operation.", "info")
 
-    conn = None
+    conn: duckdb.DuckDBPyConnection | None = None
     try:
         conn = duckdb.connect(database=db_path.as_posix(), read_only=read_only)
         _connection_monitor.register_connection(conn, str(db_path))

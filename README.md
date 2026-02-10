@@ -45,7 +45,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # 4. Download sample data (5-10 minutes)
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Person
+PYTHONPATH=./src python -m cli refresh --table KNS_Person
 
 # 5. Start the app
 streamlit run src/ui/data_refresh.py
@@ -116,10 +116,13 @@ Full documentation: `docs/KnessetOdataManual.pdf`
 
 ```bash
 # Download all tables
-PYTHONPATH="./src" python -m backend.fetch_table --all
+PYTHONPATH=./src python -m cli refresh
 
 # Download specific table
-PYTHONPATH="./src" python -m backend.fetch_table --table KNS_Query
+PYTHONPATH=./src python -m cli refresh --table KNS_Query
+
+# Refresh only faction coalition status
+PYTHONPATH=./src python -m cli refresh-factions
 
 # Alternative: use script
 bash scripts/refresh_all.sh
@@ -135,15 +138,15 @@ bash scripts/refresh_all.sh
 
 ```bash
 # Run all tests
-pytest
+PYTHONPATH=./src pytest
 
 # With coverage report
-pytest --cov=src --cov-report=term-missing
+PYTHONPATH=./src pytest --cov=src --cov-report=term-missing
 
 # End-to-end tests (requires app running)
 pip install -r requirements-dev.txt
 playwright install
-pytest -m e2e --base-url http://localhost:8501
+PYTHONPATH=./src pytest -m e2e --base-url http://localhost:8501
 ```
 
 ## Contributing

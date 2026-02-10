@@ -7,7 +7,7 @@ This module provides functionality for visualizing bill analytics:
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -545,7 +545,7 @@ class BillComparisonCharts(BaseChart):
             st.error(f"Could not generate 'Top Bill Initiators' plot: {e}")
             return None
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested bill comparison chart.
 
         Args:
@@ -555,7 +555,7 @@ class BillComparisonCharts(BaseChart):
         Returns:
             Plotly Figure object or None if unknown chart type
         """
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "bills_per_faction": self.plot_bills_per_faction,
             "bills_by_coalition_status": self.plot_bills_by_coalition_status,
             "top_bill_initiators": self.plot_top_bill_initiators,

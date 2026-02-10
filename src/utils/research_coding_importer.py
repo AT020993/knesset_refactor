@@ -256,6 +256,9 @@ class ResearchCodingImporter:
         if error:
             result.errors.append(error)
             return result
+        if df is None:
+            result.errors.append("No data loaded from file")
+            return result
 
         result.total_rows_in_file = len(df)
 
@@ -299,6 +302,9 @@ class ResearchCodingImporter:
         df, error = self.read_file(filepath)
         if error:
             result.errors.append(error)
+            return result
+        if df is None:
+            result.errors.append("No data loaded from file")
             return result
 
         result.total_rows_in_file = len(df)
@@ -344,6 +350,9 @@ class ResearchCodingImporter:
         df, error = self.read_file(filepath)
         if error:
             result.errors.append(error)
+            return result
+        if df is None:
+            result.errors.append("No data loaded from file")
             return result
 
         result.total_rows_in_file = len(df)
@@ -427,8 +436,9 @@ class ResearchCodingImporter:
             # Aggregate match method counts
             if len(title_matched) > 0:
                 for method, count in title_matched["MatchMethod"].value_counts().items():
-                    result.match_method_counts[method] = (
-                        result.match_method_counts.get(method, 0) + count
+                    method_key = str(method)
+                    result.match_method_counts[method_key] = (
+                        result.match_method_counts.get(method_key, 0) + int(count)
                     )
 
         # --- Other knessets: try id2 if available ---
@@ -696,15 +706,17 @@ class ResearchCodingImporter:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
                 # Check if coding table exists and has data
                 try:
-                    total_coded = conn.execute(
+                    total_coded_row = conn.execute(
                         f"SELECT COUNT(*) FROM {coding_table}"
-                    ).fetchone()[0]
+                    ).fetchone()
+                    total_coded = int(total_coded_row[0]) if total_coded_row else 0
                 except Exception:
                     total_coded = 0
 
-                total_dashboard = conn.execute(
+                total_dashboard_row = conn.execute(
                     f"SELECT COUNT(*) FROM {source_table}"
-                ).fetchone()[0]
+                ).fetchone()
+                total_dashboard = int(total_dashboard_row[0]) if total_dashboard_row else 0
 
                 if total_coded == 0:
                     return GapAnalysisResult(
@@ -718,10 +730,13 @@ class ResearchCodingImporter:
                     )
 
                 # Matched count
-                coded_and_matched = conn.execute(f"""
+                coded_and_matched_row = conn.execute(f"""
                     SELECT COUNT(*) FROM {coding_table} c
                     INNER JOIN {source_table} s ON c.{coding_pk} = s.{source_pk}
-                """).fetchone()[0]
+                """).fetchone()
+                coded_and_matched = (
+                    int(coded_and_matched_row[0]) if coded_and_matched_row else 0
+                )
 
                 # Coverage by Knesset
                 coverage_df = safe_execute_query(conn, f"""
@@ -793,7 +808,8 @@ class ResearchCodingImporter:
                     ("UserAgendaCoding", "agendas"),
                 ]:
                     if table in existing:
-                        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                        count = int(row[0]) if row else 0
                         stats[key] = count
 
         except Exception as e:

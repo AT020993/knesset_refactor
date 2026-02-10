@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "knesset-refactor"
 version = "0.1.0"
+requires-python = ">=3.12"
 dependencies = [
     "streamlit",
     "duckdb",
@@ -16,13 +17,74 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "mypy",
-    "flake8",
-    "pytest",
-    "pytest-cov",
-    "black",
-    "isort",
+    "black>=24.8.0,<25",
+    "isort>=5.13.2,<6",
+    "mypy>=1.13.0,<2",
+    "pytest>=8.3.0,<9",
+    "pytest-asyncio>=0.24.0,<1",
+    "pytest-cov>=6.0.0,<7",
+    "pytest-timeout>=2.3.0,<3",
+    "ruff>=0.8.0,<1",
+    "types-requests>=2.32.0.20241016",
+    "pandas-stubs>=2.2.3.241009",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q --asyncio-mode=auto --durations=10"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "performance: marks tests as performance tests",
+    "edge_case: marks tests as edge case tests",
+    "e2e: marks tests as end-to-end tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+warn_return_any = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+namespace_packages = true
+explicit_package_bases = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "src.ui.queries.*"
+check_untyped_defs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "src.backend.connection_manager"
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "src.data.services.data_refresh_service"
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "src.data.services.storage_sync_service"
+check_untyped_defs = true

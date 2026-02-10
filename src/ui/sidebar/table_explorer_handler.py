@@ -6,6 +6,7 @@ Handles the logic for exploring database tables with filtering and JOINs.
 
 import logging
 from pathlib import Path
+from typing import Any, Callable
 
 import pandas as pd
 import streamlit as st
@@ -15,13 +16,13 @@ from backend.connection_manager import get_db_connection, safe_execute_query
 
 def handle_explore_table_button_click(
     db_path: Path,
-    connect_func: callable,
-    get_db_table_list_func: callable,
-    get_table_columns_func: callable,
+    connect_func: Callable[..., Any],
+    get_db_table_list_func: Callable[[], list[str]],
+    get_table_columns_func: Callable[[str], tuple[list[str], list[str], list[str]]],
     ui_logger: logging.Logger,
-    format_exc_func: callable,
-    faction_display_map: dict,
-):
+    format_exc_func: Callable[[], str],
+    faction_display_map: dict[str, int],
+) -> None:
     """Handles the logic for the 'Explore Selected Table' button click.
 
     Args:
@@ -78,10 +79,10 @@ def handle_explore_table_button_click(
 
 def _build_explorer_query(
     table_to_explore: str,
-    all_table_cols: list,
-    db_tables_list_lower: list,
-    faction_display_map: dict,
-) -> dict:
+    all_table_cols: list[str],
+    db_tables_list_lower: list[str],
+    faction_display_map: dict[str, int],
+) -> dict[str, str]:
     """Build the explorer query with JOINs and filters.
 
     Args:
@@ -163,8 +164,8 @@ def _get_table_alias(table_to_explore: str, join_clause: str) -> str:
 
 
 def _build_where_clauses(
-    all_table_cols: list, table_alias: str, faction_display_map: dict
-) -> list:
+    all_table_cols: list[str], table_alias: str, faction_display_map: dict[str, int]
+) -> list[str]:
     """Build WHERE clauses from session state filters."""
     where_clauses = []
 
@@ -197,7 +198,7 @@ def _build_where_clauses(
     return where_clauses
 
 
-def _get_order_by_column(all_table_cols: list, table_alias: str) -> str:
+def _get_order_by_column(all_table_cols: list[str], table_alias: str) -> str:
     """Get the appropriate ORDER BY column."""
     # Check for preferred date columns
     if next(

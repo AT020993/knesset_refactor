@@ -70,7 +70,8 @@ class DuckDBIO:
             query = f'DESCRIBE "{table_name}"'
             
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
-                return safe_execute_query(conn, query, self.logger)
+                result = safe_execute_query(conn, query, self.logger)
+                return result if isinstance(result, pd.DataFrame) else None
                 
         except Exception as e:
             self.logger.error(f"Error getting table info for {table_name}: {e}", exc_info=True)
@@ -82,7 +83,8 @@ class DuckDBIO:
             query = f'SELECT * FROM "{table_name}" LIMIT {sample_size}'
             
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
-                return safe_execute_query(conn, query, self.logger)
+                result = safe_execute_query(conn, query, self.logger)
+                return result if isinstance(result, pd.DataFrame) else None
                 
         except Exception as e:
             self.logger.error(f"Error getting sample from {table_name}: {e}", exc_info=True)

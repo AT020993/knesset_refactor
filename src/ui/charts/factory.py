@@ -7,7 +7,7 @@ when Streamlit is available.
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import plotly.graph_objects as go
 
@@ -35,7 +35,7 @@ def _get_cache_resource_decorator():
 # Create the cached function at module level
 # The decorator is applied at import time, using Streamlit if available
 @_get_cache_resource_decorator()
-def _create_chart_generators(db_path_str: str) -> Dict:
+def _create_chart_generators(db_path_str: str) -> Dict[str, Any]:
     """Create chart generator instances (cached when Streamlit available).
 
     Args:
@@ -72,10 +72,10 @@ class ChartFactory:
         """
         self.db_path = db_path
         self.logger = logger_obj
-        self._generators = None
+        self._generators: Dict[str, Any] | None = None
 
     @property
-    def generators(self) -> Dict:
+    def generators(self) -> Dict[str, Any]:
         """Lazy-load chart generators with caching."""
         if self._generators is None:
             self._generators = _create_chart_generators(str(self.db_path))
@@ -116,13 +116,13 @@ class ChartFactory:
             "distribution": [
                 "query_types_distribution",
                 "agenda_classifications_pie",
-                # "query_status_distribution",  # TODO: Not yet implemented
+                "query_status_distribution",
                 "agenda_status_distribution",
                 "bill_subtype_distribution",
             ],
             "comparison": [
                 "queries_per_faction",
-                # "queries_by_coalition_status",  # TODO: Not yet implemented
+                "queries_by_coalition_status",
                 "queries_by_ministry",
                 "query_status_by_faction",
                 "agendas_per_faction",
@@ -148,9 +148,17 @@ class ChartFactory:
         """Legacy compatibility method."""
         return self.create_chart("distribution", "query_types_distribution", **kwargs)
 
+    def plot_query_status_distribution(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy compatibility method."""
+        return self.create_chart("distribution", "query_status_distribution", **kwargs)
+
     def plot_queries_per_faction_in_knesset(self, **kwargs) -> Optional[go.Figure]:
         """Legacy compatibility method."""
         return self.create_chart("comparison", "queries_per_faction", **kwargs)
+
+    def plot_queries_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy compatibility method."""
+        return self.create_chart("comparison", "queries_by_coalition_status", **kwargs)
 
     def plot_query_status_by_faction(self, **kwargs) -> Optional[go.Figure]:
         """Legacy compatibility method."""

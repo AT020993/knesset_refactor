@@ -8,12 +8,7 @@ This script tests:
 3. Filters are applied BEFORE the LIMIT
 """
 
-import sys
 from pathlib import Path
-
-# Add src to path (parent directory since we're in tests/)
-src_dir = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_dir))
 
 from ui.ui_utils import get_available_knessetes_for_query, connect_db, safe_execute_query
 from ui.queries.predefined_queries import PREDEFINED_QUERIES

@@ -232,7 +232,7 @@ class PlotFilterPanels:
     @st.cache_data(ttl=3600, show_spinner=False)
     def _fetch_filter_options_cached(_db_path: str) -> Dict[str, List[str]]:
         """Cached filter options fetching to avoid repeated database queries."""
-        filter_options = {}
+        filter_options: Dict[str, List[str]] = {}
         db_path = Path(_db_path)
 
         if not db_path.exists():

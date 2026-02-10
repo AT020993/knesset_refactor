@@ -173,7 +173,12 @@ class TestDataRefreshService:
         tables = ["KNS_Person"]
         progress_callback = Mock()
 
-        with patch.object(asyncio, 'run', return_value=True) as mock_run:
+        def _mock_asyncio_run(coro):
+            # Explicitly close coroutine to avoid unawaited-coroutine warnings in tests.
+            coro.close()
+            return True
+
+        with patch.object(asyncio, 'run', side_effect=_mock_asyncio_run) as mock_run:
 
             result = self.service.refresh_tables_sync(tables, progress_callback)
 

@@ -6,8 +6,7 @@ This module provides functionality for visualizing query analytics:
 - Query status by faction
 """
 
-import logging
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -101,8 +100,150 @@ class QueryComparisonCharts(BaseChart):
 
     def plot_queries_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
         """Generate queries by coalition/opposition status chart."""
-        # TODO: Implement from original plot_generators.py
-        pass
+        if not self.check_database_exists():
+            return None
+
+        knesset_filter = kwargs.get("knesset_filter")
+        faction_filter = kwargs.get("faction_filter")
+        start_date = kwargs.get("start_date")
+        end_date = kwargs.get("end_date")
+        query_type_filter = kwargs.get("query_type_filter", [])
+        query_status_filter = kwargs.get("query_status_filter", [])
+
+        if not knesset_filter or len(knesset_filter) != 1:
+            st.info(
+                "Please select a single Knesset to view the 'Queries by Coalition Status' plot."
+            )
+            self.logger.info(
+                "plot_queries_by_coalition_status requires a single Knesset filter."
+            )
+            return None
+
+        if start_date and end_date and start_date > end_date:
+            st.error("Start date must be before or equal to end date.")
+            self.logger.error(
+                "Invalid date range: start_date=%s, end_date=%s",
+                start_date,
+                end_date,
+            )
+            return None
+
+        single_knesset_num = int(knesset_filter[0])
+
+        try:
+            with get_db_connection(
+                self.db_path, read_only=True, logger_obj=self.logger
+            ) as con:
+                required_tables = [
+                    "KNS_Query",
+                    "KNS_Person",
+                    "KNS_PersonToPosition",
+                    "UserFactionCoalitionStatus",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                params: list[Any] = [single_knesset_num]
+                conditions: list[str] = [
+                    "q.KnessetNum = ?",
+                    "q.SubmitDate IS NOT NULL",
+                ]
+
+                if start_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) >= ?")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) <= ?")
+                    params.append(end_date)
+
+                if query_type_filter:
+                    placeholders = ", ".join("?" for _ in query_type_filter)
+                    conditions.append(f"q.TypeDesc IN ({placeholders})")
+                    params.extend(query_type_filter)
+
+                if query_status_filter:
+                    placeholders = ", ".join("?" for _ in query_status_filter)
+                    conditions.append(f's."Desc" IN ({placeholders})')
+                    params.extend(query_status_filter)
+
+                valid_faction_ids = [
+                    int(fid)
+                    for fid in faction_filter or []
+                    if str(fid).isdigit()
+                ]
+                if valid_faction_ids:
+                    placeholders = ", ".join("?" for _ in valid_faction_ids)
+                    conditions.append(f"p2p.FactionID IN ({placeholders})")
+                    params.extend(valid_faction_ids)
+
+                where_clause = " AND ".join(conditions)
+
+                query = f"""
+                SELECT
+                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
+                    COUNT(DISTINCT q.QueryID) AS QueryCount
+                FROM KNS_Query q
+                JOIN KNS_Person p ON q.PersonID = p.PersonID
+                LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
+                LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+                    AND q.KnessetNum = p2p.KnessetNum
+                    AND CAST(q.SubmitDate AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
+                    AND q.KnessetNum = ufs.KnessetNum
+                WHERE {where_clause}
+                GROUP BY CoalitionStatus
+                HAVING QueryCount > 0
+                ORDER BY QueryCount DESC
+                """
+
+                self.logger.debug(
+                    "Executing SQL for plot_queries_by_coalition_status (Knesset %s): %s",
+                    single_knesset_num,
+                    query,
+                )
+                df = safe_execute_query(con, query, self.logger, params=params)
+
+                if df.empty:
+                    st.info(
+                        f"No query data for Knesset {single_knesset_num} to visualize 'Queries by Coalition Status'."
+                    )
+                    return None
+
+                df["QueryCount"] = pd.to_numeric(
+                    df["QueryCount"], errors="coerce"
+                ).fillna(0)
+
+                coalition_colors = {
+                    **self.config.COALITION_OPPOSITION_COLORS,
+                    "Unmapped": "#808080",
+                }
+                title = (
+                    f"<b>Queries by Coalition Status (Knesset {single_knesset_num})</b>"
+                )
+
+                fig = px.pie(
+                    df,
+                    values="QueryCount",
+                    names="CoalitionStatus",
+                    title=title,
+                    color="CoalitionStatus",
+                    color_discrete_map=coalition_colors,
+                )
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(title_x=0.5, height=600, margin=dict(t=120))
+                return fig
+
+        except Exception as e:
+            self.logger.error(
+                "Error generating 'plot_queries_by_coalition_status' for Knesset %s: %s",
+                single_knesset_num,
+                e,
+                exc_info=True,
+            )
+            st.error(f"Could not generate 'Queries by Coalition Status' plot: {e}")
+            return None
 
     def plot_queries_by_ministry(
         self,
@@ -512,7 +653,7 @@ class QueryComparisonCharts(BaseChart):
             st.error(f"Could not generate 'Query Status by Faction' plot: {e}")
             return None
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested query comparison chart.
 
         Args:
@@ -522,7 +663,7 @@ class QueryComparisonCharts(BaseChart):
         Returns:
             Plotly Figure object or None if unknown chart type
         """
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "queries_per_faction": self.plot_queries_per_faction,
             "queries_by_coalition_status": self.plot_queries_by_coalition_status,
             "queries_by_ministry": self.plot_queries_by_ministry,

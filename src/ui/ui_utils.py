@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # Standard Library Imports
 import logging
-import sys
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -12,14 +11,8 @@ import duckdb
 import pandas as pd
 import streamlit as st # For st.cache_resource, st.cache_data, st.error, st.info, st.warning
 
-# Add the 'src' directory to sys.path if needed for other utils, though not strictly for these functions
-_CURRENT_FILE_DIR = Path(__file__).resolve().parent
-_SRC_DIR = _CURRENT_FILE_DIR.parent
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
-
 # Import connection manager for safe database handling
-from backend.connection_manager import get_db_connection, safe_execute_query, cached_query_with_connection
+from backend.connection_manager import get_db_connection, cached_query_with_connection
 
 # --- Database Connection and Utility Functions ---
 # REMOVED @st.cache_resource(ttl=300) - This was causing issues with closed connections being reused.
@@ -144,6 +137,7 @@ def get_filter_options_from_db(db_path: Path, _logger_obj: logging.Logger | None
 def format_exception_for_ui(exc_info=None):
     """Formats an exception for display in the UI, similar to logger."""
     if exc_info is None:
+        import sys
         exc_info = sys.exc_info()
     if exc_info[0] is None:
         return "No exception information available."
@@ -267,4 +261,3 @@ def get_available_knessetes_for_query(db_path: Path, query_type: str, _logger_ob
     except Exception as e:
         if _logger_obj: _logger_obj.error(f"Error fetching Knessetes for {query_type}: {e}", exc_info=True)
         return []
-

@@ -227,7 +227,7 @@ class KnessetTables:
         """Get tables in dependency order for loading."""
         # Simple topological sort for table dependencies
         loaded = set()
-        result = []
+        result: List[str] = []
         
         def can_load(table: TableMetadata) -> bool:
             return not table.dependencies or all(dep in loaded for dep in table.dependencies)

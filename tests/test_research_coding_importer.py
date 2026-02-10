@@ -21,12 +21,6 @@ import duckdb
 import pandas as pd
 import pytest
 
-# Ensure src is on the path
-import sys
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root / "src") not in sys.path:
-    sys.path.insert(0, str(_project_root / "src"))
-
 from utils.research_coding_importer import ResearchCodingImporter
 
 

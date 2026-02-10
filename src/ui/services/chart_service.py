@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import plotly.graph_objects as go
 
@@ -41,9 +41,17 @@ class ChartService:
         """Legacy method for query types distribution."""
         return self.chart_factory.plot_query_types_distribution(**kwargs)
 
+    def plot_query_status_distribution(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for query status distribution."""
+        return self.chart_factory.plot_query_status_distribution(**kwargs)
+
     def plot_queries_per_faction_in_knesset(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for queries per faction."""
         return self.chart_factory.plot_queries_per_faction_in_knesset(**kwargs)
+
+    def plot_queries_by_coalition_status(self, **kwargs) -> Optional[go.Figure]:
+        """Legacy method for queries by coalition status."""
+        return self.chart_factory.plot_queries_by_coalition_status(**kwargs)
 
     def plot_query_status_by_faction(self, **kwargs) -> Optional[go.Figure]:
         """Legacy method for query status by faction."""

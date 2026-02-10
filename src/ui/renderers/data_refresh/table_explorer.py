@@ -46,6 +46,9 @@ class TableExplorer:
         """Render the actual table explorer results with download options."""
         table_name = SessionStateManager.get_executed_table_explorer_name()
         results_df = SessionStateManager.get_table_explorer_df()
+        if table_name is None:
+            st.info("No table selected for exploration.")
+            return
 
         st.subheader(f"Exploring: **{table_name}**")
 

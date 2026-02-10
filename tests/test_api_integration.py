@@ -9,11 +9,6 @@ import pytest
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 import aiohttp
-import sys
-from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from api.circuit_breaker import CircuitBreakerManager, CircuitBreakerState
 from api.error_handling import categorize_error, ErrorCategory

@@ -80,9 +80,9 @@ class ForceDirectedLayout:
         import random
 
         # Initialize random positions
-        positions = {}
+        positions: Dict[int, list[float]] = {}
         for _, node in nodes_df.iterrows():
-            node_id = node[node_id_col]
+            node_id = int(node[node_id_col])
             positions[node_id] = [
                 random.uniform(-self.position_range, self.position_range),
                 random.uniform(-self.position_range, self.position_range)
@@ -107,7 +107,7 @@ class ForceDirectedLayout:
             self._update_positions(positions, forces, iteration)
 
         # Convert to tuple format
-        return {node_id: tuple(pos) for node_id, pos in positions.items()}
+        return {node_id: (float(pos[0]), float(pos[1])) for node_id, pos in positions.items()}
 
     def _build_edge_weights(
         self,
@@ -118,17 +118,25 @@ class ForceDirectedLayout:
         weight_col: Optional[str]
     ) -> Dict[Tuple[int, int], float]:
         """Build dictionary of edge weights from edges DataFrame."""
-        edge_weights = {}
+        edge_weights: Dict[Tuple[int, int], float] = {}
         for _, edge in edges_df.iterrows():
-            source_id = edge[source_col]
-            target_id = edge[target_col]
-            weight = edge[weight_col] if weight_col and weight_col in edge.index else 1
+            source_id = int(edge[source_col])
+            target_id = int(edge[target_col])
+            weight = (
+                float(edge[weight_col])
+                if weight_col and weight_col in edge.index and edge[weight_col] is not None
+                else 1.0
+            )
 
             # Only include edges where both nodes exist
             if source_id in positions and target_id in positions:
-                key = tuple(sorted([source_id, target_id]))
+                key: Tuple[int, int]
+                if source_id <= target_id:
+                    key = (source_id, target_id)
+                else:
+                    key = (target_id, source_id)
                 if key not in edge_weights:
-                    edge_weights[key] = 0
+                    edge_weights[key] = 0.0
                 edge_weights[key] += weight
 
         return edge_weights

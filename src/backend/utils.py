@@ -21,9 +21,12 @@ def map_mk_site_code(
             # Check if KNS_MkSiteCode table exists
             tables_df = con.execute("SHOW TABLES").df()
             if "kns_mksitecode" in tables_df["name"].str.lower().tolist():
-                return safe_execute_query(
+                result = safe_execute_query(
                     con, "SELECT KnsID, SiteID FROM KNS_MkSiteCode", logger_obj
                 )
+                if isinstance(result, pd.DataFrame):
+                    return result
+                return pd.DataFrame(columns=["KnsID", "SiteID"])
             else:
                 logger_obj.info(
                     "KNS_MkSiteCode table not found. Cannot map MK site codes."

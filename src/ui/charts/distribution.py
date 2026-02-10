@@ -1,13 +1,9 @@
 """Distribution and categorical chart generators."""
 
-import logging
-from pathlib import Path
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
 from ui.queries.sql_templates import SQLTemplates
@@ -126,8 +122,118 @@ class DistributionCharts(BaseChart):
 
     def plot_query_status_distribution(self, **kwargs) -> Optional[go.Figure]:
         """Generate query status distribution chart."""
-        # TODO: Implement from original plot_generators.py
-        pass
+        if not self.check_database_exists():
+            return None
+
+        knesset_filter = kwargs.get("knesset_filter")
+        faction_filter = kwargs.get("faction_filter")
+        start_date = kwargs.get("start_date")
+        end_date = kwargs.get("end_date")
+        query_type_filter = kwargs.get("query_type_filter", [])
+        query_status_filter = kwargs.get("query_status_filter", [])
+
+        if start_date and end_date and start_date > end_date:
+            self.show_error("Start date must be before or equal to end date.")
+            self.logger.error("Invalid date range: start_date=%s, end_date=%s", start_date, end_date)
+            return None
+
+        if knesset_filter:
+            knesset_title = f"Knesset {knesset_filter[0]}" if len(knesset_filter) == 1 else f"Knessets: {', '.join(map(str, knesset_filter))}"
+        else:
+            knesset_title = "All Knessets"
+
+        try:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                required_tables = [
+                    "KNS_Query",
+                    "KNS_Status",
+                    "KNS_PersonToPosition",
+                ]
+                if not self.check_tables_exist(con, required_tables):
+                    return None
+
+                params: list[Any] = []
+                conditions: list[str] = [
+                    "q.KnessetNum IS NOT NULL",
+                    "q.SubmitDate IS NOT NULL",
+                ]
+
+                if knesset_filter:
+                    placeholders = ", ".join("?" for _ in knesset_filter)
+                    conditions.append(f"q.KnessetNum IN ({placeholders})")
+                    params.extend(int(k) for k in knesset_filter)
+
+                valid_faction_ids = [
+                    int(fid)
+                    for fid in faction_filter or []
+                    if str(fid).isdigit()
+                ]
+                if valid_faction_ids:
+                    placeholders = ", ".join("?" for _ in valid_faction_ids)
+                    conditions.append(f"p2p.FactionID IN ({placeholders})")
+                    params.extend(valid_faction_ids)
+
+                if start_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) >= ?")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("CAST(q.SubmitDate AS DATE) <= ?")
+                    params.append(end_date)
+
+                if query_type_filter:
+                    placeholders = ", ".join("?" for _ in query_type_filter)
+                    conditions.append(f"q.TypeDesc IN ({placeholders})")
+                    params.extend(query_type_filter)
+
+                if query_status_filter:
+                    placeholders = ", ".join("?" for _ in query_status_filter)
+                    conditions.append(f's."Desc" IN ({placeholders})')
+                    params.extend(query_status_filter)
+
+                where_clause = " AND ".join(conditions)
+
+                query = f"""
+                SELECT
+                    COALESCE(s."Desc", 'Unknown') AS Status,
+                    COUNT(DISTINCT q.QueryID) AS Count
+                FROM KNS_Query q
+                LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
+                LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
+                    AND q.KnessetNum = p2p.KnessetNum
+                    AND CAST(q.SubmitDate AS TIMESTAMP)
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                WHERE {where_clause}
+                GROUP BY s."Desc"
+                ORDER BY Count DESC
+                """
+
+                df = safe_execute_query(con, query, self.logger, params=params)
+                if self.handle_empty_result(df, "query status", {"knesset_title": knesset_title}):
+                    return None
+
+                date_range_text = ""
+                if start_date or end_date:
+                    if start_date and end_date:
+                        date_range_text = f" ({start_date} to {end_date})"
+                    elif start_date:
+                        date_range_text = f" (from {start_date})"
+                    else:
+                        date_range_text = f" (until {end_date})"
+
+                fig = px.pie(
+                    df,
+                    values="Count",
+                    names="Status",
+                    title=f"<b>Query Status Distribution for {knesset_title}{date_range_text}</b>",
+                    color="Status",
+                    color_discrete_map=self.config.GENERAL_STATUS_COLORS,
+                )
+                return self.apply_pie_chart_defaults(fig)
+        except Exception as e:
+            self.logger.error("Error generating query status distribution: %s", e, exc_info=True)
+            self.show_error(f"Could not generate query status distribution: {e}")
+            return None
 
     @chart_error_handler("agenda status distribution")
     def plot_agenda_status_distribution(
@@ -246,9 +352,9 @@ class DistributionCharts(BaseChart):
 
             return fig
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested distribution chart."""
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "query_types_distribution": self.plot_query_types_distribution,
             "agenda_classifications_pie": self.plot_agenda_classifications_pie,
             "query_status_distribution": self.plot_query_status_distribution,

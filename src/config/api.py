@@ -1,6 +1,15 @@
 """API configuration for OData endpoints."""
 
+import sys
 from enum import Enum
+
+
+# Keep `config.api` and `src.config.api` pointing to the same module object
+# to avoid duplicate Enum identities when mixed import styles are used.
+if __name__ == "src.config.api":
+    sys.modules.setdefault("config.api", sys.modules[__name__])
+elif __name__ == "config.api":
+    sys.modules.setdefault("src.config.api", sys.modules[__name__])
 
 
 class CircuitBreakerState(Enum):

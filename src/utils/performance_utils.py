@@ -5,9 +5,10 @@ This module provides utilities to optimize data processing and rendering
 for better performance on limited resources (e.g., Streamlit Cloud free tier with 1GB RAM).
 """
 
-import pandas as pd
 import logging
-from typing import Optional, List
+from typing import Callable, Optional
+
+import pandas as pd
 
 
 def optimize_dataframe_for_display(
@@ -221,7 +222,7 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def batch_process_large_query(
-    query_func,
+    query_func: Callable[..., pd.DataFrame],
     batch_size: int = 10000,
     logger: Optional[logging.Logger] = None,
     **kwargs
@@ -238,7 +239,7 @@ def batch_process_large_query(
     Returns:
         Combined dataframe from all batches
     """
-    results = []
+    results: list[pd.DataFrame] = []
     offset = 0
 
     while True:
@@ -250,6 +251,10 @@ def batch_process_large_query(
         kwargs['offset'] = offset
 
         batch_df = query_func(**kwargs)
+        if not isinstance(batch_df, pd.DataFrame):
+            if logger:
+                logger.warning("Batch query function returned non-DataFrame result; stopping batch processing.")
+            break
 
         if batch_df.empty:
             break

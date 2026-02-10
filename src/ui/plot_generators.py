@@ -13,7 +13,7 @@ For new code, use:
 import logging
 import warnings
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 
 from ui.services.chart_service import ChartService
 
@@ -38,10 +38,17 @@ def check_tables_exist(
     con, required_tables: list[str], logger_obj: logging.Logger
 ) -> bool:
     """Legacy compatibility function."""
-    from ui.charts.base import BaseChart
-
-    base_chart = BaseChart(Path(), logger_obj)
-    return base_chart.check_tables_exist(con, required_tables)
+    try:
+        result = con.execute("SHOW TABLES").fetchall()
+        existing_tables = {row[0] for row in result}
+        missing_tables = [table for table in required_tables if table not in existing_tables]
+        if missing_tables:
+            logger_obj.warning("Missing required tables: %s", ", ".join(missing_tables))
+            return False
+        return True
+    except Exception as exc:
+        logger_obj.error("Error checking required tables: %s", exc, exc_info=True)
+        return False
 
 
 # Legacy function wrappers
@@ -82,6 +89,17 @@ def plot_query_types_distribution(
     return chart_service.plot_query_types_distribution(**kwargs)
 
 
+def plot_query_status_distribution(
+    db_path: Path,
+    connect_func: Callable,  # Ignored in new implementation
+    logger_obj: logging.Logger,
+    **kwargs,
+) -> Optional[Any]:
+    """Legacy wrapper for query status distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_query_status_distribution(**kwargs)
+
+
 def plot_queries_per_faction_in_knesset(
     db_path: Path,
     connect_func: Callable,  # Ignored in new implementation
@@ -113,6 +131,17 @@ def plot_queries_by_ministry(
     """Legacy wrapper for queries by ministry chart."""
     chart_service = ChartService(db_path, logger_obj)
     return chart_service.plot_queries_by_ministry(**kwargs)
+
+
+def plot_queries_by_coalition_status(
+    db_path: Path,
+    connect_func: Callable,  # Ignored in new implementation
+    logger_obj: logging.Logger,
+    **kwargs,
+) -> Optional[Any]:
+    """Legacy wrapper for queries by coalition status chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.plot_queries_by_coalition_status(**kwargs)
 
 
 # Add more legacy function wrappers as needed
@@ -221,7 +250,9 @@ def get_available_plots():
         "Query Analytics": {
             "Queries Over Time": plot_queries_by_time_period,
             "Query Types Breakdown": plot_query_types_distribution,
+            "Query Status Distribution": plot_query_status_distribution,
             "Queries per Faction": plot_queries_per_faction_in_knesset,
+            "Queries by Coalition Status": plot_queries_by_coalition_status,
             "Query Status by Faction": plot_query_status_by_faction,
             "Ministry Response Rates": plot_queries_by_ministry,
         },

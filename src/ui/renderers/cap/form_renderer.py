@@ -72,6 +72,9 @@ class CAPFormRenderer:
             if not sync_service.is_enabled():
                 # Cloud storage not enabled - nothing to do
                 return True
+            if sync_service.gcs_manager is None:
+                self.logger.warning("Cloud sync enabled but GCS manager is not initialized")
+                return False
 
             # Use file locking to prevent concurrent syncs (race condition fix)
             lock_file = Settings.DEFAULT_DB_PATH.with_suffix('.lock')
@@ -260,6 +263,7 @@ class CAPFormRenderer:
         if not is_valid:
             st.error(f"❌ {error}")
             return False
+        assert selected_minor is not None
 
         # Save annotation using researcher_id (not display name)
         success = self.service.save_annotation(

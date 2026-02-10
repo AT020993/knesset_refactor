@@ -351,7 +351,7 @@ class TopicImporter:
         """
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                return safe_execute_query(con, """
+                result = safe_execute_query(con, """
                     SELECT
                         t.TopicID,
                         t.TopicNameHE,
@@ -367,6 +367,7 @@ class TopicImporter:
                     LEFT JOIN UserTopicTaxonomy p ON t.ParentTopicID = p.TopicID
                     ORDER BY t.TopicLevel, t.TopicNameHE
                 """, self.logger)
+                return result if isinstance(result, pd.DataFrame) else pd.DataFrame()
         except Exception as e:
             self.logger.error(f"Error fetching topic taxonomy: {e}")
             return pd.DataFrame()
@@ -426,7 +427,7 @@ class TopicImporter:
         """
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                return safe_execute_query(con, f"""
+                result = safe_execute_query(con, f"""
                     SELECT
                         m.{item_id_col},
                         m.TopicID,
@@ -439,6 +440,7 @@ class TopicImporter:
                     WHERE m.{item_id_col} = ?
                     ORDER BY m.ConfidenceScore DESC
                 """, self.logger, params=[item_id])
+                return result if isinstance(result, pd.DataFrame) else pd.DataFrame()
         except Exception as e:
             self.logger.error(f"Error fetching topics for {item_id_col}={item_id}: {e}")
             return pd.DataFrame()

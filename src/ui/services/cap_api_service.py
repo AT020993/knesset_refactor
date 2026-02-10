@@ -27,13 +27,16 @@ class CAPAPIService:
         """Initialize the API service."""
         self.logger = logger_obj or logging.getLogger(__name__)
 
-    async def _fetch_json(self, session: aiohttp.ClientSession, url: str) -> dict:
+    async def _fetch_json(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> Dict[str, Any]:
         """Fetch JSON data from URL."""
         try:
             timeout = aiohttp.ClientTimeout(total=30)
             async with session.get(url, timeout=timeout) as resp:
                 resp.raise_for_status()
-                return await resp.json(content_type=None)
+                payload = await resp.json(content_type=None)
+                return payload if isinstance(payload, dict) else {}
         except Exception as e:
             self.logger.error(f"API fetch error: {e}")
             raise
@@ -67,7 +70,12 @@ class CAPAPIService:
         try:
             async with aiohttp.ClientSession() as session:
                 data = await self._fetch_json(session, url)
-                bills = data.get("value", [])
+                bills_raw = data.get("value", [])
+                bills = [
+                    bill
+                    for bill in bills_raw
+                    if isinstance(bill, dict)
+                ] if isinstance(bills_raw, list) else []
                 self.logger.info(f"Fetched {len(bills)} bills from API")
                 return bills
         except Exception as e:

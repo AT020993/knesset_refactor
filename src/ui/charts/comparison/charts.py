@@ -8,7 +8,8 @@ The actual implementations have been refactored into separate modules:
 """
 
 import logging
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Callable, List, Optional
 
 import plotly.graph_objects as go
 
@@ -27,18 +28,19 @@ class ComparisonCharts(BaseChart):
     For direct usage, consider importing the specific chart classes instead.
     """
 
-    def __init__(self, db_path: str, logger: Optional[logging.Logger] = None):
+    def __init__(self, db_path: Path, logger: Optional[logging.Logger] = None):
         """Initialize ComparisonCharts with database path.
 
         Args:
             db_path: Path to the DuckDB database file
             logger: Optional logger instance
         """
-        super().__init__(db_path, logger)
+        logger_obj = logger or logging.getLogger(__name__)
+        super().__init__(db_path, logger_obj)
         # Initialize specialized chart instances
-        self._query_charts = QueryComparisonCharts(db_path, logger)
-        self._agenda_charts = AgendaComparisonCharts(db_path, logger)
-        self._bill_charts = BillComparisonCharts(db_path, logger)
+        self._query_charts = QueryComparisonCharts(db_path, logger_obj)
+        self._agenda_charts = AgendaComparisonCharts(db_path, logger_obj)
+        self._bill_charts = BillComparisonCharts(db_path, logger_obj)
 
     # Query chart methods - delegate to QueryComparisonCharts
     def plot_queries_per_faction(
@@ -182,7 +184,7 @@ class ComparisonCharts(BaseChart):
             **kwargs
         )
 
-    def generate(self, chart_type: str, **kwargs) -> Optional[go.Figure]:
+    def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested comparison chart.
 
         Args:
@@ -192,7 +194,7 @@ class ComparisonCharts(BaseChart):
         Returns:
             Plotly Figure object or None if unknown chart type
         """
-        chart_methods = {
+        chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
             "queries_per_faction": self.plot_queries_per_faction,
             "queries_by_coalition_status": self.plot_queries_by_coalition_status,
             "queries_by_ministry": self.plot_queries_by_ministry,

@@ -98,6 +98,9 @@ class ResearchCodingPageRenderer:
             if error:
                 st.error(f"Error reading file: {error}")
                 return
+            if df is None:
+                st.error("Error reading file: no data was returned")
+                return
 
             st.info(f"**{uploaded.name}**: {len(df):,} rows, {len(df.columns)} columns")
 

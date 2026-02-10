@@ -27,7 +27,7 @@ class DataValidator:
         Returns:
             Dictionary with validation results
         """
-        results = {}
+        results: Dict[str, Any] = {}
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -166,7 +166,7 @@ class DataValidator:
         Returns:
             Dictionary with validation results
         """
-        results = {}
+        results: Dict[str, Any] = {}
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -269,7 +269,7 @@ class DataValidator:
         Returns:
             Dictionary with validation results
         """
-        results = {}
+        results: Dict[str, Any] = {}
         
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -385,7 +385,7 @@ class DataValidator:
         """
         self.logger.info("Starting comprehensive data validation...")
         
-        validation_results = {
+        validation_results: Dict[str, Any] = {
             'timestamp': pd.Timestamp.now().isoformat(),
             'database_path': str(self.db_path)
         }

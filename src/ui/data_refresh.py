@@ -4,24 +4,12 @@ from __future__ import annotations
 import io
 import logging
 import re
-import sys
-from pathlib import Path
 from textwrap import dedent
 
 # Third-Party Imports
 import pandas as pd
 import streamlit as st
 import duckdb
-
-# Add the 'src' directory to sys.path
-_CURRENT_FILE_DIR = Path(__file__).resolve().parent
-_SRC_DIR = _CURRENT_FILE_DIR.parent
-_PROJECT_ROOT = _SRC_DIR.parent
-
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # Local Application Imports
 from config.settings import Settings
@@ -60,7 +48,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={
         'Get help': None,
-        'Report a Bug': None,
+        'Report a bug': None,
         'About': None
     }
 )

@@ -9,7 +9,7 @@ Handles rendering of the bill queue for annotation:
 """
 
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import streamlit as st
 import pandas as pd
@@ -119,7 +119,9 @@ class CAPBillQueueRenderer:
         selected_idx = st.selectbox(
             "Select bill to code",
             options=range(len(bills)),
-            format_func=lambda i: self._format_bill_option(bills.iloc[i]),
+            format_func=lambda i: self._format_bill_option(
+                cast(pd.Series, bills.iloc[int(i)])
+            ),
             key="cap_bill_select",
         )
 

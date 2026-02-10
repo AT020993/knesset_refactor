@@ -17,6 +17,9 @@ class ResumeStateService:
         self.resume_file = resume_file or Settings.RESUME_STATE_FILE
         self.logger = logger_obj or logging.getLogger(__name__)
         self._state: Dict[str, Dict[str, Any]] = self._load_state()
+        # Tracks tables explicitly cleared in this process so callers can treat
+        # them as fully completed (no resume payload).
+        self._recently_cleared: set[str] = set()
     
     def _load_state(self) -> Dict[str, Dict[str, Any]]:
         """Load resume state from JSON file."""
@@ -24,7 +27,11 @@ class ResumeStateService:
             return {}
         
         try:
-            data = json.loads(self.resume_file.read_text())
+            raw_data = json.loads(self.resume_file.read_text())
+            if not isinstance(raw_data, dict):
+                self.logger.warning("Resume state file is not a dictionary. Starting fresh.")
+                return {}
+            data: Dict[str, Any] = raw_data
             
             # Migrate old format (just int values) to new format
             if data and isinstance(list(data.values())[0], int):
@@ -38,7 +45,12 @@ class ResumeStateService:
                     for table, pk in data.items()
                 }
             
-            return data
+            # Keep only dictionary payload entries for state tracking.
+            return {
+                str(table): value
+                for table, value in data.items()
+                if isinstance(value, dict)
+            }
             
         except json.JSONDecodeError:
             self.logger.warning(f"Could not decode resume file {self.resume_file}. Starting fresh.")
@@ -93,6 +105,8 @@ class ResumeStateService:
     
     def get_table_state(self, table_name: str) -> Dict[str, Any]:
         """Get resume state for a specific table."""
+        if table_name in self._recently_cleared:
+            return {}
         default_state = {"last_pk": -1, "total_rows": 0}
         return self._state.get(table_name, default_state)
     
@@ -104,6 +118,7 @@ class ResumeStateService:
         chunk_size: Optional[int] = None
     ) -> None:
         """Update resume state for a table."""
+        self._recently_cleared.discard(table_name)
         self._state[table_name] = {
             "last_pk": last_pk,
             "total_rows": total_rows,
@@ -117,6 +132,7 @@ class ResumeStateService:
     
     def clear_table_state(self, table_name: str) -> None:
         """Clear resume state for a table (called when download completes)."""
+        self._recently_cleared.add(table_name)
         if table_name in self._state:
             del self._state[table_name]
             self._save_state()

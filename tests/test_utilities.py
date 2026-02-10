@@ -20,10 +20,6 @@ try:
 except ImportError:
     aiohttp = None
 from typing import Dict, Any, List, Optional
-import sys
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 try:
     import duckdb
