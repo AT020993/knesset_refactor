@@ -7,7 +7,7 @@
 | Optimization | Impact | File |
 |--------------|--------|------|
 | **Query caching** | 90% faster repeated loads | `src/ui/charts/base.py` |
-| **Filter caching** | 95% faster filter loading | `src/ui/pages/plots_page.py` |
+| **Filter caching** | 95% faster filter loading | `src/ui/renderers/plots_page.py` |
 | **Chart factory caching** | 40-50% memory reduction | `src/ui/charts/factory.py` |
 | **Data aggregation** | 50-70% faster large datasets | `src/ui/charts/time_series.py` |
 | **Performance utilities** | New optimization toolkit | `src/utils/performance_utils.py` |
@@ -114,7 +114,7 @@ pytest tests/ --cov=src --cov-report=html
 # Validate modified files
 python -m py_compile src/ui/charts/base.py
 python -m py_compile src/ui/charts/factory.py
-python -m py_compile src/ui/pages/plots_page.py
+python -m py_compile src/ui/renderers/plots_page.py
 python -m py_compile src/utils/performance_utils.py
 ```
 
@@ -224,7 +224,7 @@ logger.info(f"Query took {elapsed:.3f}s")
 2. **src/ui/charts/factory.py**
    - Added lazy-loaded generators with `@st.cache_resource`
 
-3. **src/ui/pages/plots_page.py**
+3. **src/ui/renderers/plots_page.py**
    - Added `_fetch_filter_options_cached()` with `@st.cache_data`
    - Enhanced spinner messages
    - Optimized Plotly config

@@ -72,7 +72,7 @@ def _execute_query_cached(_self, query: str, params_str: Optional[str]) -> Optio
 
 ### 2. Filter Options Caching ✅
 
-**Location:** `src/ui/pages/plots_page.py`
+**Location:** `src/ui/renderers/plots_page.py`
 
 **Implementation:**
 ```python
@@ -162,7 +162,7 @@ if len(df['TimePeriod'].unique()) > max_time_periods:
 
 ### 5. Progressive Rendering & UX Improvements ✅
 
-**Location:** `src/ui/pages/plots_page.py`
+**Location:** `src/ui/renderers/plots_page.py`
 
 **Implementation:**
 ```python

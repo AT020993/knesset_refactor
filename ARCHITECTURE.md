@@ -73,8 +73,12 @@ Notable modules:
 
 ### UI Layer (`src/ui/`)
 **Charts**: Factory pattern with inheritance hierarchy, modular design
-**Renderers**: Stable page facades with extracted ops for heavy logic
-**Queries**: Query packs (`ui/queries/packs/*`) composed by registry
+**Renderers**: Stable page facades with extracted ops for heavy logic:
+  - `plots_page.py` → `plots/generation_ops.py`, `plots/selection_ops.py`
+  - `data_refresh/page.py` → `data_refresh/query_results_ops.py`
+  - `cap/admin_renderer.py` → `cap/admin_maintenance_ops.py`
+**Queries**: Query packs (`ui/queries/packs/*`) composed by registry, typed via `types.py`
+**Services**: CAP facades (`user_service.py`, `repository.py`, `taxonomy.py`) with split `*_ops.py` modules
 **State**: `session_manager.py` plus typed state contracts in `state_contracts.py`
 
 ## Key Improvements
@@ -189,7 +193,6 @@ pytest -m e2e --base-url http://localhost:8501  # E2E tests
 - ✅ Storage sync service decomposition (transfer/metadata/startup ops)
 
 ### In Progress
-- 🔄 Additional chart module cleanup
 - 🔄 Legacy compatibility deprecation path
 
 ### Planned

@@ -87,11 +87,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 | Config | `src/config/` | Database, API, settings, table config |
 | Utils | `src/utils/` | Validators, resolvers, exporters, layout helpers |
 | UI | `src/ui/` | Component-based Streamlit |
-| State | `src/ui/state/` | Session state management |
+| State | `src/ui/state/` | Session manager, typed contracts (`state_contracts.py`), state ops |
 | Sidebar | `src/ui/sidebar/` | Sidebar components, refresh/query/explorer handlers |
-| Renderers | `src/ui/renderers/` | Page renderers (plots/, data_refresh/, cap/) |
+| Renderers | `src/ui/renderers/` | Page facades with extracted `*_ops.py` (plots/, data_refresh/, cap/) |
 | Charts | `src/ui/charts/` | BaseChart-derived with mixins (comparison/, network/) |
-| Queries | `src/ui/queries/` | SQL templates and predefined queries |
+| Queries | `src/ui/queries/` | SQL templates, query packs (`packs/`), types, executor |
 
 ## Connection Management
 
@@ -325,13 +325,16 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 |----------|-------|
 | **Charts** | `src/ui/charts/comparison/`, `time_series.py`, `distribution.py`, `network/` |
 | **Chart Base** | `src/ui/charts/base.py` (BaseChart, `@chart_error_handler`), `mixins/` |
-| **Queries** | `src/ui/queries/predefined_queries.py`, `sql_templates.py` |
-| **CAP Services** | `src/ui/services/cap/` (cap_service.py, cap_api_service.py, user_service.py) |
-| **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py, auth_handler.py, bill_queue_renderer.py) |
-| **UI Renderers** | `src/ui/renderers/plots_page.py`, `renderers/data_refresh/`, `renderers/cap_annotation_page.py`, `renderers/research_coding_page.py` |
+| **Queries** | `src/ui/queries/predefined_queries.py` (facade), `packs/` (bills, agenda, parliamentary, registry), `types.py`, `sql_templates.py` |
+| **CAP Services** | `src/ui/services/cap/` — facades: `cap_service.py`, `user_service.py`, `repository.py`, `taxonomy.py`; ops: `user_service_*_ops.py`, `repository_*_ops.py`, `taxonomy_migration_ops.py` |
+| **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py → `admin_maintenance_ops.py`, auth_handler.py, bill_queue_renderer.py) |
+| **UI Renderers** | `src/ui/renderers/plots_page.py` → `plots/generation_ops.py`, `plots/selection_ops.py`; `data_refresh/page.py` → `data_refresh/query_results_ops.py`; `cap_annotation_page.py`, `research_coding_page.py` |
 | **Research Coding** | `src/utils/research_coding_importer.py`, `import_research_coding.py` |
 | **Sidebar** | `src/ui/sidebar/components.py`, `data_refresh_handler.py`, `query_handler.py` |
-| **Data Refresh** | `src/data/services/data_refresh_service.py`, `storage_sync_service.py`, `src/api/odata_client.py` |
+| **Data Sync** | `src/data/services/storage_sync_service.py` (facade) → `storage_sync_metadata_ops.py`, `storage_sync_transfer_ops.py`, `storage_sync_startup_ops.py`, `sync_types.py`, `sync_data_refresh_service.py` |
+| **Cloud Storage** | `src/data/storage/cloud_storage.py` (facade) → `cloud_storage_ops.py`, `credential_resolver.py` |
+| **Data Refresh** | `src/data/services/data_refresh_service.py`, `src/api/odata_client.py` |
+| **State** | `src/ui/state/session_manager.py`, `state_contracts.py`, `state_ops.py` |
 | **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/democratic_erosion_codebook.csv` |
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
@@ -655,6 +658,12 @@ Key behaviors tested:
 - Rate limiting and account lockout
 
 **Test Passwords**: Tests use passwords like `Password1`, `TestPass1` that meet complexity requirements (8+ chars, upper, lower, digit).
+
+**Refactor Tests** (new in this refactor):
+- `test_chart_refactor_completion.py`: Chart factory coverage, legacy wrapper delegation, date filter wiring
+- `test_query_builder.py`: Query builder unit tests
+- `tests/fixtures/common_fixtures.py`: Shared test fixtures extracted from conftest
+- `tests/fixtures/runtime_fixtures.py`: Runtime-specific fixtures
 
 **Research Coding Tests** (29 tests in `test_research_coding_importer.py`):
 - Table creation and idempotency (2 tests)
