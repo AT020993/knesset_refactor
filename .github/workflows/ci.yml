@@ -54,6 +54,12 @@ jobs:
             src/core/dependencies.py \
             --ignore-missing-imports
 
+      - name: Security scan
+        continue-on-error: true
+        run: |
+          pip-audit -r requirements.txt || true
+          bandit -r src/ -ll -q || true
+
   unit-tests:
     name: Unit and Integration Gates
     runs-on: ubuntu-latest
@@ -78,6 +84,7 @@ jobs:
 
       - name: Critical regression suite
         run: |
+          export PYTHONPATH="./src:$PYTHONPATH"
           pytest --tb=short --maxfail=1 -x \
             tests/test_cli.py \
             tests/test_fetch_table.py \

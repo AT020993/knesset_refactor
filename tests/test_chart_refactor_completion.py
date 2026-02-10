@@ -130,10 +130,10 @@ def test_plot_args_include_date_filters_for_current_query_chart_labels(monkeypat
     assert args_for_status["end_date"] == "2024-12-31"
 
 
-@mock.patch("src.ui.plot_generators.ChartService")
+@mock.patch("ui.plot_generators.ChartService")
 def test_legacy_wrapper_for_queries_by_coalition_status(mock_chart_service):
     """Legacy wrapper should delegate to ChartService for coalition status queries."""
-    from src.ui.plot_generators import plot_queries_by_coalition_status
+    from ui.plot_generators import plot_queries_by_coalition_status
 
     mock_instance = mock_chart_service.return_value
     mock_instance.plot_queries_by_coalition_status.return_value = object()
