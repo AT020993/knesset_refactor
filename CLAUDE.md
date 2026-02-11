@@ -338,6 +338,7 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/democratic_erosion_codebook.csv` |
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
+| **Performance** | `src/utils/performance_utils.py` (`optimize_dataframe_dtypes()`, `reduce_plotly_figure_size()`) |
 | **Launchers** | `launch_knesset.py`, `researcher_launcher.py`, `start-knesset.sh` |
 
 ## Streamlit Cloud Deployment
@@ -399,7 +400,7 @@ elif selected == "📈 Visualizations":
 
 **Key principles:**
 - Store renderers in `st.session_state` to preserve caches across reruns
-- Use `@st.cache_data(ttl=3600)` for expensive computations
+- Use `@st.cache_data(ttl=...)` for expensive computations (chart queries: 30min, annotation counts: 10min, filter options: 1hr)
 - Only instantiate components when their section is accessed
 
 **Widget Selection Fix**: Use `on_change` callbacks, not post-render comparison:
@@ -442,7 +443,20 @@ if st.button("Action"):
     # No st.rerun() needed - state is already updated for next render
 ```
 
-**When st.rerun() IS needed**: Only after operations that don't naturally trigger reruns (e.g., after `st.cache_data.clear()` in a non-button context, or after programmatic state changes outside widget callbacks).
+**When st.rerun() IS needed**: Only after operations that don't naturally trigger reruns (e.g., after programmatic state changes outside widget callbacks).
+
+**Targeted Cache Invalidation** (🔴 Important):
+
+Don't use `st.cache_data.clear()` — it wipes ALL caches (charts, filters, queries). Use targeted invalidation:
+```python
+# Wrong - nuclear clear wipes unrelated chart/filter caches
+st.cache_data.clear()
+
+# Correct - clear only the affected cache
+from ui.services.cap.repository_cache_ops import clear_annotation_counts_cache
+clear_annotation_counts_cache()
+```
+Only `data_refresh_handler.py` retains nuclear `st.cache_data.clear()` for when underlying data actually changes.
 
 **Disable Buttons During Long Operations**:
 ```python
