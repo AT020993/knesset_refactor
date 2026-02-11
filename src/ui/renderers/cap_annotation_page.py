@@ -111,8 +111,9 @@ class CAPAnnotationPageRenderer:
             del st.session_state["query_results_df"]
         if "show_query_results" in st.session_state:
             st.session_state["show_query_results"] = False
-        # Clear Streamlit's data cache
-        st.cache_data.clear()
+        # Clear only annotation-related caches (not chart/filter caches)
+        from ui.services.cap.repository_cache_ops import clear_annotation_counts_cache
+        clear_annotation_counts_cache()
 
     def render_cap_annotation_section(self) -> None:
         """Main render method for the CAP annotation section."""

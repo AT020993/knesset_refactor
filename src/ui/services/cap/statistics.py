@@ -45,29 +45,20 @@ class CAPStatisticsService:
             ) as conn:
                 stats = {}
 
-                # Total unique coded bills
-                result = conn.execute(
-                    "SELECT COUNT(DISTINCT BillID) as count FROM UserBillCAP"
-                ).fetchone()
-                stats["total_coded"] = result[0] if result else 0
+                # Combined scalar counts (4 queries → 1)
+                scalar_result = conn.execute("""
+                    SELECT
+                        COUNT(DISTINCT BillID) as total_coded,
+                        COUNT(*) as total_annotations,
+                        COUNT(DISTINCT ResearcherID) as total_researchers,
+                        (SELECT COUNT(*) FROM KNS_Bill) as total_bills
+                    FROM UserBillCAP
+                """).fetchone()
 
-                # Total annotations (may be > unique bills in multi-annotator mode)
-                result = conn.execute(
-                    "SELECT COUNT(*) as count FROM UserBillCAP"
-                ).fetchone()
-                stats["total_annotations"] = result[0] if result else 0
-
-                # Total bills
-                result = conn.execute(
-                    "SELECT COUNT(*) as count FROM KNS_Bill"
-                ).fetchone()
-                stats["total_bills"] = result[0] if result else 0
-
-                # Total unique researchers with annotations
-                result = conn.execute(
-                    "SELECT COUNT(DISTINCT ResearcherID) as count FROM UserBillCAP"
-                ).fetchone()
-                stats["total_researchers"] = result[0] if result else 0
+                stats["total_coded"] = scalar_result[0] if scalar_result else 0
+                stats["total_annotations"] = scalar_result[1] if scalar_result else 0
+                stats["total_researchers"] = scalar_result[2] if scalar_result else 0
+                stats["total_bills"] = scalar_result[3] if scalar_result else 0
 
                 # By major category (count unique bills, not annotations)
                 by_major = conn.execute("""

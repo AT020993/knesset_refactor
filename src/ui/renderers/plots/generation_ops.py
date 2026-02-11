@@ -9,6 +9,7 @@ import streamlit as st
 
 import ui.ui_utils as ui_utils
 from ui.state.session_manager import SessionStateManager
+from utils.performance_utils import reduce_plotly_figure_size
 
 
 def get_final_knesset_filter(renderer: Any, selected_chart: str) -> list[int] | None:
@@ -174,6 +175,9 @@ def generate_and_display_plot(
         try:
             figure = plot_function(**plot_args)
             if figure:
+                # Optimize large figures for faster rendering
+                if any(len(getattr(trace, 'x', None) or []) > 500 for trace in figure.data):
+                    figure = reduce_plotly_figure_size(figure)
                 st.plotly_chart(
                     figure,
                     use_container_width=True,

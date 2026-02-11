@@ -100,10 +100,10 @@ if not st.session_state.cloud_sync_checked:
 def _get_cached_filter_options():
     """Lazily load and cache filter options."""
     knesset_nums, factions_df = ui_utils.get_filter_options_from_db(DB_PATH, ui_logger)
-    faction_map = {
-        f"{row['FactionName']} (K{row['KnessetNum']})": row["FactionID"]
-        for _, row in factions_df.iterrows()
-    }
+    faction_map = dict(zip(
+        factions_df['FactionName'] + ' (K' + factions_df['KnessetNum'].astype(str) + ')',
+        factions_df['FactionID']
+    ))
     return knesset_nums, factions_df, faction_map
 
 

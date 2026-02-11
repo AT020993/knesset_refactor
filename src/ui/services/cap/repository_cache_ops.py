@@ -31,7 +31,7 @@ def _get_annotation_counts_impl(db_path_str: str) -> dict[int, int]:
 
 
 try:
-    _get_cached_annotation_counts = st.cache_data(ttl=120, show_spinner=False)(
+    _get_cached_annotation_counts = st.cache_data(ttl=600, show_spinner=False)(
         _get_annotation_counts_impl
     )
 except Exception:

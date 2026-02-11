@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
+from utils.performance_utils import optimize_dataframe_dtypes
 from utils.query_builder import SecureQueryBuilder
 
 
@@ -107,7 +108,7 @@ class ChartDataMixin:
         """
         return self._execute_query_cached(query, json.dumps(params) if params else None)
 
-    @st.cache_data(ttl=600, show_spinner=False)
+    @st.cache_data(ttl=1800, show_spinner=False)
     def _execute_query_cached(
         _self, query: str, params_str: Optional[str]
     ) -> Optional[pd.DataFrame]:
@@ -154,9 +155,13 @@ class ChartDataMixin:
                     result = safe_execute_query(
                         con, processed_query, _self.logger, param_values
                     )
+                    if isinstance(result, pd.DataFrame) and len(result) > 1000:
+                        return optimize_dataframe_dtypes(result)
                     return result if isinstance(result, pd.DataFrame) else None
                 else:
                     result = safe_execute_query(con, query, _self.logger)
+                    if isinstance(result, pd.DataFrame) and len(result) > 1000:
+                        return optimize_dataframe_dtypes(result)
                     return result if isinstance(result, pd.DataFrame) else None
         except Exception as e:
             _self.logger.error(f"Error executing query: {e}", exc_info=True)

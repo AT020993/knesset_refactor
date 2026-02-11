@@ -166,23 +166,26 @@ class FactionCollaborationNetwork(BaseChart):
 
             all_factions = pd.concat([main_factions, supp_factions]).drop_duplicates(subset=['FactionID'])
 
-            # Add total bills for proper node sizing
-            faction_total_bills = {}
-            for _, row in df.iterrows():
-                main_faction_id = row['MainFactionID']
-                if main_faction_id not in faction_total_bills:
-                    faction_total_bills[main_faction_id] = row['MainFactionTotalBills']
+            # Add total bills for proper node sizing (vectorized)
+            faction_bills = pd.concat([
+                df[['MainFactionID', 'MainFactionTotalBills']].rename(
+                    columns={'MainFactionID': 'FactionID', 'MainFactionTotalBills': 'TotalBills'}
+                ),
+                df[['SupporterFactionID', 'SupporterFactionTotalBills']].rename(
+                    columns={'SupporterFactionID': 'FactionID', 'SupporterFactionTotalBills': 'TotalBills'}
+                )
+            ]).drop_duplicates('FactionID', keep='first')
+            faction_total_bills = faction_bills.set_index('FactionID')['TotalBills'].to_dict()
 
-                supp_faction_id = row['SupporterFactionID']
-                if supp_faction_id not in faction_total_bills:
-                    faction_total_bills[supp_faction_id] = row['SupporterFactionTotalBills']
-
-            # Calculate collaboration count for hover info
-            faction_collaboration_counts = {}
-            for _, faction in all_factions.iterrows():
-                faction_id = faction['FactionID']
-                collaborations = df[(df['MainFactionID'] == faction_id) | (df['SupporterFactionID'] == faction_id)]
-                faction_collaboration_counts[faction_id] = len(collaborations)
+            # Calculate collaboration count for hover info (vectorized O(n) instead of O(n²))
+            main_counts = df['MainFactionID'].value_counts()
+            supp_counts = df['SupporterFactionID'].value_counts()
+            faction_collaboration_counts = (
+                main_counts.add(supp_counts, fill_value=0)
+                .reindex(all_factions['FactionID'], fill_value=0)
+                .astype(int)
+                .to_dict()
+            )
 
             all_factions['TotalBills'] = all_factions['FactionID'].map(faction_total_bills).fillna(0)
             all_factions['CollaborationCount'] = all_factions['FactionID'].map(faction_collaboration_counts)
