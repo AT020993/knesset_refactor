@@ -1,11 +1,12 @@
 """API clients and communication modules.
 
-Note: ODataClient is NOT eagerly imported here because it depends on aiohttp,
-which may not be installed on Streamlit Cloud (only needed for data refresh).
-Use: from api.odata_client import ODataClient
+Note: ODataClient and error_handling are NOT eagerly imported here because they
+depend on aiohttp, which may not be installed on Streamlit Cloud.
+Import directly when needed:
+    from api.odata_client import ODataClient
+    from api.error_handling import ErrorCategory, categorize_error
 """
 
 from .circuit_breaker import CircuitBreaker
-from .error_handling import ErrorCategory, categorize_error
 
-__all__ = ["CircuitBreaker", "ErrorCategory", "categorize_error"]
+__all__ = ["CircuitBreaker"]

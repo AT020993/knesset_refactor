@@ -4,7 +4,10 @@ import asyncio
 import json
 from enum import Enum
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
 
 
 class ErrorCategory(Enum):
@@ -21,16 +24,16 @@ def categorize_error(exception: Exception) -> ErrorCategory:
     """Categorize an exception into error types for better handling."""
     if isinstance(exception, asyncio.TimeoutError):
         return ErrorCategory.TIMEOUT
-    elif isinstance(exception, aiohttp.ClientConnectorError):
+    elif aiohttp is not None and isinstance(exception, aiohttp.ClientConnectorError):
         return ErrorCategory.NETWORK
-    elif isinstance(exception, aiohttp.ClientResponseError):
+    elif aiohttp is not None and isinstance(exception, aiohttp.ClientResponseError):
         if 400 <= exception.status < 500:
             return ErrorCategory.CLIENT
         elif 500 <= exception.status < 600:
             return ErrorCategory.SERVER
         else:
             return ErrorCategory.UNKNOWN
-    elif isinstance(exception, aiohttp.ClientError):
+    elif aiohttp is not None and isinstance(exception, aiohttp.ClientError):
         return ErrorCategory.NETWORK
     elif isinstance(exception, (json.JSONDecodeError, ValueError)):
         return ErrorCategory.DATA

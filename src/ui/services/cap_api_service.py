@@ -6,11 +6,15 @@ for annotation, without requiring them to be in the local database.
 """
 
 import asyncio
-import aiohttp
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 import pandas as pd
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
 
 
 class CAPAPIService:
@@ -26,6 +30,8 @@ class CAPAPIService:
     def __init__(self, logger_obj: Optional[logging.Logger] = None):
         """Initialize the API service."""
         self.logger = logger_obj or logging.getLogger(__name__)
+        if aiohttp is None:
+            self.logger.warning("aiohttp not installed — CAP API fetching disabled")
 
     async def _fetch_json(
         self, session: aiohttp.ClientSession, url: str
