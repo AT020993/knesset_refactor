@@ -330,7 +330,7 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 |----------|-------|
 | **Charts** | `src/ui/charts/comparison/`, `time_series.py`, `distribution.py`, `network/` |
 | **Chart Base** | `src/ui/charts/base.py` (BaseChart, `@chart_error_handler`), `mixins/` |
-| **Queries** | `src/ui/queries/predefined_queries.py` (facade), `packs/` (bills, agenda, parliamentary, registry), `types.py`, `sql_templates.py` |
+| **Queries** | `src/ui/queries/predefined_queries.py` (facade: `get_all_query_names()`, `get_query_definition(name)`), `packs/` (bills, agenda, parliamentary, registry), `types.py`, `sql_templates.py`, `query_executor.py` (`_strip_table_alias()`) |
 | **CAP Services** | `src/ui/services/cap/` — facades: `cap_service.py`, `user_service.py`, `repository.py`, `taxonomy.py`; ops: `user_service_*_ops.py`, `repository_*_ops.py`, `taxonomy_migration_ops.py` |
 | **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py → `admin_maintenance_ops.py`, auth_handler.py, bill_queue_renderer.py) |
 | **UI Renderers** | `src/ui/renderers/plots_page.py` → `plots/generation_ops.py`, `plots/selection_ops.py`; `data_refresh/page.py` → `data_refresh/query_results_ops.py`; `cap_annotation_page.py`, `research_coding_page.py` |
@@ -346,6 +346,7 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
 | **Performance** | `src/utils/performance_utils.py` (`optimize_dataframe_dtypes()`, `reduce_plotly_figure_size()`) |
+| **CI** | `.github/workflows/ci.yml` — jobs: `quality`, `unit-tests`, `cloud-compat` (uv sync), `e2e-tests`, `summary` |
 | **Launchers** | `launch_knesset.py`, `researcher_launcher.py`, `start-knesset.sh` |
 
 ## Streamlit Cloud Deployment
@@ -657,9 +658,12 @@ finally:
 
 Run fast tests before commits.
 
-**Cloud Compatibility Tests** (44 tests across 2 files):
+**Known Failing Test**: `test_cli.py::test_refresh_specific_table` — mock assertion mismatch (pre-existing, not a regression).
+
+**Cloud Compatibility Tests** (55 tests across 3 files):
 - `test_cloud_compatibility.py`: 34 unit tests covering credential loading, storage ops, async patterns, database persistence, session state, resource constraints
 - `test_cloud_integration.py`: 10 integration tests for deployment scenarios, secrets configuration, concurrent access
+- `test_cloud_constraints.py`: 11 constraint tests catching: module shadowing, dep drift (requirements.txt vs pyproject.toml), SQL alias scope, unsafe asyncio.run(), unbound-in-finally
 - Fixtures in `tests/fixtures/cloud_fixtures.py`: mocked secrets, GCS client, Streamlit/CLI contexts, session state
 - See `tests/README_CLOUD_TESTS.md` for full documentation
 
