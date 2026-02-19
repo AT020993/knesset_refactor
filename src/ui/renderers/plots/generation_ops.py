@@ -176,7 +176,11 @@ def generate_and_display_plot(
             figure = plot_function(**plot_args)
             if figure:
                 # Optimize large figures for faster rendering
-                if any(len(getattr(trace, 'x', None) or []) > 500 for trace in figure.data):
+                if any(
+                    len(x) > 500
+                    for trace in figure.data
+                    if (x := getattr(trace, 'x', None)) is not None
+                ):
                     figure = reduce_plotly_figure_size(figure)
                 st.plotly_chart(
                     figure,
