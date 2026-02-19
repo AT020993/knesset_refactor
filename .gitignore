@@ -1,6 +1,7 @@
 # Data directory (database files, parquet files, etc.)
 /data/*
 !/data/taxonomies/
+!/data/faction_coalition_status*.csv
 *.duckdb
 *.parquet
 

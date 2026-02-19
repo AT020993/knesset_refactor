@@ -17,7 +17,7 @@ class Settings:
     DEFAULT_DB_PATH = DATA_DIR / "warehouse.duckdb"
     PARQUET_DIR = DATA_DIR / "parquet"
     RESUME_STATE_FILE = DATA_DIR / ".resume_state.json"
-    FACTION_COALITION_STATUS_FILE = DATA_DIR / "faction_coalition_status.csv"
+    FACTION_COALITION_STATUS_FILE = DATA_DIR / "faction_coalition_status_all_knessets.csv"
 
     # UI settings
     MAX_ROWS_FOR_CHART_BUILDER = 50000

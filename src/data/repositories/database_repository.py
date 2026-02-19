@@ -118,7 +118,8 @@ class DatabaseRepository:
                     'KnessetNum': 'Int64',
                     'FactionID': 'Int64',
                     'FactionName': 'string',
-                    'CoalitionStatus': 'string'
+                    'CoalitionStatus': 'string',
+                    'NewFactionName': 'string',
                 },
                 parse_dates=['DateJoinedCoalition', 'DateLeftCoalition']
             )
@@ -139,6 +140,7 @@ class DatabaseRepository:
                         FactionID INTEGER,
                         FactionName VARCHAR,
                         CoalitionStatus VARCHAR,
+                        NewFactionName VARCHAR,
                         DateJoinedCoalition DATE,
                         DateLeftCoalition DATE
                     )
