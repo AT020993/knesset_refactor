@@ -252,9 +252,11 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 
 ## Coalition Status
 
-**Only Knesset 25 has coalition data** in `data/faction_coalition_status.csv`. Other Knessets show "Unknown" or "Unmapped".
+**K1-25 coalition data** in `data/faction_coalition_status_all_knessets.csv` (385 rows). K21-22 show "Unknown" (interim Knessets).
+Original K25-only backup preserved in `data/faction_coalition_status.csv`.
 
-To add more: Edit CSV → Run data refresh → Charts auto-update.
+Mid-term coalition changes stored in `DateJoinedCoalition`/`DateLeftCoalition` columns.
+To update: Edit CSV or re-run `import_coalition_data.py` → reload via `load_faction_coalition_status()`.
 
 ## CAP Annotation System
 
@@ -333,12 +335,14 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py → `admin_maintenance_ops.py`, auth_handler.py, bill_queue_renderer.py) |
 | **UI Renderers** | `src/ui/renderers/plots_page.py` → `plots/generation_ops.py`, `plots/selection_ops.py`; `data_refresh/page.py` → `data_refresh/query_results_ops.py`; `cap_annotation_page.py`, `research_coding_page.py` |
 | **Research Coding** | `src/utils/research_coding_importer.py`, `import_research_coding.py` |
+| **Gov Bill Import** | `import_government_bills.py` — K10-20 + K23-24 government bill coding into UserBillCoding |
+| **Coalition Import** | `import_coalition_data.py` — merge researcher CSVs → `data/faction_coalition_status_all_knessets.csv` |
 | **Sidebar** | `src/ui/sidebar/components.py`, `data_refresh_handler.py`, `query_handler.py` |
 | **Data Sync** | `src/data/services/storage_sync_service.py` (facade) → `storage_sync_metadata_ops.py`, `storage_sync_transfer_ops.py`, `storage_sync_startup_ops.py`, `sync_types.py`, `sync_data_refresh_service.py` |
 | **Cloud Storage** | `src/data/storage/cloud_storage.py` (facade) → `cloud_storage_ops.py`, `credential_resolver.py` |
 | **Data Refresh** | `src/data/services/data_refresh_service.py`, `src/api/odata_client.py` |
 | **State** | `src/ui/state/session_manager.py`, `state_contracts.py`, `state_ops.py` |
-| **Data** | `data/faction_coalition_status.csv`, `data/taxonomies/democratic_erosion_codebook.csv` |
+| **Data** | `data/faction_coalition_status_all_knessets.csv`, `data/faction_coalition_status.csv` (K25 backup), `data/taxonomies/democratic_erosion_codebook.csv` |
 | **Config** | `src/config/database.py`, `src/config/api.py`, `src/backend/tables.py` |
 | **Connection** | `src/backend/connection_manager.py` (get_db_connection context manager) |
 | **Performance** | `src/utils/performance_utils.py` (`optimize_dataframe_dtypes()`, `reduce_plotly_figure_size()`) |
@@ -364,14 +368,16 @@ if 'credentials_base64' in gcp_secrets:
 - After annotation: Auto-uploads database to GCS (see `_sync_to_cloud()` in renderers)
 - Without GCS: Data lost on app reboot
 
-**Upload local data to GCS**: `GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json" python upload_to_gcs.py`
+**Upload local data to GCS**: `GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json" python upload_to_gcs.py --bucket knesset_bucket`
+
+**🔴 GCS scripts must run WITHOUT `PYTHONPATH="./src"`** — `src/requests.py` shadows the `requests` package, breaking `google.auth.transport`.
 
 **Sync Local ↔ Cloud Database**:
 
 | Direction | Command |
 |-----------|---------|
-| Upload local → cloud | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python upload_to_gcs.py` |
-| Download cloud → local | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python download_from_gcs.py` |
+| Upload local → cloud | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python upload_to_gcs.py --bucket knesset_bucket` |
+| Download cloud → local | `GOOGLE_APPLICATION_CREDENTIALS="./iucc-international-dimensions-b86f1553b132.json" python download_from_gcs.py --bucket knesset_bucket` |
 
 **🔴 Local vs Cloud are independent databases** - researchers/annotations added on Streamlit Cloud won't appear locally until you run `download_from_gcs.py`.
 
@@ -644,6 +650,7 @@ finally:
 | `IndexError: iloc[-1]` on empty DataFrame | API returned no data | Check filters, add `if df.empty:` guard |
 | Widget key collision errors | Duplicate Streamlit widget keys | Use unique prefix like `f"filter_{id(self)}_..."` |
 | `ModuleNotFoundError: No module named 'config'` | Missing PYTHONPATH | Prefix command with `PYTHONPATH="./src"` |
+| `No module named 'requests.adapters'` | `src/requests.py` shadows `requests` package | Run GCS scripts **without** `PYTHONPATH="./src"` |
 | Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
 
 ## Test Status
