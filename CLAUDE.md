@@ -324,6 +324,12 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 - `BILL_STATUS_CASE_HE/EN` - Status categorization
 - `QUERY_STATUS_CASE` - Query answer status
 
+## Query Execution Pipeline
+
+**`execute_query_with_filters()` returns 4-tuple**: `(df, sql, filters, params)` — callers must unpack all four.
+
+**Params travel with SQL**: Filter `?` placeholders in stored SQL require `last_query_params` from session state for re-execution. `DatasetExporter` uses both to fetch full datasets. LIMIT/OFFSET are inlined as integers (safe, code-derived) so the exporter's regex can strip them.
+
 ## Key File References
 
 | Category | Files |
@@ -334,6 +340,7 @@ Reusable CTEs in `src/ui/queries/sql_templates.py`:
 | **CAP Services** | `src/ui/services/cap/` — facades: `cap_service.py`, `user_service.py`, `repository.py`, `taxonomy.py`; ops: `user_service_*_ops.py`, `repository_*_ops.py`, `taxonomy_migration_ops.py` |
 | **CAP Renderers** | `src/ui/renderers/cap/` (form_renderer.py, admin_renderer.py → `admin_maintenance_ops.py`, auth_handler.py, bill_queue_renderer.py) |
 | **UI Renderers** | `src/ui/renderers/plots_page.py` → `plots/generation_ops.py`, `plots/selection_ops.py`; `data_refresh/page.py` → `data_refresh/query_results_ops.py`; `cap_annotation_page.py`, `research_coding_page.py` |
+| **Dataset Export** | `src/ui/renderers/data_refresh/dataset_exporter.py` (full dataset download with param passthrough) |
 | **Research Coding** | `src/utils/research_coding_importer.py`, `import_research_coding.py` |
 | **Gov Bill Import** | `import_government_bills.py` — K10-20 + K23-24 government bill coding into UserBillCoding |
 | **Coalition Import** | `import_coalition_data.py` — merge researcher CSVs → `data/faction_coalition_status_all_knessets.csv` |
@@ -653,6 +660,7 @@ finally:
 | `ModuleNotFoundError: No module named 'config'` | Missing PYTHONPATH | Prefix command with `PYTHONPATH="./src"` |
 | `No module named 'requests.adapters'` | `src/requests.py` shadows `requests` package | Run GCS scripts **without** `PYTHONPATH="./src"` |
 | Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
+| `Values were not provided for...prepared statement parameters` on full dataset download | Stored SQL has `?` placeholders but params weren't passed to exporter | Ensure `last_query_params` is stored in session state and passed through `DatasetExporter` methods |
 
 ## Test Status
 
