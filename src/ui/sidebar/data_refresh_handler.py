@@ -12,7 +12,6 @@ from typing import Callable
 import streamlit as st
 
 from config.database import DatabaseConfig
-from data.services.data_refresh_service import DataRefreshService
 
 # Use canonical source for table list
 TABLES = DatabaseConfig.TABLES
@@ -88,6 +87,10 @@ def handle_data_refresh_button_click(
             status.write("⏳ This may take several minutes for large tables...")
 
             ui_logger.info("Starting data refresh using synchronous wrapper...")
+
+            # Lazy import: DataRefreshService depends on aiohttp which may
+            # not be installed on Streamlit Cloud
+            from data.services.data_refresh_service import DataRefreshService
 
             # Use the synchronous wrapper (handles Streamlit's event loop)
             refresh_service = DataRefreshService(db_path=db_path, logger_obj=ui_logger)
