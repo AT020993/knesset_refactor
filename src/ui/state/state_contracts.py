@@ -21,6 +21,7 @@ class QueryState:
     applied_knesset_filter_to_query: list[Any]
     last_executed_sql: str
     applied_filters_info_query: list[str]
+    last_query_params: list[Any]
 
 
 @dataclass(frozen=True)

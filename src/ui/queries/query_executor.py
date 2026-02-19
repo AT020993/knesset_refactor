@@ -35,12 +35,17 @@ class QueryExecutor:
         safe_execute_func: Optional[Callable[..., pd.DataFrame]] = None,
         document_type_filter: Optional[List[str]] = None,
         page_offset: int = 0,
-    ) -> Tuple[pd.DataFrame, str, List[str]]:
-        """Execute a predefined query with optional filters and pagination."""
+    ) -> Tuple[pd.DataFrame, str, List[str], List[Any]]:
+        """Execute a predefined query with optional filters and pagination.
+
+        Returns:
+            Tuple of (results_df, executed_sql, applied_filters, query_params).
+            query_params are the bound parameter values needed to re-execute the SQL.
+        """
         definition = get_query_definition(query_name)
         if not definition:
             self.logger.error("Query '%s' not found", query_name)
-            return pd.DataFrame(), "", ["Error: Query not found"]
+            return pd.DataFrame(), "", ["Error: Query not found"], []
 
         request = QueryRequest(
             definition=definition,
@@ -58,7 +63,7 @@ class QueryExecutor:
         self.logger.info(
             "Executed query '%s' with %d rows", query_name, len(result_df)
         )
-        return result_df, sql, applied_filters
+        return result_df, sql, applied_filters, list(params)
 
     def update_session_state_with_results(
         self,
@@ -66,12 +71,14 @@ class QueryExecutor:
         results_df: pd.DataFrame,
         executed_sql: str,
         applied_filters_info: List[str],
+        query_params: Optional[List[Any]] = None,
     ) -> None:
         """Update Streamlit session state with query results."""
         st.session_state.executed_query_name = query_name
         st.session_state.query_results_df = results_df
         st.session_state.last_executed_sql = executed_sql
         st.session_state.applied_filters_info_query = applied_filters_info
+        st.session_state.last_query_params = query_params or []
         st.session_state.show_query_results = True
 
     def execute_table_exploration(
@@ -173,12 +180,10 @@ class QueryExecutor:
 
         query_limit = request.pagination.limit or default_limit
         if query_limit:
-            query += " LIMIT ?"
-            params.append(query_limit)
+            query += f" LIMIT {int(query_limit)}"
 
         if request.pagination.offset > 0:
-            query += " OFFSET ?"
-            params.append(request.pagination.offset)
+            query += f" OFFSET {int(request.pagination.offset)}"
             applied_filters.append(f"Offset: {request.pagination.offset}")
 
         return query, params, applied_filters

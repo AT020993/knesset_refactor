@@ -27,6 +27,7 @@ class SessionStateManager:
         'applied_knesset_filter_to_query': lambda: [],
         'last_executed_sql': "",
         'applied_filters_info_query': lambda: [],
+        'last_query_params': lambda: [],
     }
     
     TABLE_EXPLORER_KEYS: dict[str, Any] = {
@@ -142,6 +143,11 @@ class SessionStateManager:
         return st.session_state.get('applied_filters_info_query', [])
 
     @classmethod
+    def get_last_query_params(cls) -> List[Any]:
+        """Get the params for the last executed query (for re-execution by exporter)."""
+        return st.session_state.get('last_query_params', [])
+
+    @classmethod
     def get_knesset_filter(cls) -> List[int]:
         """Get the current Knesset filter."""
         return st.session_state.get('ms_knesset_filter', [])
@@ -208,13 +214,20 @@ class SessionStateManager:
 
     # Type-safe setters
     @classmethod
-    def set_query_results(cls, query_name: str, results_df: pd.DataFrame, 
-                         executed_sql: str, applied_filters: List[str]) -> None:
+    def set_query_results(
+        cls,
+        query_name: str,
+        results_df: pd.DataFrame,
+        executed_sql: str,
+        applied_filters: List[str],
+        query_params: Optional[List[Any]] = None,
+    ) -> None:
         """Set query results in session state."""
         st.session_state.executed_query_name = query_name
         st.session_state.query_results_df = results_df
         st.session_state.last_executed_sql = executed_sql
         st.session_state.applied_filters_info_query = applied_filters
+        st.session_state.last_query_params = query_params or []
         st.session_state.show_query_results = True
 
     @classmethod
@@ -262,6 +275,7 @@ class SessionStateManager:
             applied_filters_info_query=st.session_state.get(
                 'applied_filters_info_query', []
             ),
+            last_query_params=st.session_state.get('last_query_params', []),
         )
 
     @classmethod

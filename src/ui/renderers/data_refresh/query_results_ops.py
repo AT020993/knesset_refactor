@@ -56,7 +56,10 @@ def render_query_results_display(renderer: Any) -> None:
 
         safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", query_name_safe)
         render_download_options(renderer, display_df, safe_name)
-        renderer._dataset_exporter.render_full_dataset_download(last_sql, safe_name)
+        last_params = SessionStateManager.get_last_query_params()
+        renderer._dataset_exporter.render_full_dataset_download(
+            last_sql, safe_name, last_params
+        )
     else:
         st.info("The query returned no results with the current filters.")
 

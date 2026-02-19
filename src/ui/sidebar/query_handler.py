@@ -54,13 +54,15 @@ def handle_run_query_button_click(
             document_type_filter = []
 
         executor = QueryExecutor(db_path=db_path, connect_func=None, logger=ui_logger)
-        results_df, executed_sql, applied_filters = executor.execute_query_with_filters(
-            query_name=selected_query,
-            knesset_filter=st.session_state.get("ms_knesset_filter", []),
-            faction_filter=selected_faction_ids,
-            safe_execute_func=safe_execute_query,
-            document_type_filter=document_type_filter,
-            page_offset=page_offset,
+        results_df, executed_sql, applied_filters, query_params = (
+            executor.execute_query_with_filters(
+                query_name=selected_query,
+                knesset_filter=st.session_state.get("ms_knesset_filter", []),
+                faction_filter=selected_faction_ids,
+                safe_execute_func=safe_execute_query,
+                document_type_filter=document_type_filter,
+                page_offset=page_offset,
+            )
         )
 
         if results_df.empty and not applied_filters:
@@ -76,6 +78,7 @@ def handle_run_query_button_click(
         st.session_state.show_table_explorer_results = False
         st.session_state.applied_filters_info_query = applied_filters
         st.session_state.last_executed_sql = executed_sql
+        st.session_state.last_query_params = query_params
 
         st.toast(f"✅ Query '{selected_query}' executed.", icon="📊")
 

@@ -9,7 +9,7 @@ import io
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -48,12 +48,15 @@ class DatasetExporter:
         sql = re.sub(r'\s+OFFSET\s+\d+', '', sql, flags=re.IGNORECASE)
         return sql.strip()
 
-    def get_full_dataset_row_count(self, modified_sql: str) -> int:
+    def get_full_dataset_row_count(
+        self, modified_sql: str, params: Optional[Sequence[Any]] = None
+    ) -> int:
         """
         Get the row count for a full dataset query (without LIMIT/OFFSET).
 
         Args:
             modified_sql: The SQL query with filters applied
+            params: Bound parameter values for filter placeholders
 
         Returns:
             Total row count, or 0 if error
@@ -63,7 +66,9 @@ class DatasetExporter:
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                count_result = safe_execute_query(con, full_count_sql, self.logger)
+                count_result = safe_execute_query(
+                    con, full_count_sql, self.logger, params=list(params) if params else None
+                )
                 # Convert to native Python int to ensure boolean comparisons work with Streamlit
                 if count_result is not None and not count_result.empty:
                     return int(count_result['total'].iloc[0])
@@ -72,12 +77,15 @@ class DatasetExporter:
             self.logger.error(f"Error counting full dataset rows: {e}", exc_info=True)
             return 0
 
-    def fetch_full_dataset(self, modified_sql: str) -> Optional[pd.DataFrame]:
+    def fetch_full_dataset(
+        self, modified_sql: str, params: Optional[Sequence[Any]] = None
+    ) -> Optional[pd.DataFrame]:
         """
         Fetch the full dataset without LIMIT/OFFSET.
 
         Args:
             modified_sql: The SQL query with filters applied
+            params: Bound parameter values for filter placeholders
 
         Returns:
             DataFrame with full results, or None if error
@@ -86,7 +94,9 @@ class DatasetExporter:
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
-                result = safe_execute_query(con, full_sql_no_limit, self.logger)
+                result = safe_execute_query(
+                    con, full_sql_no_limit, self.logger, params=list(params) if params else None
+                )
                 if isinstance(result, pd.DataFrame):
                     return result
                 return None
@@ -94,20 +104,26 @@ class DatasetExporter:
             self.logger.error(f"Error fetching full dataset: {e}", exc_info=True)
             return None
 
-    def render_full_dataset_download(self, modified_sql: str, safe_name: str) -> None:
+    def render_full_dataset_download(
+        self,
+        modified_sql: str,
+        safe_name: str,
+        params: Optional[Sequence[Any]] = None,
+    ) -> None:
         """
         Render the full dataset download section.
 
         Args:
             modified_sql: The SQL query with filters applied
             safe_name: Sanitized query name for file naming
+            params: Bound parameter values for filter placeholders
         """
         st.markdown("---")
         st.markdown("### 📦 Download Full Filtered Dataset")
         st.caption("⚠️ This will download ALL rows matching your filters (not just 1000 displayed)")
 
         # Get row count for full dataset
-        total_rows = self.get_full_dataset_row_count(modified_sql)
+        total_rows = self.get_full_dataset_row_count(modified_sql, params)
 
         if total_rows == 0:
             st.error("Error counting rows or no rows found")
@@ -123,17 +139,19 @@ class DatasetExporter:
 
         with col1:
             if st.button("⬇️ Download Full CSV", disabled=(total_rows == 0), key=f"full_csv_btn_{safe_name}"):
-                self._handle_full_csv_download(modified_sql, safe_name)
+                self._handle_full_csv_download(modified_sql, safe_name, params)
 
         with col2:
             if st.button("⬇️ Download Full Excel", disabled=(total_rows == 0), key=f"full_excel_btn_{safe_name}"):
-                self._handle_full_excel_download(modified_sql, safe_name)
+                self._handle_full_excel_download(modified_sql, safe_name, params)
 
-    def _handle_full_csv_download(self, modified_sql: str, safe_name: str) -> None:
+    def _handle_full_csv_download(
+        self, modified_sql: str, safe_name: str, params: Optional[Sequence[Any]] = None
+    ) -> None:
         """Handle full CSV dataset download."""
         with st.spinner("Preparing full dataset..."):
             try:
-                full_df = self.fetch_full_dataset(modified_sql)
+                full_df = self.fetch_full_dataset(modified_sql, params)
 
                 if full_df is not None and not full_df.empty:
                     csv_data = full_df.to_csv(index=False).encode("utf-8-sig")
@@ -151,11 +169,13 @@ class DatasetExporter:
                 self.logger.error(f"Error preparing full CSV: {e}", exc_info=True)
                 st.error(f"Error preparing CSV: {e}")
 
-    def _handle_full_excel_download(self, modified_sql: str, safe_name: str) -> None:
+    def _handle_full_excel_download(
+        self, modified_sql: str, safe_name: str, params: Optional[Sequence[Any]] = None
+    ) -> None:
         """Handle full Excel dataset download."""
         with st.spinner("Preparing full dataset..."):
             try:
-                full_df = self.fetch_full_dataset(modified_sql)
+                full_df = self.fetch_full_dataset(modified_sql, params)
 
                 if full_df is not None and not full_df.empty:
                     excel_buffer = io.BytesIO()
