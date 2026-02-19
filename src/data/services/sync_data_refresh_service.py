@@ -34,6 +34,32 @@ class SyncDataRefreshService:
                 self.logger.warning("Could not import DataRefreshService: %s", exc)
         return self._async_service
 
+    def _run_async(self, coro: Any) -> Any:
+        """Run an async coroutine from sync context, handling Streamlit's event loop."""
+        try:
+            asyncio.get_running_loop()
+            # Inside Streamlit's event loop — run in a separate thread
+            import concurrent.futures
+
+            service = self
+
+            def _thread_target() -> Any:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(coro)
+                except Exception as exc:
+                    service.logger.error("Error in async thread: %s", exc, exc_info=True)
+                    return False
+                finally:
+                    loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(_thread_target).result(timeout=600)
+        except RuntimeError:
+            # No running loop (CLI context) — safe to use asyncio.run()
+            return asyncio.run(coro)
+
     def refresh_tables_sync(
         self,
         tables: Optional[List[str]] = None,
@@ -43,7 +69,9 @@ class SyncDataRefreshService:
         try:
             async_service = self._get_async_service()
             if async_service:
-                result = asyncio.run(async_service.refresh_tables(tables, progress_callback))
+                result = self._run_async(
+                    async_service.refresh_tables(tables, progress_callback)
+                )
                 return bool(result)
 
             from backend.fetch_table import ensure_latest

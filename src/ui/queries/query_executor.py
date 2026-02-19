@@ -140,10 +140,10 @@ class QueryExecutor:
         applied_filters: list[str] = []
 
         if request.knesset_numbers and request.definition.knesset_filter_column:
-            clause, clause_params = self._build_in_clause(
-                request.definition.knesset_filter_column,
-                request.knesset_numbers,
-            )
+            # Strip table alias (e.g. "B.KnessetNum" -> "KnessetNum") because
+            # filters are applied outside the subquery where aliases aren't in scope
+            col = self._strip_table_alias(request.definition.knesset_filter_column)
+            clause, clause_params = self._build_in_clause(col, request.knesset_numbers)
             conditions.append(clause)
             params.extend(clause_params)
             applied_filters.append(
@@ -152,7 +152,8 @@ class QueryExecutor:
 
         faction_col = request.definition.faction_filter_column
         if request.faction_ids and faction_col and faction_col != "NULL":
-            clause, clause_params = self._build_in_clause(faction_col, request.faction_ids)
+            col = self._strip_table_alias(faction_col)
+            clause, clause_params = self._build_in_clause(col, request.faction_ids)
             conditions.append(clause)
             params.extend(clause_params)
             applied_filters.append(
@@ -181,6 +182,14 @@ class QueryExecutor:
             applied_filters.append(f"Offset: {request.pagination.offset}")
 
         return query, params, applied_filters
+
+    @staticmethod
+    def _strip_table_alias(column: str) -> str:
+        """Strip table alias prefix from a column name.
+
+        E.g. "B.KnessetNum" -> "KnessetNum", "KnessetNum" -> "KnessetNum"
+        """
+        return column.rsplit(".", 1)[-1]
 
     @staticmethod
     def _build_in_clause(column: str, values: Sequence[int]) -> tuple[str, list[int]]:

@@ -166,6 +166,27 @@ class CAPAPIService:
             self.logger.error(f"Unexpected error searching bills: {e}")
             return [], self.ERROR_UNEXPECTED.format(details=str(e))
 
+    def _run_async(self, coro: Any) -> Any:
+        """Run an async coroutine from sync context, handling Streamlit's event loop."""
+        try:
+            asyncio.get_running_loop()
+            # Inside Streamlit's event loop — run in a separate thread
+            import concurrent.futures
+
+            def _thread_target() -> Any:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(coro)
+                finally:
+                    loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(_thread_target).result(timeout=60)
+        except RuntimeError:
+            # No running loop (CLI context) — safe to use asyncio.run()
+            return asyncio.run(coro)
+
     def fetch_recent_bills_sync(
         self,
         knesset_num: int = 25,
@@ -178,10 +199,9 @@ class CAPAPIService:
             DataFrame with bill data
         """
         try:
-            bills = asyncio.run(self.fetch_recent_bills(knesset_num, limit))
+            bills = self._run_async(self.fetch_recent_bills(knesset_num, limit))
             if bills:
                 df = pd.DataFrame(bills)
-                # Add URL column
                 df['BillURL'] = df['BillID'].apply(
                     lambda x: f"https://main.knesset.gov.il/Activity/Legislation/Laws/Pages/LawBill.aspx?t=lawsuggestionssearch&lawitemid={x}"
                 )
@@ -194,7 +214,7 @@ class CAPAPIService:
     def fetch_bill_by_id_sync(self, bill_id: int) -> Optional[Dict[str, Any]]:
         """Synchronous wrapper to fetch a bill by ID."""
         try:
-            return asyncio.run(self.fetch_bill_by_id(bill_id))
+            return self._run_async(self.fetch_bill_by_id(bill_id))
         except Exception as e:
             self.logger.error(f"Error in sync fetch: {e}")
             return None
@@ -208,18 +228,11 @@ class CAPAPIService:
         """
         Synchronous wrapper to search bills by name.
 
-        Args:
-            search_term: Term to search in bill names
-            knesset_num: Optional Knesset number filter
-            limit: Maximum results
-
         Returns:
             Tuple of (results_list, error_message).
-            - On success: (list_of_bills, None)
-            - On error: ([], "Error description")
         """
         try:
-            return asyncio.run(
+            return self._run_async(
                 self.search_bills_by_name(search_term, knesset_num, limit)
             )
         except Exception as e:
