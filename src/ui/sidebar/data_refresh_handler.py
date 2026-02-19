@@ -77,6 +77,7 @@ def handle_data_refresh_button_click(
             mins = int((seconds % 3600) // 60)
             return f"{hours}h {mins}m"
 
+    refresh_succeeded = False
     try:
         # Show spinner while downloading (progress callbacks don't work in threaded mode)
         with st.sidebar.status(
