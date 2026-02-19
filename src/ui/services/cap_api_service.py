@@ -5,9 +5,11 @@ This module provides functionality to fetch bills directly from the Knesset API
 for annotation, without requiring them to be in the local database.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 from datetime import datetime
 import pandas as pd
 
@@ -15,6 +17,9 @@ try:
     import aiohttp
 except ImportError:
     aiohttp = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    import aiohttp
 
 
 class CAPAPIService:
@@ -154,10 +159,10 @@ class CAPAPIService:
         except asyncio.TimeoutError:
             self.logger.error(f"Timeout searching bills for term: {search_term}")
             return [], self.ERROR_TIMEOUT
-        except aiohttp.ClientError as e:
-            self.logger.error(f"Network error searching bills: {e}")
-            return [], self.ERROR_NETWORK.format(details=str(e))
         except Exception as e:
+            if aiohttp is not None and isinstance(e, aiohttp.ClientError):
+                self.logger.error(f"Network error searching bills: {e}")
+                return [], self.ERROR_NETWORK.format(details=str(e))
             self.logger.error(f"Unexpected error searching bills: {e}")
             return [], self.ERROR_UNEXPECTED.format(details=str(e))
 
