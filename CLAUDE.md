@@ -36,9 +36,12 @@ Prioritize lessons with:
 # Setup (first time) - Requires Python 3.12+
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# Or with uv (faster): uv sync --all-extras
 
-# Fast unit tests (~10s)
-pytest tests/ --ignore=tests/test_api_integration.py --ignore=tests/test_e2e.py --ignore=tests/test_data_pipeline_integration.py --ignore=tests/test_connection_leaks.py --tb=short -q
+# ⚠️ PYTHONPATH: Most commands need PYTHONPATH="./src" (imports use bare module names like `from config.database import ...`)
+
+# Fast unit tests (~10s, 576 tests)
+PYTHONPATH="./src" pytest tests/ --ignore=tests/test_api_integration.py --ignore=tests/test_e2e.py --ignore=tests/test_data_pipeline_integration.py --ignore=tests/test_connection_leaks.py --tb=short -q
 
 # Data refresh
 PYTHONPATH="./src" python -m backend.fetch_table --all
@@ -640,6 +643,8 @@ finally:
 | `Password must contain...` | New password complexity requirements | Use 8+ chars with uppercase, lowercase, and digit |
 | `IndexError: iloc[-1]` on empty DataFrame | API returned no data | Check filters, add `if df.empty:` guard |
 | Widget key collision errors | Duplicate Streamlit widget keys | Use unique prefix like `f"filter_{id(self)}_..."` |
+| `ModuleNotFoundError: No module named 'config'` | Missing PYTHONPATH | Prefix command with `PYTHONPATH="./src"` |
+| Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
 
 ## Test Status
 
@@ -651,7 +656,7 @@ Run fast tests before commits.
 - Fixtures in `tests/fixtures/cloud_fixtures.py`: mocked secrets, GCS client, Streamlit/CLI contexts, session state
 - See `tests/README_CLOUD_TESTS.md` for full documentation
 
-**CAP Tests** (144 total across `test_cap_services.py`, `test_cap_integration.py`, `test_cap_renderers.py`):
+**CAP Tests** (across `test_cap_services.py`, `test_cap_integration.py`, `test_cap_renderers.py`):
 - Taxonomy service operations (5 tests)
 - Repository CRUD with `researcher_id` (17 tests)
 - Statistics with `COUNT(DISTINCT BillID)` (4 tests)
