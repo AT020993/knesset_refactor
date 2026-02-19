@@ -89,14 +89,14 @@ def handle_data_refresh_button_click(
 
             ui_logger.info("Starting data refresh using synchronous wrapper...")
 
-            # Lazy import: DataRefreshService depends on aiohttp which may
-            # not be installed on Streamlit Cloud
+            # Lazy import: DataRefreshService depends on aiohttp
             try:
                 from data.services.data_refresh_service import DataRefreshService
-            except ImportError:
+            except ImportError as import_err:
+                ui_logger.error(f"Failed to import DataRefreshService: {import_err}")
                 status.update(label="Data refresh unavailable", state="error")
                 st.sidebar.error(
-                    "Data refresh from Knesset API is not available in this environment. "
+                    f"Data refresh unavailable: missing dependency ({import_err}). "
                     "Use the local CLI instead:\n\n"
                     "`PYTHONPATH=./src python -m backend.fetch_table --all`"
                 )

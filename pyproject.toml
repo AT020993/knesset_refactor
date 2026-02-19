@@ -7,12 +7,26 @@ name = "knesset-refactor"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit",
-    "duckdb",
-    "pandas",
-    "plotly",
-    "requests",
-    "python-dotenv",
+    # Database & Data Processing
+    "duckdb>=1.2",
+    "pandas>=2.2",
+    "pyarrow>=19.0",
+    "fastparquet>=2024.11",
+    # Web Framework & UI
+    "streamlit>=1.44",
+    "plotly>=5.0",
+    # HTTP Client & Async Operations
+    "aiohttp>=3.9",
+    "backoff>=2.2",
+    # Utilities
+    "tqdm>=4.66",
+    "openpyxl>=3.1",
+    # Cloud Storage (for persistent data on Streamlit Cloud)
+    "google-cloud-storage>=2.14",
+    # Security & Authentication
+    "bcrypt>=4.0",
+    # CLI
+    "typer[all]>=0.12,<0.13",
 ]
 
 [project.optional-dependencies]
