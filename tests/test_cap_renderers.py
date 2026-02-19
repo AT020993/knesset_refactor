@@ -180,7 +180,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_timeout(self):
         """Test _fetch_pdf_impl returns error message on timeout."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.Timeout()
@@ -194,7 +194,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_404(self):
         """Test _fetch_pdf_impl returns specific error on 404."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_response = mock.MagicMock()
@@ -214,7 +214,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_403(self):
         """Test _fetch_pdf_impl returns specific error on 403."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_response = mock.MagicMock()
@@ -234,7 +234,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_connection_error(self):
         """Test _fetch_pdf_impl returns error on connection failure."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.ConnectionError()
@@ -248,7 +248,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_ssl_error(self):
         """Test _fetch_pdf_impl returns error on SSL certificate error."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.SSLError()
@@ -303,7 +303,7 @@ class TestCAPPDFViewer:
     def test_fetch_pdf_returns_error_on_other_http_error(self):
         """Test _fetch_pdf_impl returns generic error on other HTTP status codes."""
         from ui.renderers.cap.pdf_viewer import CAPPDFViewer
-        import requests
+        from utils import http_shim as requests
 
         with mock.patch("ui.renderers.cap.pdf_viewer.requests.get") as mock_get:
             mock_response = mock.MagicMock()

@@ -11,7 +11,7 @@ Handles rendering of bill documents with embedded PDF viewing:
 import logging
 from typing import Optional, Tuple
 
-import requests
+from utils import http_shim as requests
 import streamlit as st
 import pandas as pd
 

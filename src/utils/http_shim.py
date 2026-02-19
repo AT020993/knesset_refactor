@@ -9,6 +9,9 @@ PDF viewer and its tests:
   ``ConnectionError``, and ``HTTPError``.
 
 It intentionally avoids full feature parity with ``requests``.
+
+Note: This module was originally ``src/requests.py`` but was moved here to
+avoid shadowing the real ``requests`` package when PYTHONPATH includes ``src/``.
 """
 
 from __future__ import annotations
@@ -91,4 +94,3 @@ def get(url: str, timeout: float | int | None = None, **_: Any) -> Response:
         raise SSLError(str(exc)) from exc
     except urllib.error.URLError as exc:
         raise ConnectionError(str(exc)) from exc
-

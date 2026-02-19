@@ -105,7 +105,7 @@ def main():
     # Files to upload
     files_to_upload = [
         ("data/warehouse.duckdb", "data/warehouse.duckdb"),
-        ("data/faction_coalition_status.csv", "data/faction_coalition_status.csv"),
+        ("data/faction_coalition_status_all_knessets.csv", "data/faction_coalition_status.csv"),
     ]
 
     # Add all parquet files
