@@ -76,9 +76,12 @@ class AgendaComparisonCharts(BaseChart):
                         elif row["ClassificationDesc"] == "עצמאית":
                             independent_count = int(row["count"])
 
-                date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
-
-                query = f"""
+                # NOTE: Agendas lack a reliable submission date — PresidentDecisionDate
+                # is NULL for ~40% of records and LastUpdatedDate is an API refresh
+                # timestamp (e.g. 2025-12-24), not the actual agenda date.  We match
+                # on PersonID + KnessetNum only, using COUNT(DISTINCT) to handle the
+                # rare MK who switched factions mid-Knesset.
+                query = """
                 SELECT
                     COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name) AS FactionName,
                     p2p.FactionID,
@@ -88,9 +91,6 @@ class AgendaComparisonCharts(BaseChart):
                 LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
                     AND a.KnessetNum = p2p.KnessetNum
                     AND p2p.FactionID IS NOT NULL
-                    AND CAST({date_column} AS TIMESTAMP)
-                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
-                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND a.KnessetNum = f_fallback.KnessetNum
                 LEFT JOIN UserFactionCoalitionStatus ufs_name ON p2p.FactionID = ufs_name.FactionID
@@ -241,8 +241,6 @@ class AgendaComparisonCharts(BaseChart):
                         elif row["ClassificationDesc"] == "עצמאית":
                             independent_count = int(row["count"])
 
-                date_column = "COALESCE(a.PresidentDecisionDate, a.LastUpdatedDate)"
-
                 # Build faction filter condition
                 faction_filter_sql = ""
                 params: List[Any] = [single_knesset_num]
@@ -255,24 +253,22 @@ class AgendaComparisonCharts(BaseChart):
                         faction_filter_sql = f" AND p2p.FactionID IN ({placeholders})"
                         params.extend(valid_ids)
 
-                # Use CTE to deduplicate: each agenda gets ONE faction (prefer non-NULL)
-                # This fixes the double-counting issue where a person may have multiple positions
+                # Use CTE to deduplicate: each agenda gets ONE faction.
+                # Match on PersonID + KnessetNum only (no date matching — see
+                # note in plot_agendas_per_faction for why).  Pick latest
+                # faction position via StartDate DESC for MKs who switched.
                 query = f"""
                 WITH AgendaWithFaction AS (
                     SELECT DISTINCT ON (a.AgendaID)
                         a.AgendaID,
                         p2p.FactionID
                     FROM KNS_Agenda a
-                    JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
-                    LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
+                    LEFT JOIN KNS_PersonToPosition p2p ON a.InitiatorPersonID = p2p.PersonID
                         AND a.KnessetNum = p2p.KnessetNum
                         AND p2p.FactionID IS NOT NULL
-                        AND CAST({date_column} AS TIMESTAMP)
-                            BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
-                            AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                     WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
                         {faction_filter_sql}
-                    ORDER BY a.AgendaID, p2p.FactionID NULLS LAST
+                    ORDER BY a.AgendaID, p2p.StartDate DESC NULLS LAST
                 )
                 SELECT
                     COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
