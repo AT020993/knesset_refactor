@@ -484,21 +484,12 @@ class DistributionCharts(BaseChart):
     ) -> go.Figure:
         """Build a horizontal stacked bar chart for topic distribution.
 
-        Supports count mode (default) and percentage mode with annotations
-        showing totals and Opposition share per topic.
+        Supports count mode (default) and percentage mode (100% stacked bars).
         """
         # Sort by topic code numerically, then convert to string for categorical axis
         topic_order = sorted(df["TopicCode"].unique())
         df["TopicCode"] = df["TopicCode"].astype(str)
         topic_order_str = [str(t) for t in topic_order]
-
-        # Compute per-topic summary stats for annotations
-        topic_totals = df.groupby("TopicCode")["BillCount"].sum()
-        opposition_by_topic = (
-            df[df["CoalitionStatus"] == "Opposition"]
-            .groupby("TopicCode")["BillCount"]
-            .sum()
-        )
 
         coalition_colors = {
             **self.config.COALITION_OPPOSITION_COLORS,
@@ -533,7 +524,7 @@ class DistributionCharts(BaseChart):
             "yaxis": dict(type="category", dtick=1),
             "title_x": 0.5,
             "height": max(min_height, n_topics * bar_height + 200),
-            "margin": dict(t=100, l=80, r=120),
+            "margin": dict(t=100, l=80, r=40),
             "legend_title_text": "Coalition Status",
             "barmode": "stack",
             "bargap": 0.2,
@@ -546,27 +537,6 @@ class DistributionCharts(BaseChart):
             )
 
         fig.update_layout(**layout_kwargs)
-
-        # Add annotations: total count and Opposition % at end of each bar
-        for tc_str in topic_order_str:
-            total = int(topic_totals.get(tc_str, 0))
-            opp = int(opposition_by_topic.get(tc_str, 0))
-            opp_pct = round(100.0 * opp / total, 0) if total > 0 else 0
-
-            if show_percentage:
-                label = f"n={total}"
-            else:
-                label = f"n={total}  Opp:{opp_pct:.0f}%"
-
-            fig.add_annotation(
-                x=total if not show_percentage else 100,
-                y=tc_str,
-                text=f"<b>{label}</b>",
-                showarrow=False,
-                xanchor="left",
-                xshift=5,
-                font=dict(size=10, color="#333"),
-            )
 
         return fig
 
