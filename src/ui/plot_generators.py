@@ -244,6 +244,18 @@ def plot_faction_coalition_breakdown(db_path, connect_func, logger_obj, **kwargs
     return chart_service.plot_faction_coalition_breakdown(**kwargs)
 
 
+def plot_majoril_distribution(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for major topic (MajorIL) distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.create_chart("distribution", "majoril_distribution", **kwargs)
+
+
+def plot_minoril_distribution(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for minor topic (MinorIL) distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.create_chart("distribution", "minoril_distribution", **kwargs)
+
+
 def get_available_plots():
     """Return available plot categories and their functions for the UI."""
     return {
@@ -273,5 +285,9 @@ def get_available_plots():
             "Faction Collaboration Network": plot_faction_collaboration_network,
             "Cross-Party Collaboration Matrix": plot_faction_collaboration_matrix,
             "Coalition Composition": plot_faction_coalition_breakdown,
+        },
+        "Policy Coding Analytics": {
+            "Bills by Major Topic (MajorIL)": plot_majoril_distribution,
+            "Bills by Minor Topic (MinorIL)": plot_minoril_distribution,
         },
     }

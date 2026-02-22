@@ -182,7 +182,7 @@ SELECT
     CASE
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             COALESCE(
-                MAX(CASE WHEN BI.Ordinal = 1 THEN f.Name END),
+                MAX(CASE WHEN BI.Ordinal = 1 THEN COALESCE(ufs.NewFactionName, f.Name) END),
                 'Unknown'
             )
         ELSE 'Government'
@@ -216,7 +216,7 @@ SELECT
     END AS BillSupportingMemberNames,
     CASE
         WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
-            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sf.Name, 'Unknown Faction') || ')') END, ', ')
+            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sufs.NewFactionName, sf.Name, 'Unknown Faction') || ')') END, ', ')
         ELSE 'None'
     END AS BillSupportingMembersWithFactions,
     COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,

@@ -789,6 +789,90 @@ class ResearchCodingImporter:
             self.logger.error(f"Gap analysis error for {data_type}: {e}", exc_info=True)
             return None
 
+    def generate_uncoded_items_detail(self, data_type: str) -> Optional[pd.DataFrame]:
+        """
+        Generate detailed list of items that lack MajorIL/MinorIL coding.
+
+        Returns a DataFrame with full item context (name, knesset, date, etc.)
+        for items that either have no coding row or have NULL MajorIL.
+
+        Args:
+            data_type: 'bills', 'queries', or 'agendas'
+
+        Returns:
+            DataFrame with uncoded item details, or None on error
+        """
+        queries = {
+            "bills": """
+                SELECT
+                    b.BillID,
+                    b.KnessetNum,
+                    b.Name AS BillName,
+                    b.SubTypeDesc,
+                    b.StatusID,
+                    CASE WHEN b.PrivateNumber IS NOT NULL THEN 'Private' ELSE 'Government' END AS BillOrigin,
+                    strftime(CAST(b.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDate,
+                    ubc.MajorIL AS ExistingMajorIL,
+                    ubc.MinorIL AS ExistingMinorIL
+                FROM KNS_Bill b
+                LEFT JOIN UserBillCoding ubc ON b.BillID = ubc.BillID
+                WHERE ubc.BillID IS NULL OR ubc.MajorIL IS NULL
+                ORDER BY b.KnessetNum, b.BillID
+            """,
+            "queries": """
+                SELECT
+                    q.QueryID,
+                    q.KnessetNum,
+                    q.Name AS QueryName,
+                    q.TypeDesc AS QueryType,
+                    strftime(CAST(q.SubmitDate AS TIMESTAMP), '%Y-%m-%d') AS SubmitDate,
+                    p.FirstName || ' ' || p.LastName AS SubmitterName,
+                    m.Name AS MinistryName,
+                    uqc.MajorIL AS ExistingMajorIL,
+                    uqc.MinorIL AS ExistingMinorIL
+                FROM KNS_Query q
+                LEFT JOIN KNS_Person p ON q.PersonID = p.PersonID
+                LEFT JOIN KNS_GovMinistry m ON q.GovMinistryID = m.GovMinistryID
+                LEFT JOIN UserQueryCoding uqc ON q.QueryID = uqc.QueryID
+                WHERE uqc.QueryID IS NULL OR uqc.MajorIL IS NULL
+                ORDER BY q.KnessetNum, q.QueryID
+            """,
+            "agendas": """
+                SELECT
+                    a.AgendaID,
+                    a.KnessetNum,
+                    a.Name AS AgendaName,
+                    a.ClassificationDesc,
+                    strftime(CAST(a.LastUpdatedDate AS TIMESTAMP), '%Y-%m-%d') AS LastUpdatedDate,
+                    p.FirstName || ' ' || p.LastName AS InitiatorName,
+                    uac.MajorIL AS ExistingMajorIL,
+                    uac.MinorIL AS ExistingMinorIL
+                FROM KNS_Agenda a
+                LEFT JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
+                LEFT JOIN UserAgendaCoding uac ON a.AgendaID = uac.AgendaID
+                WHERE uac.AgendaID IS NULL OR uac.MajorIL IS NULL
+                ORDER BY a.KnessetNum, a.AgendaID
+            """,
+        }
+
+        if data_type not in queries:
+            self.logger.error(f"Unknown data type for uncoded detail: {data_type}")
+            return None
+
+        try:
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as conn:
+                df = safe_execute_query(conn, queries[data_type], self.logger)
+                if df is None:
+                    return pd.DataFrame()
+                self.logger.info(
+                    f"Found {len(df)} uncoded {data_type} items"
+                )
+                return df
+
+        except Exception as e:
+            self.logger.error(f"Error generating uncoded detail for {data_type}: {e}", exc_info=True)
+            return None
+
     # --- Statistics ---
 
     def get_coding_statistics(self) -> Dict[str, int]:

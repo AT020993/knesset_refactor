@@ -111,7 +111,7 @@ class CoalitionBreakdownChart(BaseChart):
         FactionCollaborations AS (
             SELECT
                 main_f.FactionID as MainFactionID,
-                main_f.Name as MainFactionName,
+                COALESCE(main_ufs.NewFactionName, main_f.Name) as MainFactionName,
                 COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
                 COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
                 COUNT(DISTINCT bc.BillID) as CollaborationCount
@@ -127,7 +127,7 @@ class CoalitionBreakdownChart(BaseChart):
                 AND main_pf.FactionID <> supp_pf.FactionID
                 AND supp_ufs.CoalitionStatus IS NOT NULL
                 AND supp_ufs.CoalitionStatus IN ('Coalition', 'Opposition')
-            GROUP BY main_f.FactionID, main_f.Name, main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus
+            GROUP BY main_f.FactionID, COALESCE(main_ufs.NewFactionName, main_f.Name), main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus
         )
         SELECT
             MainFactionID,

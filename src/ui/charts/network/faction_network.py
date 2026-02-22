@@ -126,8 +126,8 @@ class FactionCollaborationNetwork(BaseChart):
             main_pf.FactionID as MainFactionID,
             supp_pf.FactionID as SupporterFactionID,
             COUNT(DISTINCT fc.BillID) as CollaborationCount,
-            main_f.Name as MainFactionName,
-            supp_f.Name as SupporterFactionName,
+            COALESCE(main_ufs.NewFactionName, main_f.Name) as MainFactionName,
+            COALESCE(supp_ufs.NewFactionName, supp_f.Name) as SupporterFactionName,
             COALESCE(main_ufs.CoalitionStatus, 'Unknown') as MainCoalitionStatus,
             COALESCE(supp_ufs.CoalitionStatus, 'Unknown') as SupporterCoalitionStatus,
             COALESCE(main_ftb.TotalBills, 0) as MainFactionTotalBills,
@@ -144,7 +144,8 @@ class FactionCollaborationNetwork(BaseChart):
         WHERE main_pf.FactionID IS NOT NULL
             AND supp_pf.FactionID IS NOT NULL
             AND main_pf.FactionID <> supp_pf.FactionID
-        GROUP BY main_pf.FactionID, supp_pf.FactionID, main_f.Name, supp_f.Name,
+        GROUP BY main_pf.FactionID, supp_pf.FactionID,
+                 COALESCE(main_ufs.NewFactionName, main_f.Name), COALESCE(supp_ufs.NewFactionName, supp_f.Name),
                  main_ufs.CoalitionStatus, supp_ufs.CoalitionStatus, main_ftb.TotalBills, supp_ftb.TotalBills
         HAVING COUNT(DISTINCT fc.BillID) >= 1
         ORDER BY CollaborationCount DESC

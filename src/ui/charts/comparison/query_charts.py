@@ -44,7 +44,7 @@ class QueryComparisonCharts(BaseChart):
                 # Use date-based faction attribution - queries attributed to faction MK belonged to at submission time
                 query = f"""
                     SELECT
-                        COALESCE(f.Name, 'Unknown') AS FactionName,
+                        COALESCE(ufs_name.NewFactionName, f.Name, 'Unknown') AS FactionName,
                         COUNT(DISTINCT q.QueryID) AS QueryCount
                     FROM KNS_Query q
                     LEFT JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
@@ -53,11 +53,13 @@ class QueryComparisonCharts(BaseChart):
                             BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
                             AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
                     LEFT JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                    LEFT JOIN UserFactionCoalitionStatus ufs_name ON ptp.FactionID = ufs_name.FactionID
+                        AND q.KnessetNum = ufs_name.KnessetNum
                     WHERE q.KnessetNum IS NOT NULL
                         AND q.SubmitDate IS NOT NULL
-                        AND f.Name IS NOT NULL
+                        AND COALESCE(ufs_name.NewFactionName, f.Name) IS NOT NULL
                         AND {filters["knesset_condition"]}
-                    GROUP BY f.Name
+                    GROUP BY COALESCE(ufs_name.NewFactionName, f.Name, 'Unknown')
                     ORDER BY QueryCount DESC
                     LIMIT 20
                 """
@@ -180,7 +182,7 @@ class QueryComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
                     COUNT(DISTINCT q.QueryID) AS QueryCount
                 FROM KNS_Query q
                 JOIN KNS_Person p ON q.PersonID = p.PersonID
@@ -217,7 +219,7 @@ class QueryComparisonCharts(BaseChart):
 
                 coalition_colors = {
                     **self.config.COALITION_OPPOSITION_COLORS,
-                    "Unmapped": "#808080",
+                    "Unknown": "#808080",
                 }
                 title = (
                     f"<b>Queries by Coalition Status (Knesset {single_knesset_num})</b>"
@@ -504,7 +506,7 @@ class QueryComparisonCharts(BaseChart):
                 sql_query = f"""
                 WITH FactionQueryStats AS (
                     SELECT
-                        COALESCE(f.Name, 'Unknown Faction') AS FactionName,
+                        COALESCE(ufs_name.NewFactionName, f.Name, 'Unknown Faction') AS FactionName,
                         p2p.FactionID,
                         {answer_status_case_sql},
                         COUNT(DISTINCT q.QueryID) AS QueryCount
@@ -515,9 +517,11 @@ class QueryComparisonCharts(BaseChart):
                         AND q.KnessetNum = p2p.KnessetNum
                         AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                     LEFT JOIN KNS_Faction f ON p2p.FactionID = f.FactionID
+                    LEFT JOIN UserFactionCoalitionStatus ufs_name ON p2p.FactionID = ufs_name.FactionID
+                        AND q.KnessetNum = ufs_name.KnessetNum
                     WHERE {where_clause}
-                        AND f.Name IS NOT NULL
-                    GROUP BY f.Name, p2p.FactionID, AnswerStatus
+                        AND COALESCE(ufs_name.NewFactionName, f.Name) IS NOT NULL
+                    GROUP BY COALESCE(ufs_name.NewFactionName, f.Name, 'Unknown Faction'), p2p.FactionID, AnswerStatus
                 )
                 SELECT
                     FactionName,

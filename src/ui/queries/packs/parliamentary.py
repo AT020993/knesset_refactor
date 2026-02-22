@@ -23,7 +23,7 @@ SELECT
     P.IsCurrent AS MKIsCurrent,
 
     -- Use simplified faction lookup with our improved faction data
-    COALESCE(f.Name, 'Unknown') AS MKFactionName,
+    COALESCE(ufs.NewFactionName, f.Name, 'Unknown') AS MKFactionName,
     COALESCE(ufs.CoalitionStatus, 'Unknown') AS MKFactionCoalitionStatus,
 
     M.Name AS MinistryName,

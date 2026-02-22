@@ -105,6 +105,15 @@ def save_gap_analysis(importer: ResearchCodingImporter, data_type: str, output_d
         gap.uncoded_in_dashboard.to_csv(path, index=False)
         print(f"    Saved: {path}")
 
+    # Generate detailed uncoded items file
+    uncoded_detail = importer.generate_uncoded_items_detail(data_type)
+    if uncoded_detail is not None and not uncoded_detail.empty:
+        detail_path = output_dir / f"{data_type}_uncoded_full_detail.xlsx"
+        uncoded_detail.to_excel(detail_path, index=False, engine="openpyxl")
+        print(f"    Saved: {detail_path} ({len(uncoded_detail):,} items)")
+    else:
+        print(f"    No uncoded items found for {data_type}")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

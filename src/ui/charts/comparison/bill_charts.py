@@ -59,7 +59,7 @@ class BillComparisonCharts(BaseChart):
                 query = f"""
                 WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
-                    COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
+                    COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name) AS FactionName,
                     {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
@@ -72,9 +72,11 @@ class BillComparisonCharts(BaseChart):
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND b.KnessetNum = f_fallback.KnessetNum
+                LEFT JOIN UserFactionCoalitionStatus ufs_name ON p2p.FactionID = ufs_name.FactionID
+                    AND b.KnessetNum = ufs_name.KnessetNum
                 WHERE b.KnessetNum = ?
                     AND bi.Ordinal = 1  -- Count only main/primary initiators (not supporting members)
-                    AND COALESCE(p2p.FactionName, f_fallback.Name) IS NOT NULL
+                    AND COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name) IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -93,7 +95,7 @@ class BillComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), Stage
+                GROUP BY COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name), Stage
                 HAVING BillCount > 0
                 ORDER BY FactionName, Stage;
                 """
@@ -216,7 +218,7 @@ class BillComparisonCharts(BaseChart):
                 query = f"""
                 WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
                 SELECT
-                    ufs.CoalitionStatus AS CoalitionStatus,
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
                     {SQLTemplates.BILL_STATUS_CASE_HE} AS Stage,
                     COUNT(DISTINCT b.BillID) AS BillCount
                 FROM KNS_Bill b
@@ -230,7 +232,6 @@ class BillComparisonCharts(BaseChart):
                 LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
                     AND b.KnessetNum = ufs.KnessetNum
                 WHERE b.KnessetNum = ?
-                    AND ufs.CoalitionStatus IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]

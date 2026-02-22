@@ -246,9 +246,13 @@ class FactionResolver:
 
 
 # Utility functions for common faction resolution patterns
-def get_faction_name_field(table_alias: str = "f", fallback: str = "'Unknown'") -> str:
-    """Get standardized faction name field with fallback."""
-    return f"COALESCE({table_alias}.Name, {fallback})"
+def get_faction_name_field(table_alias: str = "f", ufs_alias: str = "ufs", fallback: str = "'Unknown'") -> str:
+    """Get standardized faction name field with fallback.
+
+    Uses NewFactionName from UserFactionCoalitionStatus when available,
+    falling back to the raw API faction name.
+    """
+    return f"COALESCE({ufs_alias}.NewFactionName, {table_alias}.Name, {fallback})"
 
 
 def get_coalition_status_field(table_alias: str = "ufs", fallback: str = "'Unknown'") -> str:

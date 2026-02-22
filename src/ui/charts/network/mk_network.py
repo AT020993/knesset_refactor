@@ -105,9 +105,11 @@ class MKCollaborationNetwork(BaseChart):
                 arp.PersonID,
                 arp.KnessetNum,
                 COALESCE(
-                    (SELECT f.Name
+                    (SELECT COALESCE(ufs2.NewFactionName, f.Name)
                      FROM KNS_PersonToPosition ptp
                      JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+                     LEFT JOIN UserFactionCoalitionStatus ufs2 ON f.FactionID = ufs2.FactionID
+                         AND ptp.KnessetNum = ufs2.KnessetNum
                      WHERE ptp.PersonID = arp.PersonID
                          AND ptp.KnessetNum = arp.KnessetNum
                          AND ptp.FactionID IS NOT NULL

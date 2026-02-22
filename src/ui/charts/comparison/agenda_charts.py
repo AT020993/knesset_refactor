@@ -80,7 +80,7 @@ class AgendaComparisonCharts(BaseChart):
 
                 query = f"""
                 SELECT
-                    COALESCE(p2p.FactionName, f_fallback.Name) AS FactionName,
+                    COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name) AS FactionName,
                     p2p.FactionID,
                     COUNT(DISTINCT a.AgendaID) AS AgendaCount
                 FROM KNS_Agenda a
@@ -92,8 +92,10 @@ class AgendaComparisonCharts(BaseChart):
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                 LEFT JOIN KNS_Faction f_fallback ON p2p.FactionID = f_fallback.FactionID
                     AND a.KnessetNum = f_fallback.KnessetNum
+                LEFT JOIN UserFactionCoalitionStatus ufs_name ON p2p.FactionID = ufs_name.FactionID
+                    AND a.KnessetNum = ufs_name.KnessetNum
                 WHERE a.KnessetNum = ? AND a.InitiatorPersonID IS NOT NULL
-                    AND COALESCE(p2p.FactionName, f_fallback.Name) IS NOT NULL
+                    AND COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name) IS NOT NULL
                 """
 
                 params: List[Any] = [single_knesset_num]
@@ -107,7 +109,7 @@ class AgendaComparisonCharts(BaseChart):
                         params.extend(valid_ids)
 
                 query += """
-                GROUP BY COALESCE(p2p.FactionName, f_fallback.Name), p2p.FactionID
+                GROUP BY COALESCE(ufs_name.NewFactionName, p2p.FactionName, f_fallback.Name), p2p.FactionID
                 HAVING AgendaCount > 0
                 ORDER BY AgendaCount DESC;
                 """
@@ -271,7 +273,7 @@ class AgendaComparisonCharts(BaseChart):
                     ORDER BY a.AgendaID, p2p.FactionID NULLS LAST
                 )
                 SELECT
-                    COALESCE(ufs.CoalitionStatus, 'Unmapped') AS CoalitionStatus,
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
                     COUNT(*) AS AgendaCount
                 FROM AgendaWithFaction awf
                 LEFT JOIN UserFactionCoalitionStatus ufs ON awf.FactionID = ufs.FactionID
@@ -311,8 +313,8 @@ class AgendaComparisonCharts(BaseChart):
                 else:
                     title = f"<b>Agendas by Initiator Coalition Status (Knesset {single_knesset_num})</b>"
 
-                # Add Unmapped to color map
-                coalition_colors = {**self.config.COALITION_OPPOSITION_COLORS, "Unmapped": "#808080"}
+                # Add Unknown to color map
+                coalition_colors = {**self.config.COALITION_OPPOSITION_COLORS, "Unknown": "#808080"}
 
                 fig = px.pie(
                     df,

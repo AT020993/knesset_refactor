@@ -27,13 +27,13 @@ SELECT
     COALESCE(P.IsCurrent, false) AS InitiatorMKIsCurrent,
 
     -- Simplified faction lookup
-    COALESCE(f.Name, 'Unknown') AS InitiatorMKFactionName,
+    COALESCE(ufs.NewFactionName, f.Name, 'Unknown') AS InitiatorMKFactionName,
     COALESCE(ufs.CoalitionStatus, 'Unknown') AS InitiatorMKFactionCoalitionStatus,
 
     -- Main Initiator Display (prominent field showing who proposed the agenda)
     CASE
         WHEN A.ClassificationDesc = 'עצמאית' AND P.PersonID IS NOT NULL THEN
-            P.FirstName || ' ' || P.LastName || ' (' || COALESCE(f.Name, 'Unknown Faction') || ')'
+            P.FirstName || ' ' || P.LastName || ' (' || COALESCE(ufs.NewFactionName, f.Name, 'Unknown Faction') || ')'
         WHEN A.ClassificationDesc = 'כוללת' THEN
             'Inclusive Proposal (הצעה כוללת - Multiple MKs)'
         ELSE

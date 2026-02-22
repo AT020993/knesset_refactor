@@ -119,6 +119,8 @@ class ChartFactory:
                 "query_status_distribution",
                 "agenda_status_distribution",
                 "bill_subtype_distribution",
+                "majoril_distribution",
+                "minoril_distribution",
             ],
             "comparison": [
                 "queries_per_faction",

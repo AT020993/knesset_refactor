@@ -2,6 +2,7 @@
 
 from typing import Any, Callable, List, Optional
 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -352,6 +353,188 @@ class DistributionCharts(BaseChart):
 
             return fig
 
+    @chart_error_handler("major topic distribution")
+    def plot_majoril_distribution(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate distribution of bills by MajorIL topic with coalition breakdown."""
+        if not self.check_database_exists():
+            return None
+
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+
+        with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+            required = ["KNS_Bill", "UserBillCoding"]
+            if not self.check_tables_exist(con, required):
+                return None
+
+            query = f"""
+                WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
+                SELECT
+                    ubc.MajorIL AS TopicCode,
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    COUNT(DISTINCT b.BillID) AS BillCount
+                FROM KNS_Bill b
+                JOIN UserBillCoding ubc ON b.BillID = ubc.BillID
+                LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
+                LEFT JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID AND bi.Ordinal = 1
+                LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
+                    AND b.KnessetNum = p2p.KnessetNum
+                    AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
+                    AND b.KnessetNum = ufs.KnessetNum
+                WHERE ubc.MajorIL IS NOT NULL
+                    AND {filters["knesset_condition"]}
+                    AND {filters["bill_origin_condition"]}
+                GROUP BY ubc.MajorIL, ufs.CoalitionStatus
+                ORDER BY TopicCode, CoalitionStatus
+            """
+
+            df = safe_execute_query(con, query, self.logger)
+
+            if self.handle_empty_result(df, "major topic", filters):
+                return None
+
+            df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
+            df["TopicCode"] = df["TopicCode"].astype(int).astype(str)
+
+            # Sort by total bill count descending
+            topic_totals = df.groupby("TopicCode")["BillCount"].sum().sort_values(ascending=True)
+            topic_order = topic_totals.index.tolist()
+
+            coalition_colors = {
+                **self.config.COALITION_OPPOSITION_COLORS,
+                "Unknown": "#808080",
+            }
+            status_order = ["Coalition", "Opposition", "Unknown"]
+
+            fig = px.bar(
+                df,
+                y="TopicCode",
+                x="BillCount",
+                color="CoalitionStatus",
+                orientation="h",
+                title=f"<b>Bills by Major Topic (MajorIL) - {filters['knesset_title']}</b>",
+                labels={
+                    "TopicCode": "Major Topic Code",
+                    "BillCount": "Number of Bills",
+                    "CoalitionStatus": "Coalition Status",
+                },
+                color_discrete_map=coalition_colors,
+                category_orders={
+                    "TopicCode": topic_order,
+                    "CoalitionStatus": status_order,
+                },
+            )
+
+            fig.update_layout(
+                xaxis_title="Number of Bills",
+                yaxis_title="Major Topic Code (MajorIL)",
+                title_x=0.5,
+                height=max(400, len(topic_order) * 35 + 200),
+                margin=dict(t=100, l=100),
+                legend_title_text="Coalition Status",
+                barmode="stack",
+            )
+
+            return fig
+
+    @chart_error_handler("minor topic distribution")
+    def plot_minoril_distribution(
+        self,
+        knesset_filter: Optional[List[int]] = None,
+        faction_filter: Optional[List[str]] = None,
+        **kwargs,
+    ) -> Optional[go.Figure]:
+        """Generate distribution of bills by MinorIL topic with coalition breakdown."""
+        if not self.check_database_exists():
+            return None
+
+        filters = self.build_filters(knesset_filter, faction_filter, table_prefix="b", **kwargs)
+
+        with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+            required = ["KNS_Bill", "UserBillCoding"]
+            if not self.check_tables_exist(con, required):
+                return None
+
+            query = f"""
+                WITH {SQLTemplates.BILL_FIRST_SUBMISSION}
+                SELECT
+                    ubc.MinorIL AS TopicCode,
+                    COALESCE(ufs.CoalitionStatus, 'Unknown') AS CoalitionStatus,
+                    COUNT(DISTINCT b.BillID) AS BillCount
+                FROM KNS_Bill b
+                JOIN UserBillCoding ubc ON b.BillID = ubc.BillID
+                LEFT JOIN BillFirstSubmission bfs ON b.BillID = bfs.BillID
+                LEFT JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID AND bi.Ordinal = 1
+                LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
+                    AND b.KnessetNum = p2p.KnessetNum
+                    AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
+                        BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
+                        AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
+                LEFT JOIN UserFactionCoalitionStatus ufs ON p2p.FactionID = ufs.FactionID
+                    AND b.KnessetNum = ufs.KnessetNum
+                WHERE ubc.MinorIL IS NOT NULL
+                    AND {filters["knesset_condition"]}
+                    AND {filters["bill_origin_condition"]}
+                GROUP BY ubc.MinorIL, ufs.CoalitionStatus
+                ORDER BY TopicCode, CoalitionStatus
+            """
+
+            df = safe_execute_query(con, query, self.logger)
+
+            if self.handle_empty_result(df, "minor topic", filters):
+                return None
+
+            df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
+            df["TopicCode"] = df["TopicCode"].astype(int).astype(str)
+
+            # Sort by total bill count descending
+            topic_totals = df.groupby("TopicCode")["BillCount"].sum().sort_values(ascending=True)
+            topic_order = topic_totals.index.tolist()
+
+            coalition_colors = {
+                **self.config.COALITION_OPPOSITION_COLORS,
+                "Unknown": "#808080",
+            }
+            status_order = ["Coalition", "Opposition", "Unknown"]
+
+            fig = px.bar(
+                df,
+                y="TopicCode",
+                x="BillCount",
+                color="CoalitionStatus",
+                orientation="h",
+                title=f"<b>Bills by Minor Topic (MinorIL) - {filters['knesset_title']}</b>",
+                labels={
+                    "TopicCode": "Minor Topic Code",
+                    "BillCount": "Number of Bills",
+                    "CoalitionStatus": "Coalition Status",
+                },
+                color_discrete_map=coalition_colors,
+                category_orders={
+                    "TopicCode": topic_order,
+                    "CoalitionStatus": status_order,
+                },
+            )
+
+            fig.update_layout(
+                xaxis_title="Number of Bills",
+                yaxis_title="Minor Topic Code (MinorIL)",
+                title_x=0.5,
+                height=max(500, len(topic_order) * 25 + 200),
+                margin=dict(t=100, l=100),
+                legend_title_text="Coalition Status",
+                barmode="stack",
+            )
+
+            return fig
+
     def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested distribution chart."""
         chart_methods: dict[str, Callable[..., Optional[go.Figure]]] = {
@@ -360,6 +543,8 @@ class DistributionCharts(BaseChart):
             "query_status_distribution": self.plot_query_status_distribution,
             "agenda_status_distribution": self.plot_agenda_status_distribution,
             "bill_subtype_distribution": self.plot_bill_subtype_distribution,
+            "majoril_distribution": self.plot_majoril_distribution,
+            "minoril_distribution": self.plot_minoril_distribution,
         }
 
         method = chart_methods.get(chart_type)

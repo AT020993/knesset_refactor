@@ -76,7 +76,7 @@ class CollaborationMatrixChart(BaseChart):
             -- Get all factions that initiated bills (main or supporting) in selected Knesset(s)
             SELECT DISTINCT
                 f.FactionID,
-                f.Name as FactionName,
+                COALESCE(ufs.NewFactionName, f.Name) as FactionName,
                 COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
             FROM KNS_Faction f
             LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID

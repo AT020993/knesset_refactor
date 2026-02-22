@@ -47,7 +47,7 @@ class FactionExporter:
         SELECT DISTINCT
             ptp.KnessetNum,
             f.FactionID,
-            f.Name as FactionName,
+            COALESCE(ufs.NewFactionName, f.Name) as FactionName,
             COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus,
             COUNT(DISTINCT ptp.PersonID) as MemberCount
         FROM KNS_PersonToPosition ptp
@@ -58,8 +58,8 @@ class FactionExporter:
         WHERE ptp.FactionID IS NOT NULL
           AND ptp.KnessetNum IS NOT NULL
           {knesset_filter}
-        GROUP BY ptp.KnessetNum, f.FactionID, f.Name, ufs.CoalitionStatus
-        ORDER BY ptp.KnessetNum DESC, f.Name
+        GROUP BY ptp.KnessetNum, f.FactionID, COALESCE(ufs.NewFactionName, f.Name), ufs.CoalitionStatus
+        ORDER BY ptp.KnessetNum DESC, FactionName
         """
 
         try:

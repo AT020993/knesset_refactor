@@ -68,9 +68,11 @@ MKFactionInKnesset AS (
         arp.PersonID,
         arp.KnessetNum,
         COALESCE(
-            (SELECT f.Name
+            (SELECT COALESCE(ufs2.NewFactionName, f.Name)
              FROM KNS_PersonToPosition ptp
              JOIN KNS_Faction f ON ptp.FactionID = f.FactionID
+             LEFT JOIN UserFactionCoalitionStatus ufs2 ON f.FactionID = ufs2.FactionID
+                 AND ptp.KnessetNum = ufs2.KnessetNum
              WHERE ptp.PersonID = arp.PersonID
                  AND ptp.KnessetNum = arp.KnessetNum
                  AND ptp.FactionID IS NOT NULL
@@ -87,7 +89,7 @@ FACTION_COALITION_STATUS_CTE = """
 FactionCoalitionStatus AS (
     SELECT DISTINCT
         f.FactionID,
-        f.Name as FactionName,
+        COALESCE(ufs.NewFactionName, f.Name) as FactionName,
         COALESCE(ufs.CoalitionStatus, 'Unknown') as CoalitionStatus
     FROM KNS_Faction f
     LEFT JOIN UserFactionCoalitionStatus ufs ON f.FactionID = ufs.FactionID

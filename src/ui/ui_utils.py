@@ -114,7 +114,7 @@ def get_filter_options_from_db(db_path: Path, _logger_obj: logging.Logger | None
             factions_query = ""
             if "userfactioncoalitionstatus" in db_tables_list and "kns_faction" in db_tables_list:
                 factions_query = """
-                    SELECT DISTINCT COALESCE(ufcs.FactionName, kf.Name) AS FactionName, kf.FactionID, kf.KnessetNum
+                    SELECT DISTINCT COALESCE(ufcs.NewFactionName, ufcs.FactionName, kf.Name) AS FactionName, kf.FactionID, kf.KnessetNum
                     FROM KNS_Faction AS kf
                     LEFT JOIN UserFactionCoalitionStatus AS ufcs ON kf.FactionID = ufcs.FactionID AND kf.KnessetNum = ufcs.KnessetNum
                     ORDER BY FactionName;

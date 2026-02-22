@@ -244,6 +244,28 @@ class ResearchCodingPageRenderer:
                     st.markdown("**Uncoded items per Knesset:**")
                     st.dataframe(gap.uncoded_in_dashboard, use_container_width=True, hide_index=True)
 
+                    # Detailed uncoded items download
+                    if st.button(
+                        f"Generate {label} Uncoded Items Detail",
+                        key=f"rc_gen_uncoded_{data_type}",
+                        help="Generate Excel file with full details of items lacking MajorIL/MinorIL coding",
+                    ):
+                        with st.spinner(f"Generating uncoded {data_type} details..."):
+                            uncoded_detail = self.importer.generate_uncoded_items_detail(data_type)
+                            if uncoded_detail is not None and not uncoded_detail.empty:
+                                from io import BytesIO
+                                buffer = BytesIO()
+                                uncoded_detail.to_excel(buffer, index=False, engine="openpyxl")
+                                st.download_button(
+                                    f"Download {label} Uncoded Detail ({len(uncoded_detail):,} items)",
+                                    buffer.getvalue(),
+                                    file_name=f"{data_type}_uncoded_full_detail.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key=f"rc_dl_uncoded_detail_{data_type}",
+                                )
+                            else:
+                                st.success(f"All {data_type} items have MajorIL coding!")
+
     # --- Current Data Tab ---
 
     def _render_current_data_tab(self) -> None:
