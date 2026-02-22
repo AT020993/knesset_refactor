@@ -248,6 +248,9 @@ LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
 ```
 **🔴 FactionID IS NOT NULL**: `KNS_PersonToPosition` stores ALL position types (MK faction membership, committee roles, plenum roles). Only PositionID=54 (faction membership) has FactionID. Without this filter, LEFT JOINs produce ghost rows with NULL FactionID → "Unknown" coalition status, inflating counts.
 
+**Agenda Date Matching** (🔴 Critical):
+`KNS_Agenda.LastUpdatedDate` is an API refresh timestamp (e.g. `2025-12-24`), NOT the actual agenda date. `PresidentDecisionDate` is NULL for ~40% of records. For agenda charts, match on `PersonID + KnessetNum` only (no date-based position matching). Use `DISTINCT ON` with `ORDER BY p2p.StartDate DESC` for MKs who switched factions mid-Knesset.
+
 **Bill Submission Date**: Use `BillFirstSubmission` CTE (99.1% coverage) - finds MIN date from initiators, committee/plenum sessions, publication.
 
 **Bill Origin Filter**: `PrivateNumber IS NOT NULL` = private, `IS NULL` = governmental
@@ -679,6 +682,7 @@ finally:
 | `Password must contain...` | New password complexity requirements | Use 8+ chars with uppercase, lowercase, and digit |
 | `IndexError: iloc[-1]` on empty DataFrame | API returned no data | Check filters, add `if df.empty:` guard |
 | Widget key collision errors | Duplicate Streamlit widget keys | Use unique prefix like `f"filter_{id(self)}_..."` |
+| High "Unknown" coalition in agenda charts | `LastUpdatedDate` is API metadata, not agenda date | Use `PersonID + KnessetNum` matching without date BETWEEN (see Critical Patterns) |
 | `ModuleNotFoundError: No module named 'config'` | Missing PYTHONPATH | Prefix command with `PYTHONPATH="./src"` |
 | `No module named 'requests.adapters'` | `src/requests.py` shadows `requests` package | Run GCS scripts **without** `PYTHONPATH="./src"` |
 | Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
