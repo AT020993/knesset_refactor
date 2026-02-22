@@ -258,6 +258,14 @@ Original K25-only backup preserved in `data/faction_coalition_status.csv`.
 Mid-term coalition changes stored in `DateJoinedCoalition`/`DateLeftCoalition` columns.
 To update: Edit CSV or re-run `import_coalition_data.py` → reload via `load_faction_coalition_status()`.
 
+**Faction Name Display** (🔴 Critical): Always prefer `NewFactionName` from `UserFactionCoalitionStatus`:
+```sql
+COALESCE(ufs.NewFactionName, f.Name, 'Unknown') AS FactionName
+```
+This pattern is used in ~15 files (charts, queries, network, exporters, UI filters). See `src/utils/faction_resolver.py:get_faction_name_field()`.
+
+**Coalition Status Fallback**: Always use `'Unknown'` as the fallback — never `'Unmapped'` or empty string. Applied via `COALESCE(ufs.CoalitionStatus, 'Unknown')`.
+
 ## CAP Annotation System
 
 Multi-user bill classification for democratic erosion research. **Full documentation**: [`src/ui/services/cap/CLAUDE.md`](src/ui/services/cap/CLAUDE.md)
@@ -302,6 +310,18 @@ PYTHONPATH="./src" python import_research_coding.py \
 **Predefined queries**: All 3 queries include LEFT JOINs to coding tables, adding `Coding*` columns to exports.
 
 **Known data gaps**: Knesset OData API has no queries for K10-K18 (1981-2013). See `data/gap_analysis/IMPORT_SUMMARY.md`.
+
+## Plotly Chart Patterns
+
+**Categorical axes with numeric values**: Plotly auto-skips tick labels and sorts lexicographically ("1", "10", "2") when y-values are string-typed numbers. Fix:
+```python
+# Sort numerically, then convert to string for categorical axis
+topic_order = sorted(df["TopicCode"].unique())  # int sort
+df["TopicCode"] = df["TopicCode"].astype(str)
+fig.update_layout(yaxis=dict(type="category", dtick=1))
+```
+
+**New chart registration** requires 3 files: chart class method in `src/ui/charts/<category>.py` → `factory.py` available charts list → `plot_generators.py` legacy wrapper + `get_available_plots()` registry.
 
 ## Network Charts
 
@@ -661,6 +681,7 @@ finally:
 | `No module named 'requests.adapters'` | `src/requests.py` shadows `requests` package | Run GCS scripts **without** `PYTHONPATH="./src"` |
 | Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
 | `Values were not provided for...prepared statement parameters` on full dataset download | Stored SQL has `?` placeholders but params weren't passed to exporter | Ensure `last_query_params` is stored in session state and passed through `DatasetExporter` methods |
+| Chart code changes not visible after edit | `@st.cache_resource` caches chart generator instances across hot-reloads | Restart Streamlit server (`Ctrl+C` + relaunch) |
 
 ## Test Status
 
