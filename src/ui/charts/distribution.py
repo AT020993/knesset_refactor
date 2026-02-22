@@ -401,11 +401,13 @@ class DistributionCharts(BaseChart):
                 return None
 
             df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
-            df["TopicCode"] = df["TopicCode"].astype(int).astype(str)
+            df["TopicCode"] = df["TopicCode"].astype(int)
 
-            # Sort by total bill count descending
-            topic_totals = df.groupby("TopicCode")["BillCount"].sum().sort_values(ascending=True)
-            topic_order = topic_totals.index.tolist()
+            # Sort by topic code numerically (ascending top-to-bottom)
+            topic_order = sorted(df["TopicCode"].unique())
+            # Convert to string for categorical axis after sorting
+            df["TopicCode"] = df["TopicCode"].astype(str)
+            topic_order_str = [str(t) for t in topic_order]
 
             coalition_colors = {
                 **self.config.COALITION_OPPOSITION_COLORS,
@@ -413,6 +415,7 @@ class DistributionCharts(BaseChart):
             }
             status_order = ["Coalition", "Opposition", "Unknown"]
 
+            n_topics = len(topic_order_str)
             fig = px.bar(
                 df,
                 y="TopicCode",
@@ -421,13 +424,13 @@ class DistributionCharts(BaseChart):
                 orientation="h",
                 title=f"<b>Bills by Major Topic (MajorIL) - {filters['knesset_title']}</b>",
                 labels={
-                    "TopicCode": "Major Topic Code",
+                    "TopicCode": "Major Topic Code (MajorIL)",
                     "BillCount": "Number of Bills",
                     "CoalitionStatus": "Coalition Status",
                 },
                 color_discrete_map=coalition_colors,
                 category_orders={
-                    "TopicCode": topic_order,
+                    "TopicCode": topic_order_str,
                     "CoalitionStatus": status_order,
                 },
             )
@@ -435,11 +438,13 @@ class DistributionCharts(BaseChart):
             fig.update_layout(
                 xaxis_title="Number of Bills",
                 yaxis_title="Major Topic Code (MajorIL)",
+                yaxis=dict(type="category", dtick=1),
                 title_x=0.5,
-                height=max(400, len(topic_order) * 35 + 200),
-                margin=dict(t=100, l=100),
+                height=max(500, n_topics * 45 + 200),
+                margin=dict(t=100, l=80),
                 legend_title_text="Coalition Status",
                 barmode="stack",
+                bargap=0.2,
             )
 
             return fig
@@ -492,11 +497,12 @@ class DistributionCharts(BaseChart):
                 return None
 
             df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
-            df["TopicCode"] = df["TopicCode"].astype(int).astype(str)
+            df["TopicCode"] = df["TopicCode"].astype(int)
 
-            # Sort by total bill count descending
-            topic_totals = df.groupby("TopicCode")["BillCount"].sum().sort_values(ascending=True)
-            topic_order = topic_totals.index.tolist()
+            # Sort by topic code numerically (ascending top-to-bottom)
+            topic_order = sorted(df["TopicCode"].unique())
+            df["TopicCode"] = df["TopicCode"].astype(str)
+            topic_order_str = [str(t) for t in topic_order]
 
             coalition_colors = {
                 **self.config.COALITION_OPPOSITION_COLORS,
@@ -504,6 +510,7 @@ class DistributionCharts(BaseChart):
             }
             status_order = ["Coalition", "Opposition", "Unknown"]
 
+            n_topics = len(topic_order_str)
             fig = px.bar(
                 df,
                 y="TopicCode",
@@ -512,13 +519,13 @@ class DistributionCharts(BaseChart):
                 orientation="h",
                 title=f"<b>Bills by Minor Topic (MinorIL) - {filters['knesset_title']}</b>",
                 labels={
-                    "TopicCode": "Minor Topic Code",
+                    "TopicCode": "Minor Topic Code (MinorIL)",
                     "BillCount": "Number of Bills",
                     "CoalitionStatus": "Coalition Status",
                 },
                 color_discrete_map=coalition_colors,
                 category_orders={
-                    "TopicCode": topic_order,
+                    "TopicCode": topic_order_str,
                     "CoalitionStatus": status_order,
                 },
             )
@@ -526,11 +533,13 @@ class DistributionCharts(BaseChart):
             fig.update_layout(
                 xaxis_title="Number of Bills",
                 yaxis_title="Minor Topic Code (MinorIL)",
+                yaxis=dict(type="category", dtick=1),
                 title_x=0.5,
-                height=max(500, len(topic_order) * 25 + 200),
-                margin=dict(t=100, l=100),
+                height=max(600, n_topics * 30 + 200),
+                margin=dict(t=100, l=80),
                 legend_title_text="Coalition Status",
                 barmode="stack",
+                bargap=0.2,
             )
 
             return fig
