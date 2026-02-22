@@ -312,6 +312,8 @@ PYTHONPATH="./src" python import_research_coding.py \
 
 **UI**: "📥 Research Coding" tab in main app (`src/ui/renderers/research_coding_page.py`)
 
+**Coding Table Match Rates**: `UserBillCoding` matches 99.6% of `KNS_Bill` (164 orphaned). `UserQueryCoding` matches only 13% of its entries to `KNS_Query` — 24,153 entries are for K10-K18 queries that don't exist in the API. `UserAgendaCoding` matches 100%.
+
 **Predefined queries**: All 3 queries include LEFT JOINs to coding tables, adding `Coding*` columns to exports.
 
 **Known data gaps**: Knesset OData API has no queries for K10-K18 (1981-2013). See `data/gap_analysis/IMPORT_SUMMARY.md`.
@@ -683,6 +685,7 @@ finally:
 | `IndexError: iloc[-1]` on empty DataFrame | API returned no data | Check filters, add `if df.empty:` guard |
 | Widget key collision errors | Duplicate Streamlit widget keys | Use unique prefix like `f"filter_{id(self)}_..."` |
 | High "Unknown" coalition in agenda charts | `LastUpdatedDate` is API metadata, not agenda date | Use `PersonID + KnessetNum` matching without date BETWEEN (see Critical Patterns) |
+| Low query coding match rate (~13%) | 24K+ `UserQueryCoding` entries are for K10-K18 which don't exist in `KNS_Query` (API gap) | Expected behavior — researcher coded from external files |
 | `ModuleNotFoundError: No module named 'config'` | Missing PYTHONPATH | Prefix command with `PYTHONPATH="./src"` |
 | `No module named 'requests.adapters'` | `src/requests.py` shadows `requests` package | Run GCS scripts **without** `PYTHONPATH="./src"` |
 | Untracked `.xlsx` files at project root | Research coding source data | Don't commit — used by `import_research_coding.py`, not needed in repo |
