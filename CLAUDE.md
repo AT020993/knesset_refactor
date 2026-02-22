@@ -241,10 +241,12 @@ conn.execute(f"IMPORT DATABASE '{export_dir}'")
 ```sql
 LEFT JOIN KNS_PersonToPosition ptp ON item.PersonID = ptp.PersonID
     AND item.KnessetNum = ptp.KnessetNum
+    AND ptp.FactionID IS NOT NULL  -- 🔴 REQUIRED: excludes committee/plenum positions with NULL FactionID
     AND CAST(item.SubmitDate AS TIMESTAMP)
         BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
         AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
 ```
+**🔴 FactionID IS NOT NULL**: `KNS_PersonToPosition` stores ALL position types (MK faction membership, committee roles, plenum roles). Only PositionID=54 (faction membership) has FactionID. Without this filter, LEFT JOINs produce ghost rows with NULL FactionID → "Unknown" coalition status, inflating counts.
 
 **Bill Submission Date**: Use `BillFirstSubmission` CTE (99.1% coverage) - finds MIN date from initiators, committee/plenum sessions, publication.
 
