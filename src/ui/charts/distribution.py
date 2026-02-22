@@ -405,51 +405,13 @@ class DistributionCharts(BaseChart):
             df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
             df["TopicCode"] = df["TopicCode"].astype(int)
 
-            # Sort by topic code numerically (ascending top-to-bottom)
-            topic_order = sorted(df["TopicCode"].unique())
-            # Convert to string for categorical axis after sorting
-            df["TopicCode"] = df["TopicCode"].astype(str)
-            topic_order_str = [str(t) for t in topic_order]
-
-            coalition_colors = {
-                **self.config.COALITION_OPPOSITION_COLORS,
-                "Unknown": "#808080",
-            }
-            status_order = ["Coalition", "Opposition", "Unknown"]
-
-            n_topics = len(topic_order_str)
-            fig = px.bar(
-                df,
-                y="TopicCode",
-                x="BillCount",
-                color="CoalitionStatus",
-                orientation="h",
-                title=f"<b>Bills by Major Topic (MajorIL) - {filters['knesset_title']}</b>",
-                labels={
-                    "TopicCode": "Major Topic Code (MajorIL)",
-                    "BillCount": "Number of Bills",
-                    "CoalitionStatus": "Coalition Status",
-                },
-                color_discrete_map=coalition_colors,
-                category_orders={
-                    "TopicCode": topic_order_str,
-                    "CoalitionStatus": status_order,
-                },
+            show_percentage = kwargs.get("show_percentage", False)
+            return self._build_topic_chart(
+                df, filters, show_percentage,
+                topic_label="Major Topic Code (MajorIL)",
+                title_prefix="Bills by Major Topic (MajorIL)",
+                bar_height=45, min_height=500,
             )
-
-            fig.update_layout(
-                xaxis_title="Number of Bills",
-                yaxis_title="Major Topic Code (MajorIL)",
-                yaxis=dict(type="category", dtick=1),
-                title_x=0.5,
-                height=max(500, n_topics * 45 + 200),
-                margin=dict(t=100, l=80),
-                legend_title_text="Coalition Status",
-                barmode="stack",
-                bargap=0.2,
-            )
-
-            return fig
 
     @chart_error_handler("minor topic distribution")
     def plot_minoril_distribution(
@@ -502,50 +464,111 @@ class DistributionCharts(BaseChart):
             df["BillCount"] = pd.to_numeric(df["BillCount"], errors="coerce").fillna(0)
             df["TopicCode"] = df["TopicCode"].astype(int)
 
-            # Sort by topic code numerically (ascending top-to-bottom)
-            topic_order = sorted(df["TopicCode"].unique())
-            df["TopicCode"] = df["TopicCode"].astype(str)
-            topic_order_str = [str(t) for t in topic_order]
-
-            coalition_colors = {
-                **self.config.COALITION_OPPOSITION_COLORS,
-                "Unknown": "#808080",
-            }
-            status_order = ["Coalition", "Opposition", "Unknown"]
-
-            n_topics = len(topic_order_str)
-            fig = px.bar(
-                df,
-                y="TopicCode",
-                x="BillCount",
-                color="CoalitionStatus",
-                orientation="h",
-                title=f"<b>Bills by Minor Topic (MinorIL) - {filters['knesset_title']}</b>",
-                labels={
-                    "TopicCode": "Minor Topic Code (MinorIL)",
-                    "BillCount": "Number of Bills",
-                    "CoalitionStatus": "Coalition Status",
-                },
-                color_discrete_map=coalition_colors,
-                category_orders={
-                    "TopicCode": topic_order_str,
-                    "CoalitionStatus": status_order,
-                },
+            show_percentage = kwargs.get("show_percentage", False)
+            return self._build_topic_chart(
+                df, filters, show_percentage,
+                topic_label="Minor Topic Code (MinorIL)",
+                title_prefix="Bills by Minor Topic (MinorIL)",
+                bar_height=30, min_height=600,
             )
 
-            fig.update_layout(
-                xaxis_title="Number of Bills",
-                yaxis_title="Minor Topic Code (MinorIL)",
-                yaxis=dict(type="category", dtick=1),
-                title_x=0.5,
-                height=max(600, n_topics * 30 + 200),
-                margin=dict(t=100, l=80),
-                legend_title_text="Coalition Status",
-                barmode="stack",
-                bargap=0.2,
+    def _build_topic_chart(
+        self,
+        df: pd.DataFrame,
+        filters: dict,
+        show_percentage: bool,
+        topic_label: str,
+        title_prefix: str,
+        bar_height: int = 45,
+        min_height: int = 500,
+    ) -> go.Figure:
+        """Build a horizontal stacked bar chart for topic distribution.
+
+        Supports count mode (default) and percentage mode with annotations
+        showing totals and Opposition share per topic.
+        """
+        # Sort by topic code numerically, then convert to string for categorical axis
+        topic_order = sorted(df["TopicCode"].unique())
+        df["TopicCode"] = df["TopicCode"].astype(str)
+        topic_order_str = [str(t) for t in topic_order]
+
+        # Compute per-topic summary stats for annotations
+        topic_totals = df.groupby("TopicCode")["BillCount"].sum()
+        opposition_by_topic = (
+            df[df["CoalitionStatus"] == "Opposition"]
+            .groupby("TopicCode")["BillCount"]
+            .sum()
+        )
+
+        coalition_colors = {
+            **self.config.COALITION_OPPOSITION_COLORS,
+            "Unknown": "#808080",
+        }
+        status_order = ["Coalition", "Opposition", "Unknown"]
+        n_topics = len(topic_order_str)
+
+        pct_suffix = " (%)" if show_percentage else ""
+        fig = px.bar(
+            df,
+            y="TopicCode",
+            x="BillCount",
+            color="CoalitionStatus",
+            orientation="h",
+            title=f"<b>{title_prefix} - {filters['knesset_title']}{pct_suffix}</b>",
+            labels={
+                "TopicCode": topic_label,
+                "BillCount": "Share (%)" if show_percentage else "Number of Bills",
+                "CoalitionStatus": "Coalition Status",
+            },
+            color_discrete_map=coalition_colors,
+            category_orders={
+                "TopicCode": topic_order_str,
+                "CoalitionStatus": status_order,
+            },
+        )
+
+        layout_kwargs: dict = {
+            "xaxis_title": "Share (%)" if show_percentage else "Number of Bills",
+            "yaxis_title": topic_label,
+            "yaxis": dict(type="category", dtick=1),
+            "title_x": 0.5,
+            "height": max(min_height, n_topics * bar_height + 200),
+            "margin": dict(t=100, l=80, r=120),
+            "legend_title_text": "Coalition Status",
+            "barmode": "stack",
+            "bargap": 0.2,
+        }
+
+        if show_percentage:
+            layout_kwargs["barnorm"] = "percent"
+            layout_kwargs["xaxis"] = dict(
+                title="Share (%)", ticksuffix="%", range=[0, 100]
             )
 
-            return fig
+        fig.update_layout(**layout_kwargs)
+
+        # Add annotations: total count and Opposition % at end of each bar
+        for tc_str in topic_order_str:
+            total = int(topic_totals.get(tc_str, 0))
+            opp = int(opposition_by_topic.get(tc_str, 0))
+            opp_pct = round(100.0 * opp / total, 0) if total > 0 else 0
+
+            if show_percentage:
+                label = f"n={total}"
+            else:
+                label = f"n={total}  Opp:{opp_pct:.0f}%"
+
+            fig.add_annotation(
+                x=total if not show_percentage else 100,
+                y=tc_str,
+                text=f"<b>{label}</b>",
+                showarrow=False,
+                xanchor="left",
+                xshift=5,
+                font=dict(size=10, color="#333"),
+            )
+
+        return fig
 
     def generate(self, chart_type: str = "", **kwargs: Any) -> Optional[go.Figure]:
         """Generate the requested distribution chart."""

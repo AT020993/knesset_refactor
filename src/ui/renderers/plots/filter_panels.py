@@ -202,6 +202,16 @@ class PlotFilterPanels:
         )
         st.session_state.plot_bill_origin_filter = selected_bill_origin
 
+        # Percentage mode toggle for policy coding charts
+        if "Major Topic" in selected_chart or "Minor Topic" in selected_chart:
+            show_pct = st.checkbox(
+                "Show as percentage (%)",
+                value=st.session_state.get("plot_show_percentage", False),
+                key=f"{self._key_prefix}_show_pct_{selected_chart.replace(' ', '_')}",
+                help="Show 100% stacked bars — compare Opposition vs Coalition share per topic",
+            )
+            st.session_state.plot_show_percentage = show_pct
+
     def populate_filter_options(self) -> None:
         """Populate available filter options from the database using cache."""
         if not self.db_path.exists():

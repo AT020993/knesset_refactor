@@ -97,6 +97,10 @@ def build_plot_arguments(
         plot_args["bill_origin_filter"] = st.session_state.get(
             "plot_bill_origin_filter", "All Bills"
         )
+        if "Major Topic" in selected_chart or "Minor Topic" in selected_chart:
+            plot_args["show_percentage"] = st.session_state.get(
+                "plot_show_percentage", False
+            )
     elif "Collaboration" in selected_chart or "Network" in selected_chart:
         if "Faction Collaboration Network" not in selected_chart:
             plot_args["min_collaborations"] = st.session_state.get(
