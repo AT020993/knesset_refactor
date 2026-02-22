@@ -201,6 +201,7 @@ class DistributionCharts(BaseChart):
                 LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
                 LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                     AND q.KnessetNum = p2p.KnessetNum
+                    AND p2p.FactionID IS NOT NULL
                     AND CAST(q.SubmitDate AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)

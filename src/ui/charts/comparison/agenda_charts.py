@@ -87,6 +87,7 @@ class AgendaComparisonCharts(BaseChart):
                 JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
                 LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
                     AND a.KnessetNum = p2p.KnessetNum
+                    AND p2p.FactionID IS NOT NULL
                     AND CAST({date_column} AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
@@ -265,6 +266,7 @@ class AgendaComparisonCharts(BaseChart):
                     JOIN KNS_Person p ON a.InitiatorPersonID = p.PersonID
                     LEFT JOIN KNS_PersonToPosition p2p ON p.PersonID = p2p.PersonID
                         AND a.KnessetNum = p2p.KnessetNum
+                        AND p2p.FactionID IS NOT NULL
                         AND CAST({date_column} AS TIMESTAMP)
                             BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                             AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)

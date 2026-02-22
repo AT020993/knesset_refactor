@@ -67,6 +67,7 @@ class BillComparisonCharts(BaseChart):
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
+                    AND p2p.FactionID IS NOT NULL
                     AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
@@ -226,6 +227,7 @@ class BillComparisonCharts(BaseChart):
                 JOIN KNS_BillInitiator bi ON b.BillID = bi.BillID
                 LEFT JOIN KNS_PersonToPosition p2p ON bi.PersonID = p2p.PersonID
                     AND b.KnessetNum = p2p.KnessetNum
+                    AND p2p.FactionID IS NOT NULL
                     AND COALESCE(bfs.FirstSubmissionDate, CAST(b.LastUpdatedDate AS TIMESTAMP))
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)

@@ -49,6 +49,7 @@ class QueryComparisonCharts(BaseChart):
                     FROM KNS_Query q
                     LEFT JOIN KNS_PersonToPosition ptp ON q.PersonID = ptp.PersonID
                         AND q.KnessetNum = ptp.KnessetNum
+                        AND ptp.FactionID IS NOT NULL
                         AND CAST(q.SubmitDate AS TIMESTAMP)
                             BETWEEN CAST(ptp.StartDate AS TIMESTAMP)
                             AND CAST(COALESCE(ptp.FinishDate, '9999-12-31') AS TIMESTAMP)
@@ -189,6 +190,7 @@ class QueryComparisonCharts(BaseChart):
                 LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
                 LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                     AND q.KnessetNum = p2p.KnessetNum
+                    AND p2p.FactionID IS NOT NULL
                     AND CAST(q.SubmitDate AS TIMESTAMP)
                         BETWEEN CAST(p2p.StartDate AS TIMESTAMP)
                         AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
@@ -515,6 +517,7 @@ class QueryComparisonCharts(BaseChart):
                     LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID
                     LEFT JOIN KNS_PersonToPosition p2p ON q.PersonID = p2p.PersonID
                         AND q.KnessetNum = p2p.KnessetNum
+                        AND p2p.FactionID IS NOT NULL
                         AND CAST(q.SubmitDate AS TIMESTAMP) BETWEEN CAST(p2p.StartDate AS TIMESTAMP) AND CAST(COALESCE(p2p.FinishDate, '9999-12-31') AS TIMESTAMP)
                     LEFT JOIN KNS_Faction f ON p2p.FactionID = f.FactionID
                     LEFT JOIN UserFactionCoalitionStatus ufs_name ON p2p.FactionID = ufs_name.FactionID
