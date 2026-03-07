@@ -245,8 +245,7 @@ def main() -> None:
     args = parser.parse_args()
 
     logger = setup_logger()
-    settings = Settings()
-    db_path = settings.db_path
+    db_path = Settings.get_db_path()
     importer = ResearchCodingImporter(db_path, logger)
 
     print(f"\n{'#'*60}")
