@@ -94,12 +94,18 @@ def build_plot_arguments(
             "plot_agenda_status_filter", []
         )
     elif "Bill" in selected_chart or "Bills" in selected_chart:
-        plot_args["bill_origin_filter"] = st.session_state.get(
-            "plot_bill_origin_filter", "All Bills"
-        )
+        # Government chart has fixed origin — don't pass bill_origin_filter
+        if "Government Bills" not in selected_chart:
+            plot_args["bill_origin_filter"] = st.session_state.get(
+                "plot_bill_origin_filter", "All Bills"
+            )
         if "Major Topic" in selected_chart or "Minor Topic" in selected_chart:
             plot_args["show_percentage"] = st.session_state.get(
                 "plot_show_percentage", False
+            )
+        if "Heatmap" in selected_chart:
+            plot_args["split_by_coalition"] = st.session_state.get(
+                "plot_split_by_coalition", False
             )
     elif "Collaboration" in selected_chart or "Network" in selected_chart:
         if "Faction Collaboration Network" not in selected_chart:

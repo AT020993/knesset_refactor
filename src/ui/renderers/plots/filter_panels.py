@@ -191,16 +191,17 @@ class PlotFilterPanels:
 
     def render_bill_filters(self, selected_chart: str) -> None:
         """Render bill-specific filter options."""
-        # Bill Origin filter (Private vs Governmental)
-        bill_origin_options = ["All Bills", "Private Bills Only", "Governmental Bills Only"]
-        selected_bill_origin = st.selectbox(
-            "Bill Origin",
-            options=bill_origin_options,
-            index=bill_origin_options.index(st.session_state.get('plot_bill_origin_filter', 'All Bills')),
-            key=f"{self._key_prefix}_bill_origin_{selected_chart.replace(' ', '_')}",
-            help="Filter bills by their origin: Private (initiated by MKs) or Governmental (initiated by government)"
-        )
-        st.session_state.plot_bill_origin_filter = selected_bill_origin
+        # Bill Origin filter — skip for Government Bills chart (fixed origin)
+        if "Government Bills" not in selected_chart:
+            bill_origin_options = ["All Bills", "Private Bills Only", "Governmental Bills Only"]
+            selected_bill_origin = st.selectbox(
+                "Bill Origin",
+                options=bill_origin_options,
+                index=bill_origin_options.index(st.session_state.get('plot_bill_origin_filter', 'All Bills')),
+                key=f"{self._key_prefix}_bill_origin_{selected_chart.replace(' ', '_')}",
+                help="Filter bills by their origin: Private (initiated by MKs) or Governmental (initiated by government)"
+            )
+            st.session_state.plot_bill_origin_filter = selected_bill_origin
 
         # Percentage mode toggle for policy coding charts
         if "Major Topic" in selected_chart or "Minor Topic" in selected_chart:
@@ -211,6 +212,16 @@ class PlotFilterPanels:
                 help="Show 100% stacked bars — compare Opposition vs Coalition share per topic",
             )
             st.session_state.plot_show_percentage = show_pct
+
+        # Coalition split toggle for heatmap chart
+        if "Heatmap" in selected_chart:
+            split_coalition = st.checkbox(
+                "Split by Coalition/Opposition",
+                value=st.session_state.get("plot_split_by_coalition", False),
+                key=f"{self._key_prefix}_split_coal_{selected_chart.replace(' ', '_')}",
+                help="Show side-by-side heatmaps for Coalition and Opposition",
+            )
+            st.session_state.plot_split_by_coalition = split_coalition
 
     def populate_filter_options(self) -> None:
         """Populate available filter options from the database using cache."""

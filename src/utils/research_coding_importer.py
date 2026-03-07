@@ -620,11 +620,16 @@ class ResearchCodingImporter:
         table_name: str,
         pk_column: str,
         result: ImportResult,
+        gap_fill: bool = False,
     ) -> ImportResult:
         """
         Bulk insert/update data using DuckDB's register + INSERT ... ON CONFLICT.
 
         This is much faster than row-by-row for large datasets (10K+ rows).
+
+        Args:
+            gap_fill: If True, only fill NULL columns (COALESCE preserves existing
+                non-NULL values). If False (default), overwrite all columns.
         """
         if df.empty:
             return result
@@ -652,7 +657,16 @@ class ResearchCodingImporter:
                 col_list = ", ".join(db_columns)
                 # Build the ON CONFLICT update set
                 update_cols = [c for c in db_columns if c != pk_column]
-                update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                if gap_fill:
+                    # Only fill NULL columns — preserve existing non-NULL values
+                    update_set = ", ".join(
+                        f"{c} = COALESCE({table_name}.{c}, EXCLUDED.{c})"
+                        for c in update_cols
+                    )
+                else:
+                    update_set = ", ".join(
+                        f"{c} = EXCLUDED.{c}" for c in update_cols
+                    )
                 update_set += ", ImportedAt = now()"
 
                 sql = f"""

@@ -121,6 +121,8 @@ class ChartFactory:
                 "bill_subtype_distribution",
                 "majoril_distribution",
                 "minoril_distribution",
+                "majoril_distribution_gov",
+                "majoril_time_trend",
             ],
             "comparison": [
                 "queries_per_faction",

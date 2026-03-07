@@ -256,6 +256,18 @@ def plot_minoril_distribution(db_path, connect_func, logger_obj, **kwargs):
     return chart_service.create_chart("distribution", "minoril_distribution", **kwargs)
 
 
+def plot_majoril_distribution_gov(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for government bills major topic distribution chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.create_chart("distribution", "majoril_distribution_gov", **kwargs)
+
+
+def plot_majoril_time_trend(db_path, connect_func, logger_obj, **kwargs):
+    """Legacy wrapper for major topic time-trend heatmap chart."""
+    chart_service = ChartService(db_path, logger_obj)
+    return chart_service.create_chart("distribution", "majoril_time_trend", **kwargs)
+
+
 def get_available_plots():
     """Return available plot categories and their functions for the UI."""
     return {
@@ -289,5 +301,7 @@ def get_available_plots():
         "Policy Coding Analytics": {
             "Bills by Major Topic (MajorIL)": plot_majoril_distribution,
             "Bills by Minor Topic (MinorIL)": plot_minoril_distribution,
+            "Government Bills by Major Topic": plot_majoril_distribution_gov,
+            "Bills Topic Trends by Knesset (Heatmap)": plot_majoril_time_trend,
         },
     }
