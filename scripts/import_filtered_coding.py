@@ -13,9 +13,9 @@ Uses GAP-FILL semantics: only fills NULL MajorIL/MinorIL values,
 never overwrites existing codings.
 
 Usage:
-    PYTHONPATH="./src" python import_filtered_coding.py
-    PYTHONPATH="./src" python import_filtered_coding.py --dry-run
-    PYTHONPATH="./src" python import_filtered_coding.py --skip-bills --skip-agendas
+    PYTHONPATH="./src" python scripts/import_filtered_coding.py
+    PYTHONPATH="./src" python scripts/import_filtered_coding.py --dry-run
+    PYTHONPATH="./src" python scripts/import_filtered_coding.py --skip-bills --skip-agendas
 """
 
 import argparse
@@ -25,14 +25,14 @@ from pathlib import Path
 
 import pandas as pd
 
-_project_root = Path(__file__).resolve().parent
+_project_root = Path(__file__).resolve().parent.parent
 
 try:
     from config.settings import Settings
     from utils.research_coding_importer import ResearchCodingImporter, ImportResult
 except ModuleNotFoundError as exc:
     raise SystemExit(
-        "Import failed. Run with `PYTHONPATH=./src python import_filtered_coding.py ...`."
+        "Import failed. Run with `PYTHONPATH=./src python scripts/import_filtered_coding.py ...`."
     ) from exc
 
 # Reuse helpers from the existing import script

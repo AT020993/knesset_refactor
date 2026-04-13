@@ -3,18 +3,18 @@
 
 Usage:
     # Use credential resolver (auto-detects from env, .env, or secrets)
-    python upload_to_gcs.py
+    python scripts/upload_to_gcs.py
 
     # Or set bucket name via environment variable
     export GCS_BUCKET_NAME="your-bucket-name"
     export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
-    python upload_to_gcs.py
+    python scripts/upload_to_gcs.py
 
     # Or pass bucket name as argument
-    python upload_to_gcs.py --bucket your-bucket-name
+    python scripts/upload_to_gcs.py --bucket your-bucket-name
 
     # Preview what would be uploaded without actually uploading
-    python upload_to_gcs.py --dry-run
+    python scripts/upload_to_gcs.py --dry-run
 
 Prerequisites:
     1. Create a GCS bucket in Google Cloud Console
@@ -45,7 +45,7 @@ def get_credentials_from_resolver():
             return bucket_name, credentials
     except ImportError:
         print(
-            "Import failed. Run with `PYTHONPATH=./src python upload_to_gcs.py ...`."
+            "Import failed. Run with `PYTHONPATH=./src python scripts/upload_to_gcs.py ...`."
         )
     except Exception as e:
         print(f"Warning: Credential resolver error: {e}")
@@ -71,7 +71,7 @@ def get_bucket_and_credentials(args_bucket: str = None):
     else:
         print("ERROR: No GCS bucket specified.")
         print("\nPlease specify bucket name via:")
-        print("  1. Command line: python upload_to_gcs.py --bucket YOUR_BUCKET")
+        print("  1. Command line: python scripts/upload_to_gcs.py --bucket YOUR_BUCKET")
         print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
         print("  3. .env file: GCS_BUCKET_NAME=YOUR_BUCKET")
         print("  4. Streamlit secrets: .streamlit/secrets.toml [storage] gcs_bucket_name")
@@ -100,7 +100,7 @@ def main():
     print(f"Using GCS bucket: {bucket_name}")
 
     # Project root for finding data files
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).parent.parent
 
     # Files to upload
     files_to_upload = [

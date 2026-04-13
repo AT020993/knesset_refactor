@@ -3,7 +3,7 @@
 CLI script for importing research coding data into the dashboard database.
 
 Usage:
-    PYTHONPATH="./src" python import_research_coding.py \
+    PYTHONPATH="./src" python scripts/import_research_coding.py \
         --bills all_bills_final_updated.xlsx \
         --queries parliamentary_queries_coded_KN17_24_Feb2026.xlsx \
         --agendas motions_agenda_coded_KN19_20_23_24.xlsx
@@ -17,14 +17,14 @@ import logging
 import sys
 from pathlib import Path
 
-_project_root = Path(__file__).resolve().parent
+_project_root = Path(__file__).resolve().parent.parent
 
 try:
     from config.settings import Settings
     from utils.research_coding_importer import ResearchCodingImporter, ImportResult
 except ModuleNotFoundError as exc:
     raise SystemExit(
-        "Import failed. Run with `PYTHONPATH=./src python import_research_coding.py ...`."
+        "Import failed. Run with `PYTHONPATH=./src python scripts/import_research_coding.py ...`."
     ) from exc
 
 

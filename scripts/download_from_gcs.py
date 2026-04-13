@@ -3,21 +3,21 @@
 
 Usage:
     # Use credential resolver (auto-detects from env, .env, or secrets)
-    python download_from_gcs.py
+    python scripts/download_from_gcs.py
 
     # Or set bucket name via environment variable
     export GCS_BUCKET_NAME="your-bucket-name"
     export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
-    python download_from_gcs.py
+    python scripts/download_from_gcs.py
 
     # Or pass bucket name as argument
-    python download_from_gcs.py --bucket your-bucket-name
+    python scripts/download_from_gcs.py --bucket your-bucket-name
 
     # Preview what would be downloaded
-    python download_from_gcs.py --dry-run
+    python scripts/download_from_gcs.py --dry-run
 
     # Download only the database (skip parquet files)
-    python download_from_gcs.py --db-only
+    python scripts/download_from_gcs.py --db-only
 
 Prerequisites:
     1. Have access to the GCS bucket
@@ -51,7 +51,7 @@ def get_credentials_from_resolver():
             return bucket_name, credentials
     except ImportError:
         print(
-            "Import failed. Run with `PYTHONPATH=./src python download_from_gcs.py ...`."
+            "Import failed. Run with `PYTHONPATH=./src python scripts/download_from_gcs.py ...`."
         )
     except Exception as e:
         print(f"Warning: Credential resolver error: {e}")
@@ -60,7 +60,7 @@ def get_credentials_from_resolver():
 
 def get_credentials_from_streamlit_secrets():
     """Try to load credentials from .streamlit/secrets.toml (legacy fallback)."""
-    secrets_path = Path(__file__).parent / ".streamlit" / "secrets.toml"
+    secrets_path = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
 
     if not secrets_path.exists():
         return None, None
@@ -125,7 +125,7 @@ def get_bucket_and_credentials(args_bucket: str = None):
     else:
         print("ERROR: No GCS bucket specified.")
         print("\nPlease specify bucket name via:")
-        print("  1. Command line: python download_from_gcs.py --bucket YOUR_BUCKET")
+        print("  1. Command line: python scripts/download_from_gcs.py --bucket YOUR_BUCKET")
         print("  2. Environment variable: export GCS_BUCKET_NAME=YOUR_BUCKET")
         print("  3. .env file: GCS_BUCKET_NAME=YOUR_BUCKET")
         print("  4. Streamlit secrets: .streamlit/secrets.toml [storage] gcs_bucket_name")
@@ -164,7 +164,7 @@ def main():
     print(f"Using GCS bucket: {bucket_name}")
 
     # Project root for saving data files
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).parent.parent
 
     # Files to download
     files_to_download = [

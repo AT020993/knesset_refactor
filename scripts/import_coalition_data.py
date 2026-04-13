@@ -8,8 +8,8 @@ deduplicates on (KnessetNum, FactionID), parses mid-term change dates,
 and outputs a single CSV ready for the dashboard.
 
 Usage:
-    PYTHONPATH="./src" python import_coalition_data.py
-    PYTHONPATH="./src" python import_coalition_data.py --dry-run
+    PYTHONPATH="./src" python scripts/import_coalition_data.py
+    PYTHONPATH="./src" python scripts/import_coalition_data.py --dry-run
 """
 
 import argparse
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-_project_root = Path(__file__).resolve().parent
+_project_root = Path(__file__).resolve().parent.parent
 
 # Source files (bills is primary — most comprehensive at 378 rows)
 DEFAULT_FILES = [

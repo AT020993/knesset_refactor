@@ -6,8 +6,8 @@ Reads filtered_Bill_פרטית_with_coding.csv, filters rows where
 MAJORIL is NA/empty, adds Knesset website URLs, and exports to Excel.
 
 Usage:
-    python export_uncoded_private_bills.py
-    python export_uncoded_private_bills.py --output my_output.xlsx
+    python scripts/export_uncoded_private_bills.py
+    python scripts/export_uncoded_private_bills.py --output my_output.xlsx
 """
 
 import argparse
@@ -20,7 +20,7 @@ KNESSET_BILL_URL = (
     "LawBill.aspx?t=lawsuggestionssearch&lawitemid={bill_id}"
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = PROJECT_ROOT / "filtered_Bill_פרטית_with_coding.csv"
 DEFAULT_OUTPUT = (
     PROJECT_ROOT / "data" / "gap_analysis" / "uncoded_private_bills_with_links.xlsx"

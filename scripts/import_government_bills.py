@@ -7,10 +7,10 @@ in the initial Round 1 import (private bills only). Uses upsert semantics so
 overlapping BillIDs get their coding updated.
 
 Usage:
-    PYTHONPATH="./src" python import_government_bills.py
-    PYTHONPATH="./src" python import_government_bills.py --k10-20 docs/GovernmentBills10_20_sorted.xlsx
-    PYTHONPATH="./src" python import_government_bills.py --k23-24 docs/govbills_23_24.xlsx
-    PYTHONPATH="./src" python import_government_bills.py --dry-run
+    PYTHONPATH="./src" python scripts/import_government_bills.py
+    PYTHONPATH="./src" python scripts/import_government_bills.py --k10-20 docs/GovernmentBills10_20_sorted.xlsx
+    PYTHONPATH="./src" python scripts/import_government_bills.py --k23-24 docs/govbills_23_24.xlsx
+    PYTHONPATH="./src" python scripts/import_government_bills.py --dry-run
 """
 
 import argparse
@@ -18,14 +18,14 @@ import logging
 import sys
 from pathlib import Path
 
-_project_root = Path(__file__).resolve().parent
+_project_root = Path(__file__).resolve().parent.parent
 
 try:
     from config.settings import Settings
     from utils.research_coding_importer import ResearchCodingImporter, ImportResult
 except ModuleNotFoundError as exc:
     raise SystemExit(
-        "Import failed. Run with `PYTHONPATH=./src python import_government_bills.py ...`."
+        "Import failed. Run with `PYTHONPATH=./src python scripts/import_government_bills.py ...`."
     ) from exc
 
 # Reuse helpers from the existing import script

@@ -3,10 +3,10 @@
 Diagnostic script to check database state and fix migration artifacts.
 
 Run this locally with your database file:
-    python diagnose_db.py
+    python scripts/diagnose_db.py
 
 Or specify a path:
-    python diagnose_db.py --db path/to/warehouse.duckdb
+    python scripts/diagnose_db.py --db path/to/warehouse.duckdb
 """
 
 import argparse
