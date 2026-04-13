@@ -1,7 +1,7 @@
 # Knesset Data Platform
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![CI Status](https://github.com/AT020993/knesset_refactor/workflows/CI%20-%20Automated%20Testing%20for%20AI-Generated%20Branches/badge.svg)](https://github.com/AT020993/knesset_refactor/actions)
+[![CI Status](https://github.com/AT020993/knesset_refactor/workflows/CI%20-%20Quality%20and%20Test%20Gates/badge.svg)](https://github.com/AT020993/knesset_refactor/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A platform for downloading, analyzing, and viewing Israeli parliament (Knesset) data. Built for researchers and analysts who want to explore parliamentary activity without coding.
@@ -26,7 +26,7 @@ A platform for downloading, analyzing, and viewing Israeli parliament (Knesset) 
 
 ### Using Streamlit Cloud (Easiest)
 
-1. Visit the deployed app (URL will be added after deployment)
+1. Visit the deployed app at [knessetrefactor.streamlit.app](https://knessetrefactor-7fzhrkg78zuyf8jefy8ttu.streamlit.app/)
 2. Click "Refresh Data" to download the latest Knesset data
 3. Start exploring with the charts and queries
 
