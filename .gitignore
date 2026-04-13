@@ -72,5 +72,22 @@ setup_for_researcher.py
 # Duplicate/Generated files
 faction_coalition_mapping.csv
 
+# Research data files (binary, not source code)
+*.xlsx
+*.docx
+
+# Root-level data exports (anchored to root to preserve data/taxonomies/)
+/*.csv
+/*.jpg
+/*.pdf
+
+# macOS/OneDrive FUSE artifacts
+.fuse_hidden*
+
+# Pytest temp files (accidentally committed)
+pytest-of-*/
+pytest-current
+test_resume_state.json
+
 # Accidental files (e.g., from pip install typos)
 =*
