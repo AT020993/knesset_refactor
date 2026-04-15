@@ -1,0 +1,59 @@
+# Knesset ETL + snapshot exporter — one-shot unit.
+#
+# Triggered by knesset-etl.timer (not started directly). On every fire:
+#   1. Refresh all OData tables into the warehouse
+#   2. Export the full snapshot bundle for FastAPI consumers
+# Both steps are idempotent; the snapshot exporter is atomic per file +
+# via the manifest.json commit marker, so interrupting mid-run can't
+# leave a half-written bundle visible to readers.
+#
+# Install / restart pattern (matches the project's OS-managed-services rule):
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now knesset-etl.timer      # timer starts service
+#   sudo systemctl start knesset-etl.service           # manual one-shot run
+#   journalctl --user-unit knesset-etl.service -f      # stream logs
+
+[Unit]
+Description=Knesset warehouse refresh and snapshot export
+Documentation=https://github.com/AT020993/knesset_refactor/blob/main/docs/deploy/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Hardcode a working user and path layout; the Phase 5 deploy will
+# parameterize these via a drop-in if needed.
+User=knesset
+Group=knesset
+WorkingDirectory=/opt/knesset_refactor
+Environment=PYTHONPATH=/opt/knesset_refactor/src
+Environment=PYTHONUNBUFFERED=1
+
+# Step 1 — refresh all OData tables (src.cli is typer-based).
+ExecStart=/opt/knesset_refactor/.venv/bin/python -m src.cli refresh
+# Step 2 — export the Parquet snapshot bundle.
+# The exporter opens the warehouse read-only and writes to --output-dir
+# atomically (<name>.parquet.new -> os.replace; manifest.json is the commit
+# marker). Readers see consistent state throughout.
+ExecStart=/opt/knesset_refactor/.venv/bin/python -m data.snapshots.exporter \
+    --warehouse /var/lib/knesset/warehouse.duckdb \
+    --output-dir /var/lib/knesset/snapshots
+
+# Fail-fast but don't thrash on transient upstream-API outages; the timer
+# will retry on its next fire.
+TimeoutStartSec=1800
+Nice=5
+
+# Basic sandboxing. Not paranoid: the unit reads local files and writes
+# to the warehouse + snapshots dir, both under /var/lib/knesset.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/knesset
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+# This service is triggered by the timer, not enabled directly on a
+# multi-user target. Leaving [Install] empty would still be valid; we
+# name the timer here for clarity when inspecting with systemctl.
+Also=knesset-etl.timer
