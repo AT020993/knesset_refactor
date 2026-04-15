@@ -1,0 +1,23 @@
+# Timer for knesset-etl.service.
+#
+# Fires every 6 hours from 00:30 local time (03:30 / 09:30 / 15:30 / 21:30).
+# The 30-minute offset keeps us off :00 boundaries where lots of other
+# scheduled jobs land, and dodges the top-of-hour Knesset OData rate-limit
+# window we've seen in the past.
+#
+# Persistent=true + AccuracySec=1min means a missed fire (e.g. VPS reboot)
+# runs as soon as the timer is loaded again, rather than silently skipping
+# until the next scheduled window.
+
+[Unit]
+Description=Trigger knesset-etl.service on a 6h schedule
+Documentation=https://github.com/AT020993/knesset_refactor/blob/main/docs/deploy/README.md
+
+[Timer]
+OnCalendar=*-*-* 00/6:30:00
+Persistent=true
+AccuracySec=1min
+Unit=knesset-etl.service
+
+[Install]
+WantedBy=timers.target

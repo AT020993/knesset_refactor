@@ -10,8 +10,8 @@ import pandas as pd
 import streamlit as st
 
 from backend.connection_manager import get_db_connection, safe_execute_query
-from .predefined_queries import get_query_definition
-from .types import PaginationSpec, QueryRequest
+from data.queries.predefined_queries import get_query_definition
+from data.queries.types import PaginationSpec, QueryRequest
 
 
 class QueryExecutor:

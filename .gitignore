@@ -91,3 +91,9 @@ test_resume_state.json
 
 # Accidental files (e.g., from pip install typos)
 =*
+
+# Local personal correspondence drafts (not repo content)
+docs/email_reply_*.md
+
+# Ad-hoc CSV exports accidentally saved under docs/ (canonical location is /data/)
+docs/unique_*.csv

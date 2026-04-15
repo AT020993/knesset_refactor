@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from ui.queries.sql_templates import SQLTemplates
+from data.queries.sql_templates import SQLTemplates
 
 BILLS_QUERIES: dict[str, dict[str, Any]] = {
     "Bills & Legislation (Full Details)": {
