@@ -34,6 +34,7 @@ SELECT
 FROM KNS_Committee c
 LEFT JOIN CommitteeSessionCounts csc
     ON c.CommitteeID = csc.CommitteeID AND c.KnessetNum = csc.KnessetNum
+ORDER BY c.KnessetNum, c.CommitteeID
 """.strip(),
         "knesset_filter_column": "c.KnessetNum",
         "faction_filter_column": None,

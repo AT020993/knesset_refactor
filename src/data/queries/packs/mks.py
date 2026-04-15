@@ -13,6 +13,9 @@ MK_QUERIES: dict[str, dict[str, Any]] = {
     "mk_summary": {
         "sql": """
 WITH LatestPosition AS (
+    -- One row per MK: their globally latest faction assignment.
+    -- StartDate is VARCHAR in the warehouse; cast so sort is chronological,
+    -- not lexicographic (e.g., '2020-12' would sort after '2020-2' otherwise).
     SELECT
         PersonID,
         KnessetNum,
@@ -21,8 +24,11 @@ WITH LatestPosition AS (
         DutyDesc,
         StartDate,
         ROW_NUMBER() OVER (
-            PARTITION BY PersonID, KnessetNum
-            ORDER BY StartDate DESC NULLS LAST, PersonToPositionID DESC
+            PARTITION BY PersonID
+            ORDER BY
+                TRY_CAST(StartDate AS TIMESTAMP) DESC NULLS LAST,
+                KnessetNum DESC NULLS LAST,
+                PersonToPositionID DESC
         ) AS rn
     FROM KNS_PersonToPosition
     WHERE FactionID IS NOT NULL
@@ -39,6 +45,7 @@ SELECT
 FROM KNS_Person p
 LEFT JOIN LatestPosition lp
     ON p.PersonID = lp.PersonID AND lp.rn = 1
+ORDER BY p.PersonID
 """.strip(),
         "knesset_filter_column": "lp.KnessetNum",
         "faction_filter_column": "lp.FactionID",

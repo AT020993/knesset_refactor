@@ -36,6 +36,7 @@ LEFT JOIN FactionMembers fm
     ON f.FactionID = fm.FactionID AND f.KnessetNum = fm.KnessetNum
 LEFT JOIN UserFactionCoalitionStatus ufcs
     ON f.FactionID = ufcs.FactionID AND f.KnessetNum = ufcs.KnessetNum
+ORDER BY f.KnessetNum, f.FactionID
 """.strip(),
         "knesset_filter_column": "f.KnessetNum",
         "faction_filter_column": "f.FactionID",
