@@ -87,6 +87,13 @@ explicit_package_bases = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "src.data.queries.*"
+check_untyped_defs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# Back-compat stubs re-export from data.queries; keep them in the strict set
+# but allow the thin `from X import *` surface.
 module = "src.ui.queries.*"
 check_untyped_defs = true
 disallow_untyped_defs = true
