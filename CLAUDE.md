@@ -207,6 +207,4 @@ Match rates: Bills 99.6%, Agendas 100%, Queries only 13% (24K entries for K10-K1
 
 ## Tests
 
-**Known local-only failure**: `test_cli.py::test_refresh_specific_table` — passes in CI (Python 3.12), fails locally on 3.13 (typer mock incompatibility).
-
 **Test passwords**: Use `Password1`, `TestPass1` (8+ chars, upper+lower+digit).
