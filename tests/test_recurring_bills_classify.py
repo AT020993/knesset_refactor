@@ -292,3 +292,62 @@ class TestPipeline:
 
         assert mock_bulk.call_count == 1
         assert mock_many.call_count == 1
+
+
+from data.recurring_bills.cap_view import create_cap_view
+
+
+class TestCapView:
+    def test_creates_view_with_expected_columns(self, tmp_path: Path):
+        db = tmp_path / "w.duckdb"
+        con = duckdb.connect(str(db), read_only=False)
+        con.execute("CREATE TABLE UserBillCAP (BillID INTEGER, CAPMinorCode VARCHAR)")
+        con.execute("INSERT INTO UserBillCAP VALUES (1, '100'), (2, '200')")
+        con.execute("""
+            CREATE TABLE bill_classifications (
+                BillID INTEGER PRIMARY KEY, KnessetNum INTEGER, Name VARCHAR,
+                is_original BOOLEAN, original_bill_id INTEGER, tal_category VARCHAR,
+                classification_source VARCHAR
+            )
+        """)
+        con.execute("""
+            INSERT INTO bill_classifications VALUES
+            (1, 20, 'a', TRUE, 1, 'new', 'tal_alovitz'),
+            (2, 21, 'a', FALSE, 1, 'cross', 'tal_alovitz')
+        """)
+        con.close()
+
+        create_cap_view(db_path=db)
+
+        con = duckdb.connect(str(db), read_only=True)
+        rows = con.execute("""
+            SELECT BillID, CAPMinorCode, is_original, original_bill_id
+            FROM v_cap_bills_with_recurrence ORDER BY BillID
+        """).fetchall()
+        con.close()
+
+        assert rows == [(1, '100', True, 1), (2, '200', False, 1)]
+
+    def test_view_handles_cap_bills_without_classification(self, tmp_path: Path):
+        """Bills in UserBillCAP that aren't in bill_classifications get NULL."""
+        db = tmp_path / "w.duckdb"
+        con = duckdb.connect(str(db), read_only=False)
+        con.execute("CREATE TABLE UserBillCAP (BillID INTEGER, CAPMinorCode VARCHAR)")
+        con.execute("INSERT INTO UserBillCAP VALUES (99, 'xxx')")
+        con.execute("""
+            CREATE TABLE bill_classifications (
+                BillID INTEGER PRIMARY KEY, KnessetNum INTEGER, Name VARCHAR,
+                is_original BOOLEAN, original_bill_id INTEGER, tal_category VARCHAR,
+                classification_source VARCHAR
+            )
+        """)
+        con.close()
+
+        create_cap_view(db_path=db)
+
+        con = duckdb.connect(str(db), read_only=True)
+        row = con.execute(
+            "SELECT is_original FROM v_cap_bills_with_recurrence WHERE BillID = 99"
+        ).fetchone()
+        con.close()
+        assert row == (None,)

@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 
+from data.recurring_bills.cap_view import create_cap_view
 from data.recurring_bills.classify import (
     build_k16_k18_fallback,
     build_tal_classifications,
@@ -71,6 +73,10 @@ def run_pipeline(
     if mode != "report":
         write_parquet_snapshot(df, parquet_path)
         write_duckdb_table(df, db_path=db_path)
+        try:
+            create_cap_view(db_path=db_path)
+        except duckdb.CatalogException:
+            log.warning("UserBillCAP not present in warehouse; skipping CAP view creation")
 
     log.info("Pipeline %s complete: %d bills", mode, stats["total"])
     return stats
