@@ -1,6 +1,6 @@
 # Knesset Data Platform - Deployment Options
 
-**Version:** 1.0 | **Date:** October 2025
+> **Pricing disclaimer**: Streamlit, GCP, AWS, and Azure pricing changes frequently. The figures below were accurate at the time of writing and should be re-verified against each vendor's current pricing page before committing to a tier.
 
 ---
 
@@ -208,7 +208,3 @@ Deployment options for the **Knesset Parliamentary Data Analysis Platform** for 
 **After 3 months**: Evaluate and upgrade to Option 2 (server) or Option 3 (teams) if needed
 
 **This minimizes risk while maximizing learning**
-
----
-
-*Last updated: October 2025*
