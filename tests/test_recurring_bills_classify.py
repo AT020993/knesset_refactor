@@ -225,3 +225,70 @@ class TestMergeAll:
         collision = merged.loc[merged["BillID"] == 10001].iloc[0]
         assert collision["classification_source"] == "tal_alovitz"
         assert collision["original_bill_id"] == 99999
+
+
+from unittest.mock import patch
+
+from data.recurring_bills.pipeline import run_pipeline
+
+
+class TestPipeline:
+    def test_rebuild_mode_skips_network_and_builds_outputs(self, tmp_path: Path):
+        # Stage fixtures into a working data/ tree
+        work = tmp_path
+        (work / "external" / "tal_bill_details").mkdir(parents=True)
+        for bid in (477119, 477120, 477137):
+            (work / "external" / "tal_bill_details" / f"{bid}.json").write_text(
+                (FIXTURES / f"tal_detail_{bid}.json").read_text()
+            )
+        (work / "external" / "tal_alovitz_bills.csv").write_bytes(
+            (FIXTURES / "tal_bulk_sample.csv").read_bytes()
+        )
+
+        out_parquet = work / "snapshots" / "bill_classifications.parquet"
+        out_report = work / "recurring_bills" / "coverage_report.md"
+        db = work / "warehouse.duckdb"
+
+        result = run_pipeline(
+            mode="rebuild",
+            excel_path=FIXTURES / "excel_sample.xlsx",
+            cache_dir=work / "external" / "tal_bill_details",
+            bulk_csv=work / "external" / "tal_alovitz_bills.csv",
+            db_path=db,
+            parquet_path=out_parquet,
+            report_path=out_report,
+        )
+
+        assert result["total"] >= 10  # 6 from Tal fixture + K16-K18 fallback
+        assert out_parquet.exists()
+        assert out_report.exists()
+        assert "# Recurring Bills Classification Coverage" in out_report.read_text()
+
+    def test_refresh_mode_triggers_fetch(self, tmp_path: Path):
+        """refresh mode should call download_bulk_csv + fetch_many_details."""
+        with patch("data.recurring_bills.pipeline.download_bulk_csv") as mock_bulk, \
+             patch("data.recurring_bills.pipeline.fetch_many_details") as mock_many:
+            mock_bulk.return_value = FIXTURES / "tal_bulk_sample.csv"
+            mock_many.return_value = []
+
+            # Stage cache_dir fixtures so classify still works
+            cache_dir = tmp_path / "cache"
+            cache_dir.mkdir()
+            for bid in (477119, 477120, 477137):
+                (cache_dir / f"{bid}.json").write_text(
+                    (FIXTURES / f"tal_detail_{bid}.json").read_text()
+                )
+
+            run_pipeline(
+                mode="refresh",
+                excel_path=FIXTURES / "excel_sample.xlsx",
+                cache_dir=cache_dir,
+                bulk_csv=tmp_path / "bulk.csv",
+                db_path=tmp_path / "w.duckdb",
+                parquet_path=tmp_path / "snap.parquet",
+                report_path=tmp_path / "report.md",
+                delay_s=0,
+            )
+
+        assert mock_bulk.call_count == 1
+        assert mock_many.call_count == 1
