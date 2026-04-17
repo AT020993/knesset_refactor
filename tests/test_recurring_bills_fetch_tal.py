@@ -71,3 +71,75 @@ class TestDownloadBulkCsv:
             download_bulk_csv(out)
 
         assert etag_file.read_text() == '"xyz789"'
+
+
+import json
+from data.recurring_bills.fetch_tal import fetch_bill_detail, fetch_many_details
+
+
+class TestFetchBillDetail:
+    def _mock_json(self, payload: dict, status: int = 200):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json = MagicMock(return_value=payload)
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    def test_writes_json_to_cache_on_miss(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        payload = {"bill_id": 477120, "patient_zero_bill_id": 477120, "category": "cross"}
+
+        with patch("data.recurring_bills.fetch_tal.requests.get") as mock_get:
+            mock_get.return_value = self._mock_json(payload)
+            path = fetch_bill_detail(477120, cache_dir)
+
+        assert path == cache_dir / "477120.json"
+        assert json.loads(path.read_text()) == payload
+        assert mock_get.call_count == 1
+
+    def test_uses_cache_on_hit_and_skips_http(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        cached = cache_dir / "477120.json"
+        cached.write_text('{"bill_id": 477120, "cached": true}')
+
+        with patch("data.recurring_bills.fetch_tal.requests.get") as mock_get:
+            path = fetch_bill_detail(477120, cache_dir)
+
+        assert mock_get.call_count == 0
+        assert json.loads(path.read_text())["cached"] is True
+
+    def test_force_refresh_bypasses_cache(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "477120.json").write_text('{"cached": true}')
+
+        with patch("data.recurring_bills.fetch_tal.requests.get") as mock_get:
+            mock_get.return_value = self._mock_json({"bill_id": 477120, "cached": False})
+            fetch_bill_detail(477120, cache_dir, force_refresh=True)
+
+        assert mock_get.call_count == 1
+
+
+class TestFetchManyDetails:
+    def test_respects_delay_and_caches_all(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        bill_ids = [477119, 477120, 477137]
+
+        def side_effect(url, **kwargs):
+            bid = int(url.rsplit("/", 1)[-1])
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json = MagicMock(return_value={"bill_id": bid})
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        with patch("data.recurring_bills.fetch_tal.requests.get", side_effect=side_effect):
+            with patch("data.recurring_bills.fetch_tal.time.sleep") as mock_sleep:
+                paths = fetch_many_details(bill_ids, cache_dir, delay_s=0.5)
+
+        assert len(paths) == 3
+        # Delay is called before each HTTP fetch (3 times)
+        assert mock_sleep.call_count == 3
+        for call in mock_sleep.call_args_list:
+            assert call.args == (0.5,)
