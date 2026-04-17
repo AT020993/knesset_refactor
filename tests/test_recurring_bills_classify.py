@@ -127,6 +127,59 @@ class TestK16K18Fallback:
         assert row_earliest["predecessor_bill_ids"] == []
 
 
+import duckdb
+
+from data.recurring_bills.storage import write_duckdb_table, write_parquet_snapshot
+
+
+class TestStorage:
+    def _fixture_df(self) -> pd.DataFrame:
+        return pd.DataFrame([
+            {"BillID": 1, "KnessetNum": 20, "Name": "a", "is_original": True,
+             "original_bill_id": 1, "tal_category": "new", "is_cross_term": False,
+             "is_within_term_dup": False, "is_self_resubmission": False,
+             "family_size": 1, "predecessor_bill_ids": [],
+             "classification_source": "tal_alovitz",
+             "tal_fetched_at": pd.Timestamp("2026-04-17", tz="UTC")},
+            {"BillID": 2, "KnessetNum": 21, "Name": "b", "is_original": False,
+             "original_bill_id": 1, "tal_category": "cross", "is_cross_term": True,
+             "is_within_term_dup": False, "is_self_resubmission": False,
+             "family_size": 2, "predecessor_bill_ids": [1],
+             "classification_source": "tal_alovitz",
+             "tal_fetched_at": pd.Timestamp("2026-04-17", tz="UTC")},
+        ])
+
+    def test_write_duckdb_creates_table_and_rows(self, tmp_path: Path):
+        db = tmp_path / "w.duckdb"
+        df = self._fixture_df()
+        write_duckdb_table(df, db_path=db)
+
+        con = duckdb.connect(str(db), read_only=True)
+        count = con.execute("SELECT COUNT(*) FROM bill_classifications").fetchone()[0]
+        con.close()
+        assert count == 2
+
+    def test_write_duckdb_replaces_on_rerun(self, tmp_path: Path):
+        db = tmp_path / "w.duckdb"
+        write_duckdb_table(self._fixture_df(), db_path=db)
+        write_duckdb_table(self._fixture_df().head(1), db_path=db)  # smaller
+
+        con = duckdb.connect(str(db), read_only=True)
+        count = con.execute("SELECT COUNT(*) FROM bill_classifications").fetchone()[0]
+        con.close()
+        assert count == 1
+
+    def test_write_parquet_atomic_and_idempotent(self, tmp_path: Path):
+        out = tmp_path / "bill_classifications.parquet"
+        df = self._fixture_df()
+
+        write_parquet_snapshot(df, out)
+        first_bytes = out.read_bytes()
+
+        write_parquet_snapshot(df, out)
+        assert out.read_bytes() == first_bytes  # byte-idempotent
+
+
 from data.recurring_bills.classify import merge_all
 
 
