@@ -72,3 +72,56 @@ class TestBuildTalClassifications:
         row_no_detail = df.loc[df["BillID"] == 477120].iloc[0]
         assert row_no_detail["original_bill_id"] == 477120  # self — no patient_zero known
         assert pd.isna(row_no_detail["family_size"])
+
+
+from data.recurring_bills.classify import build_k16_k18_fallback
+
+
+class TestK16K18Fallback:
+    def test_earliest_knesset_is_original(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+
+        # Group 1: BillID 10001 (K16), 10002 (K17), 10003 (K18) — chinuch-chova
+        row_earliest = df.loc[df["BillID"] == 10001].iloc[0]
+        row_mid = df.loc[df["BillID"] == 10002].iloc[0]
+        row_last = df.loc[df["BillID"] == 10003].iloc[0]
+
+        assert row_earliest["is_original"] == True
+        assert row_earliest["original_bill_id"] == 10001
+        assert row_mid["is_original"] == False
+        assert row_mid["original_bill_id"] == 10001
+        assert row_last["is_original"] == False
+        assert row_last["original_bill_id"] == 10001
+
+    def test_singleton_group_is_original(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        row = df.loc[df["BillID"] == 10004].iloc[0]  # bituach le'umi — singleton
+        assert row["is_original"] == True
+        assert row["original_bill_id"] == 10004
+
+    def test_same_knesset_tie_breaker_lowest_billid(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        # Both in K18, same name: 10007 (lower) and 10008
+        row_lower = df.loc[df["BillID"] == 10007].iloc[0]
+        row_higher = df.loc[df["BillID"] == 10008].iloc[0]
+        assert row_lower["is_original"] == True
+        assert row_higher["is_original"] == False
+        assert row_higher["original_bill_id"] == 10007
+
+    def test_source_is_name_fallback(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        assert (df["classification_source"] == "name_fallback_k16_k18").all()
+
+    def test_tal_specific_columns_are_null(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        for col in ["tal_category", "is_cross_term", "is_within_term_dup",
+                    "is_self_resubmission", "family_size", "tal_fetched_at"]:
+            assert df[col].isna().all()
+
+    def test_predecessor_list_contains_original_for_reprises(self):
+        df = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        row_mid = df.loc[df["BillID"] == 10002].iloc[0]
+        assert row_mid["predecessor_bill_ids"] == [10001]
+
+        row_earliest = df.loc[df["BillID"] == 10001].iloc[0]
+        assert row_earliest["predecessor_bill_ids"] == []

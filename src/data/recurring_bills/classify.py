@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from data.recurring_bills.normalize import normalize_name
+
 log = logging.getLogger(__name__)
 
 
@@ -72,3 +74,47 @@ def build_tal_classifications(
         "classification_source", "tal_fetched_at",
     ]
     return bulk[keep].copy()
+
+
+def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
+    """Name-based fallback classification for K16-K18 bills from Amnon's Excel.
+
+    Groups rows by ``normalize_name(Name)`` restricted to K16-K18. Within each
+    group the earliest ``KnessetNum`` is marked original (ties broken by
+    lowest ``BillID``); all others are reprises with ``original_bill_id``
+    pointing to that earliest row.
+    """
+    xl = pd.read_excel(excel_path)
+    xl = xl.loc[xl["KnessetNum"].between(16, 18)].copy()
+    xl["_norm"] = xl["Name"].apply(normalize_name)
+
+    # Sort so groupby picks earliest KnessetNum, then lowest BillID
+    xl = xl.sort_values(["_norm", "KnessetNum", "BillID"], kind="stable")
+
+    # First row in each normalized-name group is the original
+    originals = xl.drop_duplicates("_norm", keep="first")[["_norm", "BillID"]].rename(
+        columns={"BillID": "original_bill_id"}
+    )
+    xl = xl.merge(originals, on="_norm", how="left")
+    xl["is_original"] = xl["BillID"] == xl["original_bill_id"]
+
+    xl["predecessor_bill_ids"] = xl.apply(
+        lambda r: [] if r["is_original"] else [int(r["original_bill_id"])],
+        axis=1,
+    )
+    xl["classification_source"] = "name_fallback_k16_k18"
+    xl["tal_category"] = None
+    xl["is_cross_term"] = None
+    xl["is_within_term_dup"] = None
+    xl["is_self_resubmission"] = None
+    xl["family_size"] = None
+    xl["tal_fetched_at"] = None
+
+    keep = [
+        "BillID", "KnessetNum", "Name",
+        "is_original", "original_bill_id",
+        "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
+        "family_size", "predecessor_bill_ids",
+        "classification_source", "tal_fetched_at",
+    ]
+    return xl[keep].reset_index(drop=True)
