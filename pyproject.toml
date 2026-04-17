@@ -4,8 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knesset-refactor"
-version = "0.1.0"
+version = "1.0.0"
+description = "Knesset parliamentary data analysis platform — OData ingestion, DuckDB warehouse, Streamlit UI for research analysis"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Amir" }]
 requires-python = ">=3.12"
+keywords = [
+    "knesset",
+    "parliamentary-data",
+    "israel",
+    "open-data",
+    "duckdb",
+    "streamlit",
+    "political-science",
+    "odata",
+    "research",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Sociology",
+]
 dependencies = [
     # Database & Data Processing
     "duckdb>=1.2",
@@ -31,6 +56,13 @@ dependencies = [
     "click>=8.1,<8.3",
     "typer[all]>=0.12,<0.13",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AT020993/knesset_refactor"
+Repository = "https://github.com/AT020993/knesset_refactor"
+"Live app" = "https://knessetrefactor-7fzhrkg78zuyf8jefy8ttu.streamlit.app/"
+Issues = "https://github.com/AT020993/knesset_refactor/issues"
+Changelog = "https://github.com/AT020993/knesset_refactor/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
