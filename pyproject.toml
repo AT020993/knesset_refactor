@@ -18,6 +18,7 @@ dependencies = [
     # HTTP Client & Async Operations
     "aiohttp>=3.9",
     "backoff>=2.2",
+    "requests>=2.32",
     # Utilities
     "tqdm>=4.66",
     "openpyxl>=3.1",
