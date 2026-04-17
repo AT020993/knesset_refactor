@@ -54,7 +54,7 @@ Already done with private repository!
 2. Sign in with GitHub
 3. **"New app"**:
    - **Repository**: `your-username/knesset_refactor`
-   - **Branch**: `master`
+   - **Branch**: `main`
    - **Main file**: `src/ui/data_refresh.py`
    - **App URL**: Custom name (e.g., `knesset-data`)
 4. Click **"Deploy"** (will fail initially - need secrets)
