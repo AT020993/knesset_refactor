@@ -45,7 +45,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # 4. Download sample data (5-10 minutes)
-PYTHONPATH=./src python -m cli refresh --table KNS_Person
+PYTHONPATH=./src python -m src.cli refresh --table KNS_Person
 
 # 5. Start the app
 streamlit run src/ui/data_refresh.py
@@ -116,13 +116,13 @@ Full documentation: `docs/KnessetOdataManual.pdf`
 
 ```bash
 # Download all tables
-PYTHONPATH=./src python -m cli refresh
+PYTHONPATH=./src python -m src.cli refresh
 
 # Download specific table
-PYTHONPATH=./src python -m cli refresh --table KNS_Query
+PYTHONPATH=./src python -m src.cli refresh --table KNS_Query
 
 # Refresh only faction coalition status
-PYTHONPATH=./src python -m cli refresh-factions
+PYTHONPATH=./src python -m src.cli refresh-factions
 
 # Alternative: use script
 bash scripts/refresh_all.sh
@@ -163,8 +163,8 @@ MIT License - See LICENSE file for details.
 
 ## Support
 
-- Check [RESEARCHER_GUIDE.md](RESEARCHER_GUIDE.md) for detailed usage instructions
 - See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details
+- See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for deployment instructions
 - Open an [issue](https://github.com/AT020993/knesset_refactor/issues) for bugs or questions
 
 ---
