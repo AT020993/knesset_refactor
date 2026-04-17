@@ -64,3 +64,4 @@ bcrypt>=4.0.0                     # Password hashing for user authentication
 # -----------------------------------------------------------------------------
 # safety>=2.3.0                   # Dependency vulnerability scanning
 # bandit>=1.7.0                   # Security analysis for Python code
+requests==2.32.5                  # HTTP client for Tal Alovitz API ingestion
