@@ -151,21 +151,21 @@ PYTHONPATH=./src pytest -m e2e --base-url http://localhost:8501
 
 ## Contributing
 
-Contributions welcome! Areas where help is needed:
-- Adding new visualizations
-- Improving data processing speed
-- Better documentation
-- Bug fixes
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for branching, tests, and PR expectations.
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License — see [LICENSE](LICENSE) for details. Parliamentary data itself is public-record Israeli government data; see [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md).
 
 ## Support
 
-- See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details
-- See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for deployment instructions
-- Open an [issue](https://github.com/AT020993/knesset_refactor/issues) for bugs or questions
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
+- [SECURITY.md](SECURITY.md) — report vulnerabilities
+- [CHANGELOG.md](CHANGELOG.md) — release history
+- [docs/README.md](docs/README.md) — full documentation index
+- [ARCHITECTURE.md](ARCHITECTURE.md) — technical architecture
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — deployment walkthrough
+- Open an [issue](https://github.com/AT020993/knesset_refactor/issues) for bugs or feature requests
 
 ---
 
