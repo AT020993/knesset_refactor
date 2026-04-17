@@ -118,3 +118,15 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
         "classification_source", "tal_fetched_at",
     ]
     return xl[keep].reset_index(drop=True)
+
+
+def merge_all(*, tal: pd.DataFrame, fallback: pd.DataFrame) -> pd.DataFrame:
+    """Union the Tal and K16-K18 fallback DataFrames.
+
+    On BillID collisions (rare — Tal and fallback are supposed to be disjoint),
+    Tal's row wins. Returns a stable-sorted DataFrame (by BillID) ready for
+    writing.
+    """
+    fallback_filtered = fallback.loc[~fallback["BillID"].isin(set(tal["BillID"]))]
+    combined = pd.concat([tal, fallback_filtered], ignore_index=True)
+    return combined.sort_values("BillID", kind="stable").reset_index(drop=True)

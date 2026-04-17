@@ -125,3 +125,50 @@ class TestK16K18Fallback:
 
         row_earliest = df.loc[df["BillID"] == 10001].iloc[0]
         assert row_earliest["predecessor_bill_ids"] == []
+
+
+from data.recurring_bills.classify import merge_all
+
+
+class TestMergeAll:
+    def test_union_preserves_both_sources(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        for bid in (477119, 477120, 477137):
+            (cache_dir / f"{bid}.json").write_text((FIXTURES / f"tal_detail_{bid}.json").read_text())
+
+        tal = build_tal_classifications(
+            bulk_csv=FIXTURES / "tal_bulk_sample.csv",
+            cache_dir=cache_dir,
+        )
+        fb = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+
+        merged = merge_all(tal=tal, fallback=fb)
+
+        assert len(merged) == len(tal) + len(fb)
+        assert set(merged["classification_source"].unique()) == {"tal_alovitz", "name_fallback_k16_k18"}
+
+    def test_dedup_prefers_tal_over_fallback_on_collision(self, tmp_path: Path):
+        """If the same BillID appears in both frames (shouldn't happen in real life,
+        since Tal is K19-K25 and fallback is K16-K18), prefer Tal."""
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "10001.json").write_text(json.dumps({
+            "bill_id": 10001, "patient_zero_bill_id": 99999,
+            "family_size": 3, "predecessor_bill_ids": [99999], "category": "cross",
+        }))
+        tal = pd.DataFrame([{
+            "BillID": 10001, "KnessetNum": 19, "Name": "x",
+            "is_original": False, "original_bill_id": 99999,
+            "tal_category": "cross", "is_cross_term": True, "is_within_term_dup": False,
+            "is_self_resubmission": False, "family_size": 3, "predecessor_bill_ids": [99999],
+            "classification_source": "tal_alovitz", "tal_fetched_at": pd.Timestamp.now(tz="UTC"),
+        }])
+        fb = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
+        # Manually force a collision: rewrite fallback row BillID to match Tal's
+        fb.loc[0, "BillID"] = 10001
+
+        merged = merge_all(tal=tal, fallback=fb)
+        collision = merged.loc[merged["BillID"] == 10001].iloc[0]
+        assert collision["classification_source"] == "tal_alovitz"
+        assert collision["original_bill_id"] == 99999
