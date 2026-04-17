@@ -55,6 +55,7 @@ def build_tal_classifications(
         d = detail_rows.get(int(row["BillID"]))
         return int(d["family_size"]) if d and d.get("family_size") is not None else None
 
+    now = datetime.now(timezone.utc)
     bulk["is_original"] = bulk["is_original"].astype(bool)
     bulk["is_cross_term"] = bulk["is_cross_term"].astype(bool)
     bulk["is_within_term_dup"] = bulk["is_within_term_dup"].astype(bool)
@@ -64,14 +65,15 @@ def build_tal_classifications(
     bulk["family_size"] = bulk.apply(_family_size, axis=1)
     bulk["tal_category"] = bulk["category"]
     bulk["classification_source"] = "tal_alovitz"
-    bulk["tal_fetched_at"] = datetime.now(timezone.utc)
+    bulk["tal_fetched_at"] = now
+    bulk["last_updated"] = now
 
     keep = [
         "BillID", "KnessetNum", "Name",
         "is_original", "original_bill_id",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
-        "classification_source", "tal_fetched_at",
+        "classification_source", "tal_fetched_at", "last_updated",
     ]
     return bulk[keep].copy()
 
@@ -109,13 +111,14 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
     xl["is_self_resubmission"] = None
     xl["family_size"] = None
     xl["tal_fetched_at"] = None
+    xl["last_updated"] = datetime.now(timezone.utc)
 
     keep = [
         "BillID", "KnessetNum", "Name",
         "is_original", "original_bill_id",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
-        "classification_source", "tal_fetched_at",
+        "classification_source", "tal_fetched_at", "last_updated",
     ]
     return xl[keep].reset_index(drop=True)
 

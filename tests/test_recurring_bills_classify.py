@@ -31,7 +31,7 @@ class TestBuildTalClassifications:
             "is_original", "original_bill_id",
             "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
             "family_size", "predecessor_bill_ids",
-            "classification_source", "tal_fetched_at",
+            "classification_source", "tal_fetched_at", "last_updated",
         }
         assert expected_cols.issubset(df.columns)
         assert (df["classification_source"] == "tal_alovitz").all()
@@ -134,19 +134,20 @@ from data.recurring_bills.storage import write_duckdb_table, write_parquet_snaps
 
 class TestStorage:
     def _fixture_df(self) -> pd.DataFrame:
+        ts = pd.Timestamp("2026-04-17", tz="UTC")
         return pd.DataFrame([
             {"BillID": 1, "KnessetNum": 20, "Name": "a", "is_original": True,
              "original_bill_id": 1, "tal_category": "new", "is_cross_term": False,
              "is_within_term_dup": False, "is_self_resubmission": False,
              "family_size": 1, "predecessor_bill_ids": [],
              "classification_source": "tal_alovitz",
-             "tal_fetched_at": pd.Timestamp("2026-04-17", tz="UTC")},
+             "tal_fetched_at": ts, "last_updated": ts},
             {"BillID": 2, "KnessetNum": 21, "Name": "b", "is_original": False,
              "original_bill_id": 1, "tal_category": "cross", "is_cross_term": True,
              "is_within_term_dup": False, "is_self_resubmission": False,
              "family_size": 2, "predecessor_bill_ids": [1],
              "classification_source": "tal_alovitz",
-             "tal_fetched_at": pd.Timestamp("2026-04-17", tz="UTC")},
+             "tal_fetched_at": ts, "last_updated": ts},
         ])
 
     def test_write_duckdb_creates_table_and_rows(self, tmp_path: Path):
@@ -215,7 +216,9 @@ class TestMergeAll:
             "is_original": False, "original_bill_id": 99999,
             "tal_category": "cross", "is_cross_term": True, "is_within_term_dup": False,
             "is_self_resubmission": False, "family_size": 3, "predecessor_bill_ids": [99999],
-            "classification_source": "tal_alovitz", "tal_fetched_at": pd.Timestamp.now(tz="UTC"),
+            "classification_source": "tal_alovitz",
+            "tal_fetched_at": pd.Timestamp.now(tz="UTC"),
+            "last_updated": pd.Timestamp.now(tz="UTC"),
         }])
         fb = build_k16_k18_fallback(FIXTURES / "excel_sample.xlsx")
         # Manually force a collision: rewrite fallback row BillID to match Tal's
@@ -292,6 +295,39 @@ class TestPipeline:
 
         assert mock_bulk.call_count == 1
         assert mock_many.call_count == 1
+
+    def test_rebuild_produces_stable_parquet_excluding_timestamps(self, tmp_path: Path):
+        """Two consecutive rebuild runs over the same cache produce Parquets
+        that are identical EXCEPT for the `tal_fetched_at` and `last_updated`
+        columns, which are expected to change per run.
+        """
+        work = tmp_path
+        (work / "external" / "tal_bill_details").mkdir(parents=True)
+        for bid in (477119, 477120, 477137):
+            (work / "external" / "tal_bill_details" / f"{bid}.json").write_text(
+                (FIXTURES / f"tal_detail_{bid}.json").read_text()
+            )
+        (work / "external" / "tal_alovitz_bills.csv").write_bytes(
+            (FIXTURES / "tal_bulk_sample.csv").read_bytes()
+        )
+
+        common_kwargs = dict(
+            mode="rebuild",
+            excel_path=FIXTURES / "excel_sample.xlsx",
+            cache_dir=work / "external" / "tal_bill_details",
+            bulk_csv=work / "external" / "tal_alovitz_bills.csv",
+            db_path=work / "warehouse.duckdb",
+            report_path=work / "report.md",
+        )
+
+        first_parquet = work / "snapshots" / "first.parquet"
+        second_parquet = work / "snapshots" / "second.parquet"
+        run_pipeline(parquet_path=first_parquet, **common_kwargs)
+        run_pipeline(parquet_path=second_parquet, **common_kwargs)
+
+        first = pd.read_parquet(first_parquet).drop(columns=["tal_fetched_at", "last_updated"])
+        second = pd.read_parquet(second_parquet).drop(columns=["tal_fetched_at", "last_updated"])
+        pd.testing.assert_frame_equal(first, second)
 
 
 from data.recurring_bills.cap_view import create_cap_view
