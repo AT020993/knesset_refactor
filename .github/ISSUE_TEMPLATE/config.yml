@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/AT020993/knesset_refactor/security/advisories/new
+    about: Report vulnerabilities privately via GitHub Private Vulnerability Reporting. Do not open a public issue.
+  - name: Knesset OData API issues
+    url: https://www.knesset.gov.il/contact
+    about: Upstream API outages, schema errors, and data corrections belong with the Knesset IT operators, not this repo.

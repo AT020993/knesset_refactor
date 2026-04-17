@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest a new capability, chart, query, or improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. The more concrete the research question or user need behind the request, the easier it is to prioritise.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Research question or user need
+      description: What are you trying to learn or accomplish that is hard today?
+      placeholder: I want to compare coalition voting cohesion across Knessets 20–25 but there is no chart for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A new chart? A new query pack? A refactor? An import script for some external dataset?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you already tried, or reasons to reject other approaches.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Rough scope
+      options:
+        - Small (a single chart, a query pack entry, a script)
+        - Medium (new page, new service, moderate schema change)
+        - Large (architectural change, new domain, breaking snapshot contract)
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links to papers, similar tools, or prior discussion.

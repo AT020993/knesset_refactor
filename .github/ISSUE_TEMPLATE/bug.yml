@@ -1,0 +1,63 @@
+name: Bug report
+description: Something is broken or behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please be as specific as you can — a short reproducer saves hours of back-and-forth.
+
+        For vulnerabilities, please use [GitHub Private Vulnerability Reporting](https://github.com/AT020993/knesset_refactor/security/advisories/new) instead of a public issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug.
+      placeholder: When I run X, I expect Y but get Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands, query filters, or UI clicks that lead to the bug.
+      placeholder: |
+        1. `PYTHONPATH="./src" python -m src.cli refresh --table KNS_Bill`
+        2. Open Streamlit, navigate to Bills page
+        3. Apply Knesset filter = 25
+        4. Click "Download Full CSV"
+        5. Observe error
+    validations:
+      required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, local vs Streamlit Cloud, deployed app URL if applicable.
+      placeholder: "macOS 15.1, Python 3.12.4, local"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Paste relevant stack traces or console output. Please trim secrets before pasting.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, or anything else that helps.
