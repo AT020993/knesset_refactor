@@ -6,7 +6,7 @@ This feature allows users to download the complete filtered dataset from predefi
 ## Implementation Details
 
 ### Files Modified
-1. **src/ui/pages/data_refresh_page.py**
+1. **src/ui/renderers/data_refresh/page.py**
    - Added `_remove_limit_offset_from_query()` static method
    - Added `_render_full_dataset_download()` method
    - Integrated full download UI into `_render_query_results_display()`
@@ -242,7 +242,7 @@ SELECT * FROM cte WHERE x = 1 LIMIT 1000
 ## Maintenance
 
 ### Code Location
-- **Main implementation**: `src/ui/pages/data_refresh_page.py`
+- **Main implementation**: `src/ui/renderers/data_refresh/page.py`
 - **Helper function**: `DataRefreshPageRenderer._remove_limit_offset_from_query()`
 - **UI rendering**: `DataRefreshPageRenderer._render_full_dataset_download()`
 

@@ -153,8 +153,7 @@ class DependencyContainer:
 
 ### Unit Testing
 - Component isolation with mock injection
-- 60%+ coverage requirement
-- pytest framework
+- pytest framework; ~576 fast tests in `tests/`
 
 ### Integration Testing
 - End-to-end flows with real database
@@ -162,10 +161,9 @@ class DependencyContainer:
 - Service layer business logic
 
 ### End-to-End Testing
-- Playwright framework (Chromium, Firefox, WebKit)
-- 100% success rate (7/7 tests passing)
+- Playwright-based browser coverage (Chromium, Firefox, WebKit)
 - CI/CD automation in GitHub Actions
-- Coverage: Page loading, data refresh, queries, navigation, error handling, responsive design, performance
+- Coverage: page loading, data refresh, queries, navigation, error handling, responsive design, performance
 
 ### Test Execution
 ```bash
