@@ -21,7 +21,7 @@ BASE_URL = "https://pmb.teca-it.com"
 USER_AGENT = "knesset-refactor-research-bot/1.0 (contact: amirgo12@gmail.com)"
 DEFAULT_TIMEOUT_S = 30
 
-_RETRY_BACKOFFS_S = (1, 3, 9)
+_RETRY_BACKOFFS_S = (0, 1, 3)  # sleep-before-attempt-N; attempts 1/2/3 use these values
 
 
 def _get_with_retry(url: str, *, headers: dict, timeout: int = DEFAULT_TIMEOUT_S) -> requests.Response:
@@ -30,7 +30,7 @@ def _get_with_retry(url: str, *, headers: dict, timeout: int = DEFAULT_TIMEOUT_S
     304 and 4xx are returned without retrying (not transient failures).
     """
     last_exc: Exception | None = None
-    for attempt, backoff in enumerate((0,) + _RETRY_BACKOFFS_S[:-1]):
+    for attempt, backoff in enumerate(_RETRY_BACKOFFS_S):
         if backoff:
             time.sleep(backoff)
         try:
@@ -81,12 +81,17 @@ def fetch_bill_detail(
     cache_dir: Path,
     *,
     force_refresh: bool = False,
-) -> Path:
+) -> Path | None:
     """Fetch per-bill detail from ``/api/bill/{id}``; cache to disk.
 
     Cache key: ``<cache_dir>/<bill_id>.json``. Directory is created on demand.
     When ``force_refresh`` is False (default) and the cache file exists,
     the HTTP call is skipped.
+
+    Returns the cache path on success, ``None`` on 404 (bill not in Tal's
+    corpus — logged as a warning; caller should fall back to self-reference
+    per the spec §9 error handling contract). Raises on other non-recoverable
+    errors.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +102,9 @@ def fetch_bill_detail(
 
     url = f"{BASE_URL}/api/bill/{bill_id}"
     resp = _get_with_retry(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    if resp.status_code == 404:
+        log.warning("Bill %d not found in Tal's API (404) — caller falls back to self-reference", bill_id)
+        return None
     resp.raise_for_status()
     out.write_text(json.dumps(resp.json(), ensure_ascii=False))
     return out
@@ -108,17 +116,28 @@ def fetch_many_details(
     *,
     delay_s: float = 0.3,
     force_refresh: bool = False,
-) -> list[Path]:
+) -> list[Path | None]:
     """Fetch per-bill detail for many bills, sleeping ``delay_s`` between calls.
 
     Cache hits do NOT count against the politeness budget (no sleep).
-    Returns the list of cache paths in input order.
+    Per-bill failures are logged and skipped (with ``None`` in the returned
+    list), so a single 5xx exhaustion mid-crawl does NOT abort the whole run.
+    Returns one entry per input ``bill_id``: the cache path on success,
+    ``None`` on 404 or retry exhaustion.
     """
     cache_dir = Path(cache_dir)
-    out_paths: list[Path] = []
+    out_paths: list[Path | None] = []
+    failures = 0
     for bid in bill_ids:
         cache_hit = (cache_dir / f"{bid}.json").exists() and not force_refresh
         if not cache_hit:
             time.sleep(delay_s)
-        out_paths.append(fetch_bill_detail(bid, cache_dir, force_refresh=force_refresh))
+        try:
+            out_paths.append(fetch_bill_detail(bid, cache_dir, force_refresh=force_refresh))
+        except Exception as exc:  # noqa: BLE001 — isolate per-bill failures so partial run is preserved
+            failures += 1
+            log.warning("Skipping bill %d after unrecoverable fetch error: %s", bid, exc)
+            out_paths.append(None)
+    if failures:
+        log.warning("fetch_many_details: %d / %d bills failed; partial results still written", failures, len(bill_ids))
     return out_paths

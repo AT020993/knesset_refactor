@@ -177,3 +177,65 @@ class TestRetry:
             with patch("data.recurring_bills.fetch_tal.time.sleep"):
                 with pytest.raises(requests.HTTPError):
                     fetch_bill_detail(477120, cache_dir)
+
+
+class Test404AndIsolation:
+    """Spec §9 error handling: 404 = log + return None; per-bill failure = skip + continue."""
+
+    def _mock_response(self, status: int, payload: dict | None = None):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json = MagicMock(return_value=payload or {})
+        if status >= 500:
+            resp.raise_for_status = MagicMock(side_effect=requests.HTTPError(f"{status}"))
+        else:
+            resp.raise_for_status = MagicMock()
+        return resp
+
+    def test_404_returns_none_and_does_not_cache(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        with patch("data.recurring_bills.fetch_tal.requests.get") as mock_get:
+            mock_get.return_value = self._mock_response(404)
+            result = fetch_bill_detail(999999, cache_dir)
+
+        assert result is None
+        assert not (cache_dir / "999999.json").exists()
+
+    def test_fetch_many_continues_past_404(self, tmp_path: Path):
+        """A single 404 must not abort the whole crawl — partial results survive."""
+        cache_dir = tmp_path / "cache"
+        bill_ids = [477119, 999999, 477120]  # good, bad (404), good
+
+        def side_effect(url, **kwargs):
+            bid = int(url.rsplit("/", 1)[-1])
+            if bid == 999999:
+                return self._mock_response(404)
+            return self._mock_response(200, {"bill_id": bid})
+
+        with patch("data.recurring_bills.fetch_tal.requests.get", side_effect=side_effect), \
+             patch("data.recurring_bills.fetch_tal.time.sleep"):
+            paths = fetch_many_details(bill_ids, cache_dir)
+
+        assert len(paths) == 3
+        assert paths[0] is not None and paths[0].exists()
+        assert paths[1] is None
+        assert paths[2] is not None and paths[2].exists()
+
+    def test_fetch_many_continues_past_5xx_exhaustion(self, tmp_path: Path):
+        """Retry exhaustion on one bill must not cancel the surviving fetches."""
+        cache_dir = tmp_path / "cache"
+        bill_ids = [1, 2, 3]
+
+        def side_effect(url, **kwargs):
+            bid = int(url.rsplit("/", 1)[-1])
+            if bid == 2:
+                return self._mock_response(500)  # will exhaust all 3 retries
+            return self._mock_response(200, {"bill_id": bid})
+
+        with patch("data.recurring_bills.fetch_tal.requests.get", side_effect=side_effect), \
+             patch("data.recurring_bills.fetch_tal.time.sleep"):
+            paths = fetch_many_details(bill_ids, cache_dir)
+
+        assert paths[0] is not None
+        assert paths[1] is None  # the failing one
+        assert paths[2] is not None
