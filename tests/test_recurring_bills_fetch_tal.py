@@ -73,6 +73,7 @@ class TestDownloadBulkCsv:
         assert etag_file.read_text() == '"xyz789"'
 
 
+import requests  # noqa: F401 — imported so we can reference requests.HTTPError
 import json
 from data.recurring_bills.fetch_tal import fetch_bill_detail, fetch_many_details
 
@@ -143,3 +144,36 @@ class TestFetchManyDetails:
         assert mock_sleep.call_count == 3
         for call in mock_sleep.call_args_list:
             assert call.args == (0.5,)
+
+
+class TestRetry:
+    def test_retries_on_500_then_succeeds(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        # Build a sequence: 500, 500, 200
+        responses_ = [
+            MagicMock(status_code=500, raise_for_status=MagicMock(side_effect=requests.HTTPError("500"))),
+            MagicMock(status_code=500, raise_for_status=MagicMock(side_effect=requests.HTTPError("500"))),
+        ]
+        ok = MagicMock(status_code=200)
+        ok.json = MagicMock(return_value={"bill_id": 477120})
+        ok.raise_for_status = MagicMock()
+        responses_.append(ok)
+
+        with patch("data.recurring_bills.fetch_tal.requests.get", side_effect=responses_):
+            with patch("data.recurring_bills.fetch_tal.time.sleep"):  # skip backoff delays
+                path = fetch_bill_detail(477120, cache_dir)
+
+        assert path.exists()
+
+    def test_gives_up_after_three_failures(self, tmp_path: Path):
+        cache_dir = tmp_path / "cache"
+
+        failing = MagicMock(status_code=500)
+        failing.raise_for_status = MagicMock(side_effect=requests.HTTPError("500"))
+
+        with patch("data.recurring_bills.fetch_tal.requests.get", return_value=failing):
+            with patch("data.recurring_bills.fetch_tal.time.sleep"):
+                with pytest.raises(requests.HTTPError):
+                    fetch_bill_detail(477120, cache_dir)

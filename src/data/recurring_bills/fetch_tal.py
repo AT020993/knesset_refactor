@@ -21,6 +21,29 @@ BASE_URL = "https://pmb.teca-it.com"
 USER_AGENT = "knesset-refactor-research-bot/1.0 (contact: amirgo12@gmail.com)"
 DEFAULT_TIMEOUT_S = 30
 
+_RETRY_BACKOFFS_S = (1, 3, 9)
+
+
+def _get_with_retry(url: str, *, headers: dict, timeout: int = DEFAULT_TIMEOUT_S) -> requests.Response:
+    """GET with up to 3 attempts on connection errors / 5xx, exponential backoff.
+
+    304 and 4xx are returned without retrying (not transient failures).
+    """
+    last_exc: Exception | None = None
+    for attempt, backoff in enumerate((0,) + _RETRY_BACKOFFS_S[:-1]):
+        if backoff:
+            time.sleep(backoff)
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            if resp.status_code < 500:
+                return resp
+            resp.raise_for_status()  # raises on 5xx
+        except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as exc:
+            last_exc = exc
+            log.warning("Attempt %d for %s failed: %s", attempt + 1, url, exc)
+    assert last_exc is not None
+    raise last_exc
+
 
 def download_bulk_csv(output_path: Path) -> Path:
     """Download Tal's bulk CSV, honouring local ETag for cheap refresh.
@@ -38,7 +61,7 @@ def download_bulk_csv(output_path: Path) -> Path:
         headers["If-None-Match"] = etag_path.read_text().strip()
 
     url = f"{BASE_URL}/api/export/bills.csv"
-    resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+    resp = _get_with_retry(url, headers=headers)
 
     if resp.status_code == 304:
         log.info("Bulk CSV unchanged (ETag match)")
@@ -73,11 +96,7 @@ def fetch_bill_detail(
         return out
 
     url = f"{BASE_URL}/api/bill/{bill_id}"
-    resp = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-        timeout=DEFAULT_TIMEOUT_S,
-    )
+    resp = _get_with_retry(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
     resp.raise_for_status()
     out.write_text(json.dumps(resp.json(), ensure_ascii=False))
     return out
