@@ -12,7 +12,7 @@
 duckdb==1.2.2                     # High-performance analytical database
 pandas==2.2.3                     # Data manipulation and analysis
 pyarrow==19.0.1                   # Columnar data format support
-fastparquet==2024.11.0            # Fast parquet file I/O
+fastparquet==2026.3.0            # Fast parquet file I/O
 
 # Web Framework & UI
 streamlit==1.44.1                 # Modern web UI framework
