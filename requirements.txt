@@ -9,21 +9,21 @@
 # CORE RUNTIME DEPENDENCIES
 # -----------------------------------------------------------------------------
 # Database & Data Processing
-duckdb==1.2.2                     # High-performance analytical database
+duckdb==1.5.2                     # High-performance analytical database
 pandas==2.2.3                     # Data manipulation and analysis
 pyarrow==19.0.1                   # Columnar data format support
 fastparquet==2026.3.0            # Fast parquet file I/O
 
 # Web Framework & UI
-streamlit==1.44.1                 # Modern web UI framework
+streamlit==1.56.0                 # Modern web UI framework
 plotly>=5.0.0                     # Interactive data visualizations
 
 # HTTP Client & Async Operations
-aiohttp==3.9.4                    # Asynchronous HTTP client with connection pooling
+aiohttp==3.13.5                    # Asynchronous HTTP client with connection pooling
 backoff==2.2.1                    # Intelligent retry strategies for API calls
 
 # Utilities & Progress
-tqdm==4.66.1                      # Progress bars and status visualization
+tqdm==4.67.3                      # Progress bars and status visualization
 openpyxl==3.1.5                   # Excel file export functionality
 
 # Cloud Storage (Optional - for persistent data on Streamlit Cloud)
@@ -65,4 +65,4 @@ bcrypt>=4.0.0                     # Password hashing for user authentication
 # -----------------------------------------------------------------------------
 # safety>=2.3.0                   # Dependency vulnerability scanning
 # bandit>=1.7.0                   # Security analysis for Python code
-requests==2.32.5                  # HTTP client for Tal Alovitz API ingestion
+requests==2.33.1                  # HTTP client for Tal Alovitz API ingestion
