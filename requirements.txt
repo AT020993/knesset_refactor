@@ -66,3 +66,4 @@ bcrypt>=4.0.0                     # Password hashing for user authentication
 # safety>=2.3.0                   # Dependency vulnerability scanning
 # bandit>=1.7.0                   # Security analysis for Python code
 requests==2.33.1                  # HTTP client for Tal Alovitz API ingestion
+pypdf>=6.10                       # PDF text extraction for K16-K18 bill documents (fallback; textutil handles .doc/.docx)

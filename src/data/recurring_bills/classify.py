@@ -123,6 +123,107 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
     return xl[keep].reset_index(drop=True)
 
 
+def build_k16_k18_doc_based(
+    *,
+    excel_path: Path,
+    cache_dir: Path,
+    warehouse_path: Path,
+    delay_s: float = 0.3,
+    progress_cb=None,
+) -> pd.DataFrame:
+    """Doc-based K16-K18 classification — Tal's method, locally reimplemented.
+
+    For each K16-K18 bill in Amnon's Excel:
+    - Download the first ``documents`` URL from ``fs.knesset.gov.il`` (cached)
+    - Extract text via ``textutil`` (.doc/.docx) or ``pypdf`` (.pdf)
+    - Scan for Hebrew recurrence markers
+    - Resolve ``פ/NNN`` references to BillIDs via KNS_Bill.PrivateNumber
+
+    Bills that fail fetch/parse, or match no pattern, are returned with
+    ``is_original=True`` and ``classification_source='doc_based_k16_k18'``.
+    Bills where the ancestor BillID couldn't be resolved report
+    ``classification_source='doc_based_unresolved_k16_k18'`` for downstream audit.
+
+    ``progress_cb`` is an optional callable ``cb(i, total, bill_id, method)``
+    invoked after each bill — useful for logging/TUIs.
+    """
+    import duckdb
+
+    from data.recurring_bills.knesset_docs import classify_bill_from_doc
+
+    xl = pd.read_excel(excel_path)
+    xl = xl.loc[xl["KnessetNum"].between(16, 18)].copy().reset_index(drop=True)
+
+    con = duckdb.connect(str(warehouse_path), read_only=True)
+    try:
+        results: list[dict] = []
+        total = len(xl)
+        for i, row in xl.iterrows():
+            bid = int(row["BillID"])
+            docs = row.get("documents")
+            if not isinstance(docs, str) or not docs.strip():
+                # No document URL — fall back to self-reference
+                results.append({
+                    "is_original": True,
+                    "original_bill_id": bid,
+                    "matched_phrase": None,
+                    "method": "no_doc_url",
+                })
+            else:
+                first_url = docs.split("\n")[0].strip()
+                r = classify_bill_from_doc(
+                    bill_id=bid,
+                    current_knesset=int(row["KnessetNum"]),
+                    doc_url=first_url,
+                    cache_dir=cache_dir,
+                    warehouse_con=con,
+                    delay_s=delay_s,
+                )
+                is_recurring = r["is_recurring"]
+                results.append({
+                    "is_original": not is_recurring,
+                    "original_bill_id": r["original_bill_id"] if r["original_bill_id"] else bid,
+                    "matched_phrase": r["matched_phrase"],
+                    "method": r["method"],
+                })
+            if progress_cb:
+                progress_cb(int(i) + 1, total, bid, results[-1]["method"])
+    finally:
+        con.close()
+
+    res_df = pd.DataFrame(results)
+    xl = pd.concat([xl.reset_index(drop=True), res_df], axis=1)
+
+    xl["predecessor_bill_ids"] = xl.apply(
+        lambda r: [] if r["is_original"] else [int(r["original_bill_id"])],
+        axis=1,
+    )
+    # Finer-grained source so downstream audit can distinguish confidence
+    xl["classification_source"] = xl["method"].map({
+        "doc_pattern_linked":     "doc_based_k16_k18",
+        "doc_pattern_unresolved": "doc_based_unresolved_k16_k18",
+        "doc_no_pattern":         "doc_based_k16_k18",
+        "doc_fetch_failed":       "doc_based_fetch_failed_k16_k18",
+        "no_doc_url":             "no_doc_url_k16_k18",
+    }).fillna("doc_based_k16_k18")
+    xl["tal_category"] = None
+    xl["is_cross_term"] = None
+    xl["is_within_term_dup"] = None
+    xl["is_self_resubmission"] = None
+    xl["family_size"] = None
+    xl["tal_fetched_at"] = None
+    xl["last_updated"] = datetime.now(timezone.utc)
+
+    keep = [
+        "BillID", "KnessetNum", "Name",
+        "is_original", "original_bill_id",
+        "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
+        "family_size", "predecessor_bill_ids",
+        "classification_source", "tal_fetched_at", "last_updated",
+    ]
+    return xl[keep].reset_index(drop=True)
+
+
 def merge_all(*, tal: pd.DataFrame, fallback: pd.DataFrame) -> pd.DataFrame:
     """Union the Tal and K16-K18 fallback DataFrames.
 

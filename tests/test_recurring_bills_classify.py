@@ -260,6 +260,7 @@ class TestPipeline:
             db_path=db,
             parquet_path=out_parquet,
             report_path=out_report,
+            k16_k18_method="name",  # no warehouse in test env
         )
 
         assert result["total"] >= 10  # 6 from Tal fixture + K16-K18 fallback
@@ -291,6 +292,7 @@ class TestPipeline:
                 parquet_path=tmp_path / "snap.parquet",
                 report_path=tmp_path / "report.md",
                 delay_s=0,
+                k16_k18_method="name",
             )
 
         assert mock_bulk.call_count == 1
@@ -318,6 +320,7 @@ class TestPipeline:
             bulk_csv=work / "external" / "tal_alovitz_bills.csv",
             db_path=work / "warehouse.duckdb",
             report_path=work / "report.md",
+            k16_k18_method="name",
         )
 
         first_parquet = work / "snapshots" / "first.parquet"

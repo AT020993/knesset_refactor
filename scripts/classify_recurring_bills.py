@@ -43,6 +43,13 @@ def main() -> int:
                         help="Seconds between HTTP requests (refresh mode only)")
     parser.add_argument("--force-refresh", action="store_true",
                         help="Ignore detail cache, re-fetch every bill")
+    parser.add_argument("--k16-k18-method", choices=["doc", "name"], default="doc",
+                        help="How to classify K16-K18 (Tal doesn't cover these). "
+                             "'doc' = download + parse Knesset docs (~30min first run, accurate). "
+                             "'name' = fast name-matching fallback.")
+    parser.add_argument("--knesset-docs-cache", type=Path,
+                        default=_REPO_ROOT / "data" / "external" / "knesset_docs",
+                        help="Cache dir for K16-K18 Knesset documents (.doc/.docx/.pdf)")
     parser.add_argument("--log-level", default="INFO")
 
     args = parser.parse_args()
@@ -61,6 +68,8 @@ def main() -> int:
         report_path=args.report,
         delay_s=args.delay,
         force_refresh=args.force_refresh,
+        k16_k18_method=args.k16_k18_method,
+        knesset_docs_cache_dir=args.knesset_docs_cache,
     )
 
     print(f"\nClassified {stats['total']} bills:")
