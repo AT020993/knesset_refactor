@@ -28,7 +28,6 @@ from data.queries.packs.bills import BILLS_QUERIES
 from data.queries.packs.committees import COMMITTEES_QUERIES
 from data.queries.packs.mks import MK_QUERIES
 from data.queries.packs.parties import PARTIES_QUERIES
-from data.queries.packs.topics import TOPICS_QUERIES
 from data.snapshots.manifest import Manifest, SnapshotEntry, write_manifest
 
 log = logging.getLogger("data.snapshots.exporter")
@@ -92,7 +91,6 @@ SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("mk_motions", _MK_MOTIONS_SQL),
     ("parties_list", PARTIES_QUERIES["party_list"]["sql"]),
     ("committees_list", COMMITTEES_QUERIES["committee_list"]["sql"]),
-    ("topics_list", TOPICS_QUERIES["topic_list"]["sql"]),
 )
 
 # Keep BILLS_QUERIES referenced so lint doesn't drop the import —

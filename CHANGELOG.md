@@ -20,6 +20,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Removed
 - `RESEARCHER_GUIDE.md` — described a defunct local-desktop-launcher workflow that conflicted with the Streamlit-Cloud-first story in README.
+- `topics_list.parquet` from the snapshot bundle. The query produced only 3 rows (limited by `UserCAPTaxonomy` population) and had no downstream consumer — the knesset-platform API aggregates topic data directly from `mk_bills.parquet`, and CAP topic titles live in the site's client-side Hebrew dictionary. The `data.queries.packs.topics` module is retained for future use; only the exporter registration was dropped.
 
 ### Fixed
 - `docs/FULL_DATASET_DOWNLOAD.md` referenced a non-existent `src/ui/pages/data_refresh_page.py`; corrected to `src/ui/renderers/data_refresh/page.py`.

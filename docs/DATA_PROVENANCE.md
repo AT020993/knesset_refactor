@@ -50,7 +50,7 @@ Other repos — notably [`knesset-platform`](https://github.com/AT020993/knesset
 
 The contract:
 
-- Seven Parquet files (`mk_summary`, `mk_bills`, `mk_questions`, `mk_motions`, `parties_list`, `committees_list`, `topics_list`) plus a `manifest.json` commit marker.
+- Six Parquet files (`mk_summary`, `mk_bills`, `mk_questions`, `mk_motions`, `parties_list`, `committees_list`) plus a `manifest.json` commit marker.
 - **Byte-idempotent** on an unchanged warehouse — stable `ORDER BY` required in every pack query used by the exporter (DuckDB parallel execution shuffles rows otherwise).
 - Pinned by the `v1.0.0` git tag. A breaking Parquet-shape change bumps the major version.
 - `manifest.json` contains SHA256 checksums for every emitted file — downstream consumers can verify integrity without re-downloading the warehouse.
