@@ -10,6 +10,7 @@ import pandas as pd
 
 from data.recurring_bills.cap_view import create_cap_view
 from data.recurring_bills.classify import (
+    build_k16_k18_doc_based,
     build_k16_k18_fallback,
     build_tal_classifications,
     merge_all,
@@ -38,6 +39,8 @@ def run_pipeline(
     report_path: Path,
     delay_s: float = 0.3,
     force_refresh: bool = False,
+    k16_k18_method: str = "doc",
+    knesset_docs_cache_dir: Path | None = None,
 ) -> dict:
     """Top-level orchestrator.
 
@@ -45,8 +48,13 @@ def run_pipeline(
     - ``refresh``  : pull latest bulk CSV + fetch any missing detail, then classify + write
     - ``rebuild``  : classify from existing cache, write outputs (no network)
     - ``report``   : classify + write only the coverage report (skip DuckDB + Parquet)
+
+    K16-K18 method (``k16_k18_method``):
+    - ``doc``  (default): doc-based classification via fs.knesset.gov.il — Tal's method
+    - ``name``: fast name-matching fallback (no network, no doc parsing)
     """
     assert mode in {"refresh", "rebuild", "report"}
+    assert k16_k18_method in {"doc", "name"}
 
     # Coerce to Path for robustness with Path-like arguments
     excel_path = Path(excel_path)
@@ -55,6 +63,9 @@ def run_pipeline(
     db_path = Path(db_path)
     parquet_path = Path(parquet_path)
     report_path = Path(report_path)
+    if knesset_docs_cache_dir is None:
+        knesset_docs_cache_dir = Path("data/external/knesset_docs")
+    knesset_docs_cache_dir = Path(knesset_docs_cache_dir)
 
     if mode == "refresh":
         bulk_csv = download_bulk_csv(bulk_csv)
@@ -63,7 +74,19 @@ def run_pipeline(
         fetch_many_details(needing, cache_dir, delay_s=delay_s, force_refresh=force_refresh)
 
     tal = build_tal_classifications(bulk_csv=bulk_csv, cache_dir=cache_dir)
-    fb = build_k16_k18_fallback(excel_path)
+
+    if k16_k18_method == "doc":
+        log.info("Building K16-K18 classification via doc analysis (cache=%s)", knesset_docs_cache_dir)
+        fb = build_k16_k18_doc_based(
+            excel_path=excel_path,
+            cache_dir=knesset_docs_cache_dir,
+            warehouse_path=db_path,
+            delay_s=delay_s,
+        )
+    else:
+        log.info("Building K16-K18 classification via name-matching")
+        fb = build_k16_k18_fallback(excel_path)
+
     df = merge_all(tal=tal, fallback=fb)
 
     stats = compute_stats(df)
