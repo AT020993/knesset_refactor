@@ -68,6 +68,7 @@ start-knesset.sh
 launch_knesset.py
 researcher_launcher*.py
 setup_for_researcher.py
+scripts/backup.sh
 
 # Duplicate/Generated files
 faction_coalition_mapping.csv
