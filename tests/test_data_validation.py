@@ -221,7 +221,8 @@ class TestDataFrameValidation:
         
         # Test data types
         assert df['id'].dtype == 'int64'
-        assert df['name'].dtype == 'object'
+        # pandas 3 defaults to StringDtype for string columns; accept either.
+        assert pd.api.types.is_string_dtype(df['name'])
         assert df['value'].dtype == 'float64'
     
     def test_dataframe_null_validation(self):
