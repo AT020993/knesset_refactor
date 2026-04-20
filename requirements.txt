@@ -27,7 +27,7 @@ tqdm==4.67.3                      # Progress bars and status visualization
 openpyxl==3.1.5                   # Excel file export functionality
 
 # Cloud Storage (Optional - for persistent data on Streamlit Cloud)
-google-cloud-storage==2.14.0      # Google Cloud Storage for data persistence
+google-cloud-storage==3.10.1      # Google Cloud Storage for data persistence
 
 # Desktop Application Support (for researcher launcher)
 # Note: tkinter is usually included with Python, but adding fallbacks
