@@ -184,10 +184,26 @@ def export(
             FROM bill_classifications
             """
         ).df()
+        # Pull KnessetNum + PrivateNumber for every bill, so we can look up
+        # the ancestor's K# + פ/NNN reference that appears in דברי ההסבר.
+        bill_ref = con.execute(
+            """
+            SELECT BillID AS original_bill_id,
+                   KnessetNum AS original_knesset_num,
+                   PrivateNumber AS original_private_number
+            FROM KNS_Bill
+            WHERE PrivateNumber IS NOT NULL
+            """
+        ).df()
     finally:
         con.close()
 
     merged = xl.merge(cls, on="BillID", how="left")
+    # Enrich with ancestor's K# + PrivateNumber. For self-referential originals
+    # (is_original=True and original_bill_id=BillID) this yields the bill's own
+    # K# + PN, which is redundant but harmless — the row's own KnessetNum /
+    # PrivateNumber columns already carry that info.
+    merged = merged.merge(bill_ref, on="original_bill_id", how="left")
 
     # Raw counts BEFORE post-pass (for before/after reporting)
     raw_originals = int((merged["is_original"] == True).sum())  # noqa: E712
