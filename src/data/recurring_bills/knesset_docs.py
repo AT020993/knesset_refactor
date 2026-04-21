@@ -34,12 +34,21 @@ TEXTUTIL_TIMEOUT_S = 30
 # Covers Tal's two primary signal families:
 #   1. Explicit "similar bill" phrases
 #   2. References to earlier bills by private number (פ/NNN or ק/NNN)
+#
+# NOTE: Patterns were expanded 2026-04-21 after a verification sample revealed
+# the standard Knesset re-submission boilerplate
+# "הצעת חוק זהה הונחה על שולחן הכנסת ה<K-name> ... (פ/NNN/K)"
+# was not being caught by the original narrower pattern set.
 _PATTERNS_SIMILAR = [
     re.compile(r"הצעת\s+חוק\s+דומה"),            # "a similar bill"
+    re.compile(r"הצעת\s+חוק\s+זהה"),             # "an identical bill" (standard re-submission)
     re.compile(r"הצעה\s+זהה"),                   # "identical proposal"
     re.compile(r"חוזרת\s+ומוגש"),                # "returns and is submitted"
     re.compile(r"הוגש[הה]?\s+בכנסת\s+ה[־\-]?\s*\S+"),  # "was submitted in Knesset X"
+    re.compile(r"הונחה\s+על\s+שולחן\s+הכנסת\s+ה(?:שש|שבע|שמונה|תשע|עשרים)[\-\s]*[\u0590-\u05FF]*"),
+                                                   # "tabled in Knesset <K-name>" (NOT "...ביום [date]")
     re.compile(r"בהמשך\s+להצעת\s+חוק"),          # "following the bill"
+    re.compile(r"ומספרה\s+פ\s*/\s*\d+\s*/\s*\d+"),  # "and its number is פ/NNN/K"
 ]
 
 # Explicit private-bill references: פ/NNN or ק/NNN, optionally with /K knesset suffix
