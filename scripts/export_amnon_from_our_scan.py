@@ -1,0 +1,281 @@
+#!/usr/bin/env python
+"""Regenerate Amnon's Excel using OUR independent doc-based scan.
+
+Joins ``data/Private.Bills.Final.091123.xlsx`` against the
+``bill_classifications_doc_full`` table — our own regex-based scan of
+every K1-K25 private bill's explanatory notes (via ``KNS_DocumentBill``),
+independent of Tal Alovitz's ``pmb.teca-it.com`` API.
+
+Why the separate export: per Prof. Amnon's 2026-04-20 reply ("I prefer
+the data be *ours* so we can compare if needed"), this deliverable is
+sourced entirely from fs.knesset.gov.il + our Hebrew-phrase regex, with
+no Tal dependency. The earlier export (``export_amnon_classified_excel.py``)
+blended Tal's K19-K25 labels with our K16-K18 doc-scan; this one uses our
+scan across all Knessets uniformly.
+
+Option C (hybrid) post-pass — identical semantics to the Tal-based export:
+- ``is_original`` / ``original_bill_id`` drive Amnon's coding workflow.
+  A bill whose factual ancestor is untraceable within this Excel (self-
+  loop with no resolvable pinpoint, off-corpus ancestor, doc-fetch
+  failure, or no doc URL at all) is promoted to an EFFECTIVE original —
+  ``is_original=True``, ``original_bill_id=BillID``.
+- ``is_recurring_upstream`` preserves the factual reprise signal from
+  our doc-scan.
+- ``effective_original_reason`` records WHY a row was promoted:
+  ``doc_fetch_failed``, ``no_doc_url``, ``doc_no_ancestor_found``,
+  ``ancestor_outside_excel``.
+- Chains are resolved transitively so depth-1 coding lookups always land
+  on a codable bill.
+
+Run:
+    source .venv/bin/activate
+    PYTHONPATH="./src" python scripts/export_amnon_from_our_scan.py
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def apply_option_c_post_pass(merged: pd.DataFrame) -> pd.DataFrame:
+    """Add is_recurring_upstream / effective_original_reason and resolve chains.
+
+    Algorithm:
+    1. Freeze the factual reprise signal (``is_recurring_upstream``) before edits.
+    2. For every bill, walk up the raw-chain using (original_bill_id, is_original)
+       as they came from the warehouse. The walk stops at:
+         - an ancestor inside Amnon's Excel that is raw-original  →  traceable
+         - self-loop (no resolved ancestor in our doc-scan)       →  UNTRACEABLE
+         - a parent missing from Amnon's Excel                    →  UNTRACEABLE
+         - a cycle                                                →  UNTRACEABLE
+    3. Traceable bills: ``is_original`` stays False, ``original_bill_id`` becomes
+       the deepest raw-original found (chain flattened to depth-1).
+    4. Untraceable recurring bills: flip to effective-original with a reason.
+
+    Mutates and returns the DataFrame.
+    """
+    merged["is_recurring_upstream"] = merged["is_original"].eq(False)
+    merged["effective_original_reason"] = pd.NA
+
+    excel_ids = set(merged["BillID"].dropna().astype(int))
+
+    # Snapshot RAW state — the chain walker must see the original warehouse
+    # labels, not the mutated post-pass values.
+    raw_parent = {
+        int(b): (None if pd.isna(p) else int(p))
+        for b, p in zip(merged["BillID"], merged["original_bill_id"])
+    }
+    raw_is_orig = {
+        int(b): bool(v) if pd.notna(v) else False
+        for b, v in zip(merged["BillID"], merged["is_original"])
+    }
+
+    def walk_to_original(bid: int) -> int | None:
+        """Return the BillID of the deepest raw-original ancestor inside
+        Amnon's Excel, or None if untraceable (self-loop, off-corpus, cycle).
+        """
+        seen: set[int] = set()
+        cur = bid
+        while cur not in seen:
+            seen.add(cur)
+            if cur not in excel_ids:
+                return None  # ancestor outside Amnon's Excel
+            if raw_is_orig.get(cur, False):
+                return cur if cur != bid else None
+            parent = raw_parent.get(cur)
+            if parent is None or parent == cur:
+                return None  # self-loop / dead end
+            cur = parent
+        return None  # cycle
+
+    def reason_for(row: pd.Series) -> str:
+        """Pick the most specific reason for an untraceable bill."""
+        m = row.get("method")
+        if m == "doc_fetch_failed":
+            return "doc_fetch_failed"
+        if m == "no_doc_url":
+            return "no_doc_url"
+        orig_id = row.get("original_bill_id")
+        if not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
+            return "doc_no_ancestor_found"
+        return "ancestor_outside_excel"
+
+    rec_rows = merged[merged["is_original"] == False]  # noqa: E712
+    for idx in rec_rows.index:
+        bid = int(merged.at[idx, "BillID"])
+        ancestor = walk_to_original(bid)
+        if ancestor is not None:
+            merged.at[idx, "original_bill_id"] = ancestor
+        else:
+            merged.at[idx, "is_original"] = True
+            merged.at[idx, "original_bill_id"] = bid
+            merged.at[idx, "effective_original_reason"] = reason_for(merged.loc[idx])
+
+    return merged
+
+
+def verify(merged: pd.DataFrame) -> dict:
+    """Post-pass integrity check. Returns dict of violation counts (all should be 0)."""
+    has_cls = merged[merged["classification_source"].notna()].copy()
+    orig = has_cls[has_cls["is_original"] == True]  # noqa: E712
+    rec = has_cls[has_cls["is_original"] == False]  # noqa: E712
+
+    all_ids = set(merged["BillID"].dropna().astype(int))
+    chain = dict(zip(has_cls["BillID"].astype(int), has_cls["is_original"].astype(bool)))
+
+    violations = {
+        "originals_not_self_referencing": int(
+            ((orig["original_bill_id"].astype("Int64") != orig["BillID"].astype("Int64"))).sum()
+        ),
+        "recurring_self_referencing": int(
+            ((rec["original_bill_id"].astype("Int64") == rec["BillID"].astype("Int64"))).sum()
+        ),
+        "recurring_ancestor_outside_excel": int(
+            (~rec["original_bill_id"].isin(all_ids)).sum()
+        ),
+        "recurring_ancestor_also_recurring": int(
+            rec["original_bill_id"].astype("Int64").map(
+                lambda x: False if pd.isna(x) else not chain.get(int(x), True)
+            ).sum()
+        ),
+    }
+    return violations
+
+
+def export(
+    *,
+    excel_path: Path,
+    db_path: Path,
+    output_path: Path,
+) -> dict:
+    xl = pd.read_excel(excel_path)
+
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        cls = con.execute(
+            """
+            SELECT
+                BillID,
+                is_original,
+                original_bill_id,
+                method,
+                matched_phrase,
+                classification_source
+            FROM bill_classifications_doc_full
+            """
+        ).df()
+        # Pull KnessetNum + PrivateNumber for every bill, so we can look up
+        # the ancestor's K# + פ/NNN reference that appears in דברי ההסבר.
+        bill_ref = con.execute(
+            """
+            SELECT BillID AS original_bill_id,
+                   KnessetNum AS original_knesset_num,
+                   PrivateNumber AS original_private_number
+            FROM KNS_Bill
+            WHERE PrivateNumber IS NOT NULL
+            """
+        ).df()
+    finally:
+        con.close()
+
+    merged = xl.merge(cls, on="BillID", how="left")
+    merged = merged.merge(bill_ref, on="original_bill_id", how="left")
+
+    raw_originals = int((merged["is_original"] == True).sum())  # noqa: E712
+    raw_recurring = int((merged["is_original"] == False).sum())  # noqa: E712
+
+    merged = apply_option_c_post_pass(merged)
+    violations = verify(merged)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_excel(output_path, index=False)
+
+    return {
+        "input_rows": len(xl),
+        "output_rows": len(merged),
+        "unmatched": int(merged["classification_source"].isna().sum()),
+        "by_source": merged["classification_source"].value_counts(dropna=False).to_dict(),
+        "by_method": merged["method"].value_counts(dropna=False).to_dict(),
+        "raw_originals": raw_originals,
+        "raw_recurring": raw_recurring,
+        "effective_originals": int((merged["is_original"] == True).sum()),  # noqa: E712
+        "effective_recurring": int((merged["is_original"] == False).sum()),  # noqa: E712
+        "is_recurring_upstream_true": int(merged["is_recurring_upstream"].sum()),
+        "promoted_to_effective_original": int(
+            merged["effective_original_reason"].notna().sum()
+        ),
+        "by_reason": merged["effective_original_reason"]
+        .value_counts(dropna=False)
+        .to_dict(),
+        "violations": violations,
+        "output_path": str(output_path),
+    }
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--excel", type=Path,
+                   default=_REPO_ROOT / "data" / "Private.Bills.Final.091123.xlsx")
+    p.add_argument("--db", type=Path,
+                   default=_REPO_ROOT / "data" / "warehouse.duckdb")
+    p.add_argument("--output", type=Path,
+                   default=_REPO_ROOT / "data" / "snapshots"
+                                      / "Private.Bills.Final.091123_with_our_classification.xlsx")
+    args = p.parse_args()
+
+    if not args.excel.exists():
+        print(f"ERROR: input Excel not found: {args.excel}", file=sys.stderr)
+        return 1
+    if not args.db.exists():
+        print(f"ERROR: warehouse not found: {args.db}", file=sys.stderr)
+        return 1
+
+    stats = export(excel_path=args.excel, db_path=args.db, output_path=args.output)
+
+    print(f"Input rows:  {stats['input_rows']}")
+    print(f"Output rows: {stats['output_rows']}")
+    print(f"Unmatched:   {stats['unmatched']} (no row in bill_classifications_doc_full)")
+    print()
+    print("Raw (from our doc-scan):")
+    print(f"  Originals: {stats['raw_originals']}")
+    print(f"  Recurring: {stats['raw_recurring']}")
+    print()
+    print("Effective (after Option C post-pass — drives Amnon's coding workflow):")
+    print(f"  Originals: {stats['effective_originals']}")
+    print(f"  Recurring: {stats['effective_recurring']}")
+    print()
+    print(f"is_recurring_upstream=True (factual reprise signal): {stats['is_recurring_upstream_true']}")
+    print(f"Promoted to effective-original: {stats['promoted_to_effective_original']}")
+    print()
+    print("By scan method:")
+    for m, count in stats["by_method"].items():
+        print(f"  {m}: {count}")
+    print()
+    print("effective_original_reason:")
+    for reason, count in stats["by_reason"].items():
+        print(f"  {reason}: {count}")
+    print()
+    print("Integrity violations (all must be 0):")
+    all_zero = True
+    for k, v in stats["violations"].items():
+        marker = "OK" if v == 0 else "FAIL"
+        print(f"  [{marker}] {k}: {v}")
+        if v != 0:
+            all_zero = False
+    print()
+    print(f"Wrote: {stats['output_path']}")
+    if not all_zero:
+        print("WARNING: integrity violations detected — inspect before sending", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
