@@ -168,6 +168,25 @@ def export(*, db_path: Path, output_path: Path) -> dict:
     raw_originals = int((df["is_original"] == True).sum())  # noqa: E712
     raw_recurring = int((df["is_original"] == False).sum())  # noqa: E712
 
+    # Derive recurrence_type from matched_phrase BEFORE the Option-C post-pass
+    # (post-pass may flip untraceable recurring → effective-original, and those
+    # rows should still carry the upstream recurrence_type for analysis).
+    def _classify_type(phrase):
+        if phrase is None or (isinstance(phrase, float) and pd.isna(phrase)):
+            return None
+        s = str(phrase)
+        # "Similar"-family: explicit דומה or "building on" phrases
+        if "דומה" in s or "המשך" in s:
+            return "similar"
+        # "Identical"-family: זהה, חוזר (re-submission), or the standard
+        # bureaucratic tabling boilerplate which almost always accompanies
+        # an identical re-submission.
+        if "זהה" in s or "חוזר" in s or s.startswith("הונחה") or s.startswith("הוגש") or s.startswith("ומספרה"):
+            return "identical"
+        return None
+
+    df["recurrence_type"] = df["matched_phrase"].apply(_classify_type)
+
     df = apply_option_c_post_pass(df)
     df = df.merge(bill_ref, on="original_bill_id", how="left")
     violations = verify(df)
@@ -178,7 +197,7 @@ def export(*, db_path: Path, output_path: Path) -> dict:
         "doc_url",
         "is_original", "original_bill_id",
         "original_knesset_num", "original_private_number",
-        "is_recurring_upstream", "effective_original_reason",
+        "is_recurring_upstream", "recurrence_type", "effective_original_reason",
         "method", "matched_phrase", "classification_source",
     ]
     df = df[col_order]
@@ -195,6 +214,7 @@ def export(*, db_path: Path, output_path: Path) -> dict:
         "is_recurring_upstream_true": int(df["is_recurring_upstream"].sum()),
         "promoted_to_effective_original": int(df["effective_original_reason"].notna().sum()),
         "by_method": df["method"].value_counts(dropna=False).to_dict(),
+        "by_recurrence_type": df["recurrence_type"].value_counts(dropna=False).to_dict(),
         "by_reason": df["effective_original_reason"].value_counts(dropna=False).to_dict(),
         "per_knesset": df.groupby("KnessetNum").agg(
             total=("BillID", "count"),
@@ -235,6 +255,10 @@ def main() -> int:
     for r in stats["per_knesset"]:
         pct = 100 * r["recurring"] / r["total"] if r["total"] else 0
         print(f"  K{int(r['KnessetNum']):<3}  {r['total']:>6}  recurring={r['recurring']:>5}  ({pct:5.2f}%)")
+    print()
+    print("Recurrence type (identical vs similar):")
+    for t, n in stats["by_recurrence_type"].items():
+        print(f"  {t}: {n}")
     print()
     print("Method distribution:")
     for m, n in sorted(stats["by_method"].items(), key=lambda kv: -kv[1] if kv[1] is not pd.NA else 0):
