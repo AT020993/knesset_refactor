@@ -47,6 +47,7 @@ from data.recurring_bills.export_resolution import (  # noqa: E402
     apply_option_c_post_pass,
     enrich_from_final_original_bill_id,
     ensure_columns,
+    sanitize_submission_dates,
     strip_timezone_columns,
     verify_effective_originals,
 )
@@ -128,6 +129,7 @@ def export(
 
     merged = apply_option_c_post_pass(merged, reason_for=_reason_for_excel_row)
     merged = enrich_from_final_original_bill_id(merged, bill_ref)
+    merged = sanitize_submission_dates(merged)
     violations = verify_effective_originals(
         merged,
         outside_label="recurring_ancestor_outside_excel",

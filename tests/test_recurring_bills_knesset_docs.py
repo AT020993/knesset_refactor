@@ -10,6 +10,7 @@ import duckdb
 from data.recurring_bills.knesset_docs import (
     classify_bill_from_doc,
     download_doc,
+    extract_submission_date,
     parse_recurrence_signals,
     resolve_link_back,
 )
@@ -46,6 +47,32 @@ AMNON_CASE_548636_TEXT = """
 כ"ד באדר א' התשע"ד – 24.2.14
 """
 
+K1_FOOTNOTE_TAIL_TEXT = """
+1950
+23.11.49)תש"י בכסלו ג' מיום 27 החוקים ספר 1
+חוקת המדינה.
+"""
+
+K8_SUBMISSION_TAIL_TEXT = """
+1עמי14.5.48תש"חבאייר ה1מסרשמי עחון1
+.1973פברואר2
+.74עמי28.6.67)ו499חוקיםבספר שתוקןכפי 3
+.3עמ14.5.48)תש"חנ!<ייו ה'מיום 1מטרשמי עתון4
+והסגניםהכנסת ליו"רהוגשה
+תלזל"הן בחשוה' שני,ביום
+1974באוקטובר21
+'*
+"""
+
+K14_SUBMISSION_TAIL_TEXT = """
+הצעת חוק זהה הוגשה ומספרה פ/2441.
+
+––––––––––––––––––––––––––
+הוגשה ליו"ר הכנסת והסגנים
+והונחה על שלחן הכנסת ביום
+ד` באב התשנ"ח – 98.7.27
+"""
+
 
 def _make_con(rows: list[tuple[int, int, int]]) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(":memory:")
@@ -63,6 +90,26 @@ def _make_con(rows: list[tuple[int, int, int]]) -> duckdb.DuckDBPyConnection:
         con.executemany(
             "INSERT INTO KNS_Bill (BillID, KnessetNum, PrivateNumber, Name) VALUES (?, ?, ?, ?)",
             [(bill_id, knesset_num, private_number, f'Bill {bill_id}') for bill_id, knesset_num, private_number in rows],
+        )
+    return con
+
+
+def _make_named_con(rows: list[tuple[int, int, int, str]]) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(":memory:")
+    con.execute(
+        """
+        CREATE TABLE KNS_Bill (
+            BillID BIGINT,
+            KnessetNum BIGINT,
+            PrivateNumber BIGINT,
+            Name VARCHAR
+        )
+        """
+    )
+    if rows:
+        con.executemany(
+            "INSERT INTO KNS_Bill (BillID, KnessetNum, PrivateNumber, Name) VALUES (?, ?, ?, ?)",
+            rows,
         )
     return con
 
@@ -130,6 +177,32 @@ class TestParseRecurrenceSignals:
         """
         signals = parse_recurrence_signals(text)
         assert signals["submission_date"] == "2014-01-15"
+
+    def test_extracts_old_knesset_two_digit_year_without_promoting_to_2049(self):
+        text = """
+        דברי הסבר
+        הוגשה ליו"ר הכנסת והסגנים
+        והונחה על שולחן הכנסת ביום
+        23.11.49
+        """
+        assert extract_submission_date(text, current_knesset=1) == "1949-11-23"
+
+    def test_rejects_unanchored_footnote_date_from_k1_tail(self):
+        assert extract_submission_date(K1_FOOTNOTE_TAIL_TEXT, current_knesset=1) is None
+
+    def test_prefers_contextual_submission_block_over_earlier_tail_dates(self):
+        assert extract_submission_date(K8_SUBMISSION_TAIL_TEXT, current_knesset=8) == "1974-10-21"
+
+    def test_extracts_numeric_ymd_submission_date_from_bottom_block(self):
+        assert extract_submission_date(K14_SUBMISSION_TAIL_TEXT, current_knesset=14) == "1998-07-27"
+
+    def test_rejects_future_submission_date(self):
+        text = """
+        הוגשה ליו"ר הכנסת והסגנים
+        והונחה על שלחן הכנסת ביום
+        1.12.31
+        """
+        assert extract_submission_date(text, current_knesset=14) is None
 
     def test_amnon_plural_similar_fixture_preserves_all_reference_evidence(self):
         signals = parse_recurrence_signals(AMNON_CASE_548636_TEXT, current_knesset=19)
@@ -336,6 +409,25 @@ class TestClassifyBillFromDoc:
         assert result["reference_candidate_count"] == 1
         assert result["reference_candidates"][0]["reference_text"] == "פ/1915/19"
 
+    def test_explicit_reference_does_not_gain_name_fallback_candidate(self, tmp_path: Path):
+        con = _make_named_con(
+            [
+                (544468, 19, 2056, "הצעת חוק לדוגמה"),
+                (488544, 19, 1915, "הצעת חוק לדוגמה"),
+            ]
+        )
+        result = _classify_from_text(
+            tmp_path=tmp_path,
+            warehouse_con=con,
+            text=AMNON_CASE_544468_TEXT,
+            bill_id=544468,
+            current_knesset=19,
+        )
+
+        assert result["original_bill_id"] == 488544
+        assert result["reference_candidate_count"] == 1
+        assert [candidate["reference_text"] for candidate in result["reference_candidates"]] == ["פ/1915/19"]
+
     def test_multiple_references_do_not_pick_unrelated_first_match(self, tmp_path: Path):
         con = _make_con(
             [
@@ -410,6 +502,28 @@ class TestClassifyBillFromDoc:
         assert result["original_bill_id"] == 150383
         assert result["reference_resolution_reason"] == "contextual_knesset_name_match"
         assert result["reference_candidate_count"] == 1
+
+    def test_unresolved_explicit_reference_does_not_fall_back_by_name(self, tmp_path: Path):
+        con = _make_named_con(
+            [
+                (150383, 10, 90, "הצעת חוק מורשת העדות, התשמ\"ה-1985"),
+                (151979, 11, 161, "הצעת חוק מורשת העדות, התשמ\"ה-1985"),
+            ]
+        )
+        text = "הצעת חוק זהה הוגשה בכנסת העשירית (פ/9999/10)."
+        result = _classify_from_text(
+            tmp_path=tmp_path,
+            warehouse_con=con,
+            text=text,
+            bill_id=151979,
+            current_knesset=11,
+        )
+
+        assert result["original_bill_id"] is None
+        assert result["method"] == "doc_pattern_unresolved"
+        assert result["reference_resolution_reason"] == "no_resolved_reference_candidates"
+        assert result["reference_candidate_count"] == 1
+        assert result["reference_candidates"][0]["reference_text"] == "פ/9999/10"
 
     def test_both_identical_and_similar_references_are_preserved(self, tmp_path: Path):
         con = _make_con(

@@ -121,18 +121,70 @@ _HEBREW_KNESSET_NUMS = {
     "העשרים-וחמש": 25,
     "העשרים וחמש": 25,
 }
-_PATTERN_SUBMISSION_DATE = re.compile(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})")
+_PATTERN_NUMERIC_SUBMISSION_DATE = re.compile(r"(?<!\d)(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})(?!\d)")
 _PATTERN_CONTEXT_BREAK = re.compile(r"(?:\n\s*\n|[.!?])")
 _PATTERN_PREVIOUS_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+הקודמת")
 _PATTERN_NUMERIC_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+ה[-\s]*(\d{1,2})(?:\b|$)")
+_PATTERN_SUBMISSION_ANCHOR = re.compile(r"ביום")
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u05BE]")
 _WHITESPACE_RE = re.compile(r"\s+")
 _NORMALIZED_KNESSET_NUMS = {
     None: None,
 }
+_HEBREW_MONTH_NUMS = {
+    "ינואר": 1,
+    "פברואר": 2,
+    "מרץ": 3,
+    "מרס": 3,
+    "אפריל": 4,
+    "מאי": 5,
+    "יוני": 6,
+    "יולי": 7,
+    "אוגוסט": 8,
+    "ספטמבר": 9,
+    "אוקטובר": 10,
+    "נובמבר": 11,
+    "דצמבר": 12,
+}
+_PATTERN_TEXTUAL_SUBMISSION_DATE_DMY = re.compile(
+    r"(?<!\d)(\d{1,2})\s*(?:ב)?(ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)\s*(\d{2,4})(?!\d)"
+)
+_PATTERN_TEXTUAL_SUBMISSION_DATE_YMD = re.compile(
+    r"(?<!\d)(\d{2,4})\s*(?:ב)?(ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)\s*(\d{1,2})(?!\d)"
+)
+_KNESSET_YEAR_BOUNDS = {
+    1: (1949, 1951),
+    2: (1951, 1955),
+    3: (1955, 1959),
+    4: (1959, 1961),
+    5: (1961, 1965),
+    6: (1965, 1969),
+    7: (1969, 1974),
+    8: (1974, 1977),
+    9: (1977, 1981),
+    10: (1981, 1984),
+    11: (1984, 1988),
+    12: (1988, 1992),
+    13: (1992, 1996),
+    14: (1996, 1999),
+    15: (1999, 2003),
+    16: (2003, 2006),
+    17: (2006, 2009),
+    18: (2009, 2013),
+    19: (2013, 2015),
+    20: (2015, 2019),
+    21: (2019, 2019),
+    22: (2019, 2020),
+    23: (2020, 2021),
+    24: (2021, 2022),
+    25: (2022, 2026),
+}
+_SUBMISSION_DATE_FLOOR = date(1948, 1, 1)
 
 _SCAN_CHAR_LIMIT = 4000
 _SUBMISSION_DATE_TAIL_CHARS = 2000
+_SUBMISSION_DATE_LOOKAHEAD_CHARS = 220
+_SUBMISSION_DATE_LOOKBEHIND_CHARS = 80
 _CONTEXT_WINDOW_CHARS = 1600
 
 for _phrase, _number in _HEBREW_KNESSET_NUMS.items():
@@ -223,50 +275,173 @@ def _hebrew_ratio(text: str) -> float:
     return hebrew / len(non_ws)
 
 
-def _normalize_submission_date(raw_date: str) -> str | None:
-    match = _PATTERN_SUBMISSION_DATE.search(raw_date)
-    if not match:
+def _submission_year_bounds(current_knesset: int | None) -> tuple[int, int]:
+    today = date.today()
+    if current_knesset is None:
+        return (_SUBMISSION_DATE_FLOOR.year, today.year)
+
+    bounds = _KNESSET_YEAR_BOUNDS.get(current_knesset)
+    if bounds is None:
+        return (_SUBMISSION_DATE_FLOOR.year, today.year)
+
+    start_year, end_year = bounds
+    return (max(_SUBMISSION_DATE_FLOOR.year, start_year - 1), min(today.year, end_year + 1))
+
+
+def _is_plausible_submission_date(value: date, *, current_knesset: int | None = None) -> bool:
+    today = date.today()
+    if value < _SUBMISSION_DATE_FLOOR or value > today:
+        return False
+
+    min_year, max_year = _submission_year_bounds(current_knesset)
+    return min_year <= value.year <= max_year
+
+
+def _resolve_submission_year(raw_year: int, *, current_knesset: int | None = None) -> int | None:
+    if raw_year >= 100:
+        return raw_year
+
+    min_year, max_year = _submission_year_bounds(current_knesset)
+    candidates = [
+        year
+        for year in (1900 + raw_year, 2000 + raw_year)
+        if min_year <= year <= max_year
+    ]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    center = (min_year + max_year) / 2
+    candidates.sort(key=lambda year: (abs(year - center), -year))
+    return candidates[0]
+
+
+def _build_submission_date(
+    *,
+    year: int,
+    month: int,
+    day_of_month: int,
+    current_knesset: int | None = None,
+) -> date | None:
+    resolved_year = _resolve_submission_year(year, current_knesset=current_knesset)
+    if resolved_year is None:
         return None
 
-    day = int(match.group(1))
-    month = int(match.group(2))
-    year = int(match.group(3))
-    if year < 100:
-        year += 2000 if year <= 49 else 1900
-
     try:
-        return date(year, month, day).isoformat()
+        value = date(resolved_year, month, day_of_month)
     except ValueError:
         return None
 
+    if not _is_plausible_submission_date(value, current_knesset=current_knesset):
+        return None
+    return value
 
-def extract_submission_date(text: str) -> str | None:
+
+def validate_submission_date(
+    raw_date: object,
+    *,
+    current_knesset: int | None = None,
+) -> str | None:
+    if raw_date is None:
+        return None
+    if isinstance(raw_date, date):
+        return raw_date.isoformat() if _is_plausible_submission_date(raw_date, current_knesset=current_knesset) else None
+
+    text = str(raw_date).strip()
+    if not text or text.lower() == "nan":
+        return None
+
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        return None
+
+    return parsed.isoformat() if _is_plausible_submission_date(parsed, current_knesset=current_knesset) else None
+
+
+def _iter_submission_date_candidates(
+    text: str,
+    *,
+    current_knesset: int | None = None,
+) -> list[tuple[int, int, str]]:
+    candidates: list[tuple[int, int, str]] = []
+
+    for match in _PATTERN_NUMERIC_SUBMISSION_DATE.finditer(text):
+        first = int(match.group(1))
+        month = int(match.group(2))
+        third = int(match.group(3))
+
+        # Prefer day-month-year when both interpretations are possible; use
+        # year-month-day only when it is the only plausible form.
+        if 1 <= first <= 31 and 1 <= month <= 12:
+            dmy = _build_submission_date(
+                year=third,
+                month=month,
+                day_of_month=first,
+                current_knesset=current_knesset,
+            )
+            if dmy is not None:
+                candidates.append((2, match.start(), dmy.isoformat()))
+
+        if 1 <= month <= 12 and 1 <= third <= 31:
+            ymd = _build_submission_date(
+                year=first,
+                month=month,
+                day_of_month=third,
+                current_knesset=current_knesset,
+            )
+            if ymd is not None:
+                candidates.append((1, match.start(), ymd.isoformat()))
+
+    for match in _PATTERN_TEXTUAL_SUBMISSION_DATE_DMY.finditer(text):
+        value = _build_submission_date(
+            year=int(match.group(3)),
+            month=_HEBREW_MONTH_NUMS[match.group(2)],
+            day_of_month=int(match.group(1)),
+            current_knesset=current_knesset,
+        )
+        if value is not None:
+            candidates.append((2, match.start(), value.isoformat()))
+
+    for match in _PATTERN_TEXTUAL_SUBMISSION_DATE_YMD.finditer(text):
+        value = _build_submission_date(
+            year=int(match.group(1)),
+            month=_HEBREW_MONTH_NUMS[match.group(2)],
+            day_of_month=int(match.group(3)),
+            current_knesset=current_knesset,
+        )
+        if value is not None:
+            candidates.append((1, match.start(), value.isoformat()))
+
+    return candidates
+
+
+def extract_submission_date(
+    text: str,
+    *,
+    current_knesset: int | None = None,
+) -> str | None:
     """Extract the normalized submission date from the bottom of the doc."""
     if not text:
         return None
 
     tail = text[-_SUBMISSION_DATE_TAIL_CHARS:]
-    candidates: list[tuple[int, int, str]] = []
-    for match in _PATTERN_SUBMISSION_DATE.finditer(tail):
-        normalized = _normalize_submission_date(match.group(0))
-        if not normalized:
+    anchors = list(_PATTERN_SUBMISSION_ANCHOR.finditer(tail))
+    for anchor in reversed(anchors):
+        window_start = max(0, anchor.start() - _SUBMISSION_DATE_LOOKBEHIND_CHARS)
+        window_end = min(len(tail), anchor.end() + _SUBMISSION_DATE_LOOKAHEAD_CHARS)
+        window = tail[window_start:window_end]
+        candidates = _iter_submission_date_candidates(
+            window,
+            current_knesset=current_knesset,
+        )
+        if not candidates:
             continue
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return candidates[-1][2]
 
-        local = tail[max(0, match.start() - 120): min(len(tail), match.end() + 120)]
-        score = 0
-        if "הונחה על שולחן הכנסת" in local or "הוגשה ליו\"ר הכנסת" in local:
-            score += 3
-        if "הוגשה" in local or "הונחה" in local:
-            score += 1
-        if match.start() >= int(len(tail) * 0.6):
-            score += 1
-        candidates.append((score, match.start(), normalized))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda item: (item[0], item[1]))
-    return candidates[-1][2]
+    return None
 
 
 def _find_context_start(text: str, start: int, lower_bound: int) -> int:
@@ -428,7 +603,7 @@ def parse_recurrence_signals(text: str, *, current_knesset: int | None = None) -
         "reference_candidates": mentions,
         "reference_candidate_count": len(mentions),
         "multiple_references_detected": len(mentions) > 1,
-        "submission_date": extract_submission_date(text),
+        "submission_date": extract_submission_date(text, current_knesset=current_knesset),
     }
 
 
@@ -918,12 +1093,17 @@ def classify_bill_from_doc(
         )
         for mention in signals["reference_candidates"]
     ]
-    name_fallback_candidate = _resolve_by_name_fallback(
-        signals=signals,
-        current_bill_id=bill_id,
-        current_knesset=current_knesset,
-        warehouse_con=warehouse_con,
-    )
+    # Name matching is a weaker backstop than a cited פ/... reference.
+    # Keep it for reference-less recurrence phrases, but do not let it
+    # compete with or pad explicit citation evidence.
+    name_fallback_candidate = None
+    if not signals["reference_candidates"]:
+        name_fallback_candidate = _resolve_by_name_fallback(
+            signals=signals,
+            current_bill_id=bill_id,
+            current_knesset=current_knesset,
+            warehouse_con=warehouse_con,
+        )
     if name_fallback_candidate is not None:
         resolved_candidates.append(name_fallback_candidate)
     primary = _pick_primary_candidate(resolved_candidates)

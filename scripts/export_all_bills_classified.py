@@ -46,6 +46,7 @@ from data.recurring_bills.export_resolution import (  # noqa: E402
     classify_recurrence_type,
     enrich_from_final_original_bill_id,
     ensure_columns,
+    sanitize_submission_dates,
     strip_timezone_columns,
     verify_effective_originals,
 )
@@ -114,6 +115,7 @@ def export(*, db_path: Path, output_path: Path) -> dict:
 
     df = apply_option_c_post_pass(df, reason_for=_reason_for_doc_row)
     df = enrich_from_final_original_bill_id(df, bill_ref)
+    df = sanitize_submission_dates(df)
     violations = verify_effective_originals(
         df,
         outside_label="recurring_ancestor_outside_universe",

@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from data.recurring_bills.knesset_docs import validate_submission_date
+
 
 def ensure_columns(df: pd.DataFrame, defaults: dict[str, object]) -> pd.DataFrame:
     """Ensure optional export columns exist so older tables remain readable."""
@@ -139,4 +141,28 @@ def strip_timezone_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Convert timezone-aware datetime columns to naive datetimes for Excel."""
     for column in df.select_dtypes(include=["datetimetz"]).columns:
         df[column] = df[column].dt.tz_localize(None)
+    return df
+
+
+def sanitize_submission_dates(
+    df: pd.DataFrame,
+    *,
+    knesset_col: str = "KnessetNum",
+) -> pd.DataFrame:
+    """Drop implausible submission dates before export."""
+    if "submission_date" not in df.columns:
+        return df
+
+    def _sanitize_row(row: pd.Series) -> str | None:
+        current_knesset = row.get(knesset_col)
+        if pd.isna(current_knesset):
+            current_knesset = None
+        else:
+            current_knesset = int(current_knesset)
+        return validate_submission_date(
+            row.get("submission_date"),
+            current_knesset=current_knesset,
+        )
+
+    df["submission_date"] = df.apply(_sanitize_row, axis=1)
     return df

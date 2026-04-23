@@ -37,6 +37,7 @@ def _build_db(db_path: Path) -> None:
                 (1, 18, "Original bill", 111, "Private"),
                 (2, 19, "Current bill", 222, "Private"),
                 (3, 19, "Mid-chain bill", 333, "Private"),
+                (4, 1, "Historic bill", 444, "Private"),
             ],
         )
         con.execute(
@@ -90,6 +91,12 @@ def _build_db(db_path: Path) -> None:
                     "2014-01-10", False, False, None, "https://example/3.doc", "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
+                (
+                    4, 1, "Historic bill", 444, True, 4,
+                    None, "doc_no_pattern", "[]", 0, None, None, False,
+                    "2049-11-23", False, False, None, "https://example/4.doc", "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
             ],
         )
     finally:
@@ -109,6 +116,7 @@ class TestExportResolution:
                 {"BillID": 1, "Name": "Original bill"},
                 {"BillID": 2, "Name": "Current bill"},
                 {"BillID": 3, "Name": "Mid-chain bill"},
+                {"BillID": 4, "Name": "Historic bill"},
             ]
         ).to_excel(excel_path, index=False)
 
@@ -129,3 +137,31 @@ class TestExportResolution:
         assert row_all["original_private_number"] == 111
         assert row_scan["submission_date"] == "2014-01-15"
         assert row_all["submission_date"] == "2014-01-15"
+
+    def test_export_scripts_drop_implausible_submission_dates(self, tmp_path: Path):
+        db_path = tmp_path / "warehouse.duckdb"
+        excel_path = tmp_path / "amnon.xlsx"
+        output_scan = tmp_path / "our_scan.xlsx"
+        output_all = tmp_path / "all.xlsx"
+
+        _build_db(db_path)
+        pd.DataFrame(
+            [
+                {"BillID": 1, "Name": "Original bill"},
+                {"BillID": 2, "Name": "Current bill"},
+                {"BillID": 3, "Name": "Mid-chain bill"},
+                {"BillID": 4, "Name": "Historic bill"},
+            ]
+        ).to_excel(excel_path, index=False)
+
+        _EXPORT_OUR_SCAN(excel_path=excel_path, db_path=db_path, output_path=output_scan)
+        _EXPORT_ALL(db_path=db_path, output_path=output_all)
+
+        df_scan = pd.read_excel(output_scan)
+        df_all = pd.read_excel(output_all)
+
+        row_scan = df_scan.loc[df_scan["BillID"] == 4].iloc[0]
+        row_all = df_all.loc[df_all["BillID"] == 4].iloc[0]
+
+        assert pd.isna(row_scan["submission_date"])
+        assert pd.isna(row_all["submission_date"])
