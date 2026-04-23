@@ -92,7 +92,15 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             Notes VARCHAR, Source VARCHAR, SubmissionDate VARCHAR
         );
         INSERT INTO UserBillCAP VALUES
-            (1, 7001, 1, 100, NULL, 'high', NULL, 'RA', NULL);
+            (1, 7002, 1, 100, NULL, 'high', NULL, 'RA', NULL);
+
+        CREATE TABLE UserBillCoding (
+            BillID INTEGER, MajorIL INTEGER, MinorIL INTEGER,
+            MajorCAP INTEGER, MinorCAP INTEGER, StateReligion INTEGER,
+            Territories INTEGER, Source VARCHAR, ImportedAt TIMESTAMP
+        );
+        INSERT INTO UserBillCoding VALUES
+            (7001, 20, 2001, 2, 200, 0, 0, 'legacy-import', NULL);
 
         CREATE TABLE KNS_Bill (
             BillID BIGINT, KnessetNum BIGINT, Name VARCHAR,
@@ -106,14 +114,17 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         );
         INSERT INTO KNS_Bill VALUES
             (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 1, NULL,
-             NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
+             NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
+            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 1, NULL,
+             NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE KNS_BillInitiator (
             BillInitiatorID BIGINT, BillID BIGINT, PersonID BIGINT,
             IsInitiator BOOLEAN, Ordinal BIGINT, LastUpdatedDate VARCHAR
         );
         INSERT INTO KNS_BillInitiator VALUES
-            (1, 7001, 1, TRUE, 1, '2026-02-01');
+            (1, 7001, 1, TRUE, 1, '2026-02-01'),
+            (2, 7002, 2, TRUE, 1, '2026-02-02');
 
         CREATE TABLE KNS_Query (
             QueryID BIGINT, Number DOUBLE, KnessetNum BIGINT, Name VARCHAR,
@@ -245,3 +256,26 @@ def test_manifest_records_warehouse_mtime(tiny_warehouse: Path, tmp_path: Path) 
     # Load from disk and confirm the field survives JSON round-trip.
     raw = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert raw["warehouse_mtime_utc"] == m.warehouse_mtime_utc
+
+
+def test_mk_bills_exports_major_cap_from_supported_sources(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+
+    con = duckdb.connect()
+    rows = con.execute(
+        """
+        SELECT bill_id, cap_code
+        FROM read_parquet(?)
+        ORDER BY bill_id
+        """,
+        [str(out / "mk_bills.parquet")],
+    ).fetchall()
+    con.close()
+
+    assert rows == [
+        (7001, 2),  # legacy UserBillCoding.MajorCAP path
+        (7002, 1),  # UserBillCAP.CAPMinorCode -> UserCAPTaxonomy.MajorCode fallback
+    ]

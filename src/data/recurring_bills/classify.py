@@ -14,6 +14,10 @@ from data.recurring_bills.normalize import normalize_name
 log = logging.getLogger(__name__)
 
 
+def _empty_reference_candidates() -> str:
+    return "[]"
+
+
 def build_tal_classifications(
     *,
     bulk_csv: Path,
@@ -65,12 +69,26 @@ def build_tal_classifications(
     bulk["family_size"] = bulk.apply(_family_size, axis=1)
     bulk["tal_category"] = bulk["category"]
     bulk["classification_source"] = "tal_alovitz"
+    bulk["matched_phrase"] = None
+    bulk["method"] = None
+    bulk["reference_candidates"] = _empty_reference_candidates()
+    bulk["reference_candidate_count"] = 0
+    bulk["reference_resolution_reason"] = None
+    bulk["reference_resolution_confidence"] = None
+    bulk["multiple_references_detected"] = False
+    bulk["submission_date"] = bulk.get("submission_date")
+    bulk["suspicious_self_resolution"] = False
     bulk["tal_fetched_at"] = now
     bulk["last_updated"] = now
 
     keep = [
         "BillID", "KnessetNum", "Name",
         "is_original", "original_bill_id",
+        "matched_phrase", "method",
+        "reference_candidates", "reference_candidate_count",
+        "reference_resolution_reason", "reference_resolution_confidence",
+        "multiple_references_detected", "submission_date",
+        "suspicious_self_resolution",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",
@@ -105,6 +123,15 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
         axis=1,
     )
     xl["classification_source"] = "name_fallback_k16_k18"
+    xl["matched_phrase"] = None
+    xl["method"] = None
+    xl["reference_candidates"] = _empty_reference_candidates()
+    xl["reference_candidate_count"] = 0
+    xl["reference_resolution_reason"] = None
+    xl["reference_resolution_confidence"] = None
+    xl["multiple_references_detected"] = False
+    xl["submission_date"] = None
+    xl["suspicious_self_resolution"] = False
     xl["tal_category"] = None
     xl["is_cross_term"] = None
     xl["is_within_term_dup"] = None
@@ -116,6 +143,11 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
     keep = [
         "BillID", "KnessetNum", "Name",
         "is_original", "original_bill_id",
+        "matched_phrase", "method",
+        "reference_candidates", "reference_candidate_count",
+        "reference_resolution_reason", "reference_resolution_confidence",
+        "multiple_references_detected", "submission_date",
+        "suspicious_self_resolution",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",
@@ -168,6 +200,13 @@ def build_k16_k18_doc_based(
                     "original_bill_id": bid,
                     "matched_phrase": None,
                     "method": "no_doc_url",
+                    "reference_candidates": _empty_reference_candidates(),
+                    "reference_candidate_count": 0,
+                    "reference_resolution_reason": None,
+                    "reference_resolution_confidence": None,
+                    "multiple_references_detected": False,
+                    "submission_date": None,
+                    "suspicious_self_resolution": False,
                 })
             else:
                 first_url = docs.split("\n")[0].strip()
@@ -185,6 +224,17 @@ def build_k16_k18_doc_based(
                     "original_bill_id": r["original_bill_id"] if r["original_bill_id"] else bid,
                     "matched_phrase": r["matched_phrase"],
                     "method": r["method"],
+                    "reference_candidates": json.dumps(
+                        r.get("reference_candidates") or [],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "reference_candidate_count": int(r.get("reference_candidate_count") or 0),
+                    "reference_resolution_reason": r.get("reference_resolution_reason"),
+                    "reference_resolution_confidence": r.get("reference_resolution_confidence"),
+                    "multiple_references_detected": bool(r.get("multiple_references_detected", False)),
+                    "submission_date": r.get("submission_date"),
+                    "suspicious_self_resolution": bool(r.get("suspicious_self_resolution", False)),
                 })
             if progress_cb:
                 progress_cb(int(i) + 1, total, bid, results[-1]["method"])
@@ -217,6 +267,11 @@ def build_k16_k18_doc_based(
     keep = [
         "BillID", "KnessetNum", "Name",
         "is_original", "original_bill_id",
+        "matched_phrase", "method",
+        "reference_candidates", "reference_candidate_count",
+        "reference_resolution_reason", "reference_resolution_confidence",
+        "multiple_references_detected", "submission_date",
+        "suspicious_self_resolution",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",

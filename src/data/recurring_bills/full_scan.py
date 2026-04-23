@@ -24,6 +24,7 @@ one bad bill doesn't poison the run.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -40,6 +41,12 @@ _DOC_TYPE_PREFERENCE = [
     "הצעת חוק לדיון מוקדם",
     "הצעת חוק לקריאה הראשונה",
 ]
+
+
+def _serialize_reference_candidates(candidates: list[dict] | None) -> str:
+    if not candidates:
+        return "[]"
+    return json.dumps(candidates, ensure_ascii=False, sort_keys=True)
 
 
 def _pick_best_doc_url(con: duckdb.DuckDBPyConnection, bill_id: int) -> str | None:
@@ -81,7 +88,10 @@ def build_doc_based_full(
         DataFrame with columns:
         BillID, KnessetNum, Name, PrivateNumber,
         is_original, original_bill_id, matched_phrase, method,
-        doc_url, classification_source, last_updated.
+        reference_candidates, reference_candidate_count,
+        reference_resolution_reason, reference_resolution_confidence,
+        multiple_references_detected, submission_date,
+        suspicious_self_resolution, doc_url, classification_source, last_updated.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -131,6 +141,13 @@ def build_doc_based_full(
                     "original_bill_id": bid,
                     "matched_phrase": None,
                     "method": "no_doc_url",
+                    "reference_candidates": "[]",
+                    "reference_candidate_count": 0,
+                    "reference_resolution_reason": None,
+                    "reference_resolution_confidence": None,
+                    "multiple_references_detected": False,
+                    "submission_date": None,
+                    "suspicious_self_resolution": False,
                     "doc_url": None,
                 })
             else:
@@ -152,6 +169,13 @@ def build_doc_based_full(
                     "original_bill_id": r["original_bill_id"] if r["original_bill_id"] else bid,
                     "matched_phrase": r["matched_phrase"],
                     "method": r["method"],
+                    "reference_candidates": _serialize_reference_candidates(r.get("reference_candidates")),
+                    "reference_candidate_count": int(r.get("reference_candidate_count") or 0),
+                    "reference_resolution_reason": r.get("reference_resolution_reason"),
+                    "reference_resolution_confidence": r.get("reference_resolution_confidence"),
+                    "multiple_references_detected": bool(r.get("multiple_references_detected", False)),
+                    "submission_date": r.get("submission_date"),
+                    "suspicious_self_resolution": bool(r.get("suspicious_self_resolution", False)),
                     "doc_url": doc_url,
                 })
 
@@ -185,12 +209,29 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
                 original_bill_id BIGINT,
                 matched_phrase VARCHAR,
                 method VARCHAR,
+                reference_candidates VARCHAR,
+                reference_candidate_count BIGINT,
+                reference_resolution_reason VARCHAR,
+                reference_resolution_confidence DOUBLE,
+                multiple_references_detected BOOLEAN,
+                submission_date VARCHAR,
+                suspicious_self_resolution BOOLEAN,
                 doc_url VARCHAR,
                 classification_source VARCHAR,
                 last_updated TIMESTAMP
             )
             """
         )
+        for ddl in [
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS reference_candidates VARCHAR",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS reference_candidate_count BIGINT",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS reference_resolution_reason VARCHAR",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS reference_resolution_confidence DOUBLE",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS multiple_references_detected BOOLEAN",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS submission_date VARCHAR",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS suspicious_self_resolution BOOLEAN",
+        ]:
+            con.execute(ddl)
         con.register("incoming", df)
         con.execute(
             """
@@ -198,7 +239,50 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
             WHERE BillID IN (SELECT BillID FROM incoming)
             """
         )
-        con.execute("INSERT INTO bill_classifications_doc_full SELECT * FROM incoming")
+        con.execute(
+            """
+            INSERT INTO bill_classifications_doc_full (
+                BillID,
+                KnessetNum,
+                Name,
+                PrivateNumber,
+                is_original,
+                original_bill_id,
+                matched_phrase,
+                method,
+                reference_candidates,
+                reference_candidate_count,
+                reference_resolution_reason,
+                reference_resolution_confidence,
+                multiple_references_detected,
+                submission_date,
+                suspicious_self_resolution,
+                doc_url,
+                classification_source,
+                last_updated
+            )
+            SELECT
+                BillID,
+                KnessetNum,
+                Name,
+                PrivateNumber,
+                is_original,
+                original_bill_id,
+                matched_phrase,
+                method,
+                reference_candidates,
+                reference_candidate_count,
+                reference_resolution_reason,
+                reference_resolution_confidence,
+                multiple_references_detected,
+                submission_date,
+                suspicious_self_resolution,
+                doc_url,
+                classification_source,
+                last_updated
+            FROM incoming
+            """
+        )
         n = con.execute("SELECT count(*) FROM bill_classifications_doc_full").fetchone()[0]
         log.info("Wrote %d rows; bill_classifications_doc_full now has %d total", len(df), n)
     finally:

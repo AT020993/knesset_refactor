@@ -41,6 +41,15 @@ import duckdb
 import pandas as pd
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from data.recurring_bills.export_resolution import (  # noqa: E402
+    apply_option_c_post_pass,
+    enrich_from_final_original_bill_id,
+    ensure_columns,
+    strip_timezone_columns,
+    verify_effective_originals,
+)
 
 
 def _reason_for_tal_self_loop(row: pd.Series) -> str:
@@ -55,111 +64,14 @@ def _reason_for_tal_self_loop(row: pd.Series) -> str:
     return "tal_no_pinpoint_ancestor"
 
 
-def apply_option_c_post_pass(merged: pd.DataFrame) -> pd.DataFrame:
-    """Add is_recurring_upstream / effective_original_reason and resolve chains.
-
-    Algorithm:
-    1. Freeze the factual reprise signal (``is_recurring_upstream``) before edits.
-    2. For every bill, walk up the raw-chain using (original_bill_id, is_original)
-       as they came from the warehouse. The walk stops at:
-         - an ancestor inside Amnon's Excel that is raw-original  →  traceable
-         - self-loop (Tal cross-term encoding, unresolved doc ref) →  UNTRACEABLE
-         - a parent missing from Amnon's Excel                    →  UNTRACEABLE
-         - a cycle                                                →  UNTRACEABLE
-    3. Traceable bills: ``is_original`` stays False,
-       ``original_bill_id`` becomes the deepest raw-original found (chain flattened).
-    4. Untraceable recurring bills: flip to effective-original
-       (``is_original`` = True, ``original_bill_id`` = self) with a
-       ``effective_original_reason`` explaining why.
-
-    Mutates and returns the DataFrame.
-    """
-    merged["is_recurring_upstream"] = merged["is_original"].eq(False)
-    merged["effective_original_reason"] = pd.NA
-
-    excel_ids = set(merged["BillID"].dropna().astype(int))
-
-    # Snapshot RAW state — the chain walker must see the original warehouse
-    # labels, not the mutated post-pass values.
-    raw_parent = {
-        int(b): (None if pd.isna(p) else int(p))
-        for b, p in zip(merged["BillID"], merged["original_bill_id"])
-    }
-    raw_is_orig = {
-        int(b): bool(v) if pd.notna(v) else False
-        for b, v in zip(merged["BillID"], merged["is_original"])
-    }
-
-    def walk_to_original(bid: int) -> int | None:
-        """Return the BillID of the deepest raw-original ancestor inside
-        Amnon's Excel, or None if untraceable (self-loop, off-corpus, cycle).
-        """
-        seen: set[int] = set()
-        cur = bid
-        while cur not in seen:
-            seen.add(cur)
-            if cur not in excel_ids:
-                return None  # ancestor outside Amnon's Excel
-            if raw_is_orig.get(cur, False):
-                return cur if cur != bid else None
-            parent = raw_parent.get(cur)
-            if parent is None or parent == cur:
-                return None  # self-loop / dead end
-            cur = parent
-        return None  # cycle
-
-    def reason_for(row: pd.Series) -> str:
-        """Pick the most specific reason for an untraceable bill."""
-        src = row.get("classification_source")
-        orig_id = row.get("original_bill_id")
-        if src == "tal_alovitz" and not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
-            return _reason_for_tal_self_loop(row)
-        if src == "doc_based_unresolved_k16_k18":
-            return "doc_unresolved"
-        return "ancestor_outside_excel"
-
-    rec_rows = merged[merged["is_original"] == False]  # noqa: E712
-    for idx in rec_rows.index:
-        bid = int(merged.at[idx, "BillID"])
-        ancestor = walk_to_original(bid)
-        if ancestor is not None:
-            # Traceable — keep recurring, point at deepest original (chain flattened)
-            merged.at[idx, "original_bill_id"] = ancestor
-        else:
-            # Untraceable — promote to effective-original
-            merged.at[idx, "is_original"] = True
-            merged.at[idx, "original_bill_id"] = bid
-            merged.at[idx, "effective_original_reason"] = reason_for(merged.loc[idx])
-
-    return merged
-
-
-def verify(merged: pd.DataFrame) -> dict:
-    """Post-pass integrity check. Returns dict of violation counts (all should be 0)."""
-    has_cls = merged[merged["classification_source"].notna()].copy()
-    orig = has_cls[has_cls["is_original"] == True]  # noqa: E712
-    rec = has_cls[has_cls["is_original"] == False]  # noqa: E712
-
-    all_ids = set(merged["BillID"].dropna().astype(int))
-    chain = dict(zip(has_cls["BillID"].astype(int), has_cls["is_original"].astype(bool)))
-
-    violations = {
-        "originals_not_self_referencing": int(
-            ((orig["original_bill_id"].astype("Int64") != orig["BillID"].astype("Int64"))).sum()
-        ),
-        "recurring_self_referencing": int(
-            ((rec["original_bill_id"].astype("Int64") == rec["BillID"].astype("Int64"))).sum()
-        ),
-        "recurring_ancestor_outside_excel": int(
-            (~rec["original_bill_id"].isin(all_ids)).sum()
-        ),
-        "recurring_ancestor_also_recurring": int(
-            rec["original_bill_id"].astype("Int64").map(
-                lambda x: False if pd.isna(x) else not chain.get(int(x), True)
-            ).sum()
-        ),
-    }
-    return violations
+def _reason_for_excel_row(row: pd.Series) -> str:
+    src = row.get("classification_source")
+    orig_id = row.get("original_bill_id")
+    if src == "tal_alovitz" and not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
+        return _reason_for_tal_self_loop(row)
+    if src == "doc_based_unresolved_k16_k18":
+        return "doc_unresolved"
+    return "ancestor_outside_excel"
 
 
 def export(
@@ -172,20 +84,7 @@ def export(
 
     con = duckdb.connect(str(db_path), read_only=True)
     try:
-        cls = con.execute(
-            """
-            SELECT
-                BillID,
-                is_original,
-                original_bill_id,
-                tal_category,
-                family_size,
-                classification_source
-            FROM bill_classifications
-            """
-        ).df()
-        # Pull KnessetNum + PrivateNumber for every bill, so we can look up
-        # the ancestor's K# + פ/NNN reference that appears in דברי ההסבר.
+        cls = con.execute("SELECT * FROM bill_classifications").df()
         bill_ref = con.execute(
             """
             SELECT BillID AS original_bill_id,
@@ -198,19 +97,37 @@ def export(
     finally:
         con.close()
 
+    cls = ensure_columns(
+        cls,
+        {
+            "tal_category": None,
+            "family_size": None,
+            "classification_source": None,
+            "matched_phrase": None,
+            "method": None,
+            "reference_candidates": "[]",
+            "reference_candidate_count": 0,
+            "reference_resolution_reason": None,
+            "reference_resolution_confidence": None,
+            "multiple_references_detected": False,
+            "submission_date": None,
+            "suspicious_self_resolution": False,
+        },
+    )
     merged = xl.merge(cls, on="BillID", how="left")
-    # Enrich with ancestor's K# + PrivateNumber. For self-referential originals
-    # (is_original=True and original_bill_id=BillID) this yields the bill's own
-    # K# + PN, which is redundant but harmless — the row's own KnessetNum /
-    # PrivateNumber columns already carry that info.
-    merged = merged.merge(bill_ref, on="original_bill_id", how="left")
 
     # Raw counts BEFORE post-pass (for before/after reporting)
     raw_originals = int((merged["is_original"] == True).sum())  # noqa: E712
     raw_recurring = int((merged["is_original"] == False).sum())  # noqa: E712
 
-    merged = apply_option_c_post_pass(merged)
-    violations = verify(merged)
+    merged = apply_option_c_post_pass(merged, reason_for=_reason_for_excel_row)
+    merged = enrich_from_final_original_bill_id(merged, bill_ref)
+    violations = verify_effective_originals(
+        merged,
+        outside_label="recurring_ancestor_outside_excel",
+        classification_mask=merged["classification_source"].notna(),
+    )
+    merged = strip_timezone_columns(merged)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_excel(output_path, index=False)

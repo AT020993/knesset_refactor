@@ -41,13 +41,15 @@ SELECT
     bi.BillID                       AS bill_id,
     CAST(b.KnessetNum AS INTEGER)   AS knesset_num,
     b.SubTypeDesc                   AS stage,
-    ubc.CAPMinorCode                AS cap_code,
+    COALESCE(ubcap_tax.MajorCode, ubcoding.MajorCAP) AS cap_code,
     b.PublicationDate               AS submit_date,
     CAST(bi.Ordinal AS INTEGER)     AS initiator_ordinal,
     bi.IsInitiator                  AS is_main_initiator
 FROM KNS_BillInitiator bi
 JOIN KNS_Bill b ON bi.BillID = b.BillID
-LEFT JOIN UserBillCAP ubc ON bi.BillID = ubc.BillID
+LEFT JOIN UserBillCoding ubcoding ON bi.BillID = ubcoding.BillID
+LEFT JOIN UserBillCAP ubcap ON bi.BillID = ubcap.BillID
+LEFT JOIN UserCAPTaxonomy ubcap_tax ON ubcap.CAPMinorCode = ubcap_tax.MinorCode
 WHERE bi.PersonID IS NOT NULL
 ORDER BY bi.BillID, bi.Ordinal, bi.PersonID
 """.strip()

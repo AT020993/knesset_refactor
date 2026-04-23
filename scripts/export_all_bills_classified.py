@@ -39,120 +39,42 @@ import duckdb
 import pandas as pd
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+from data.recurring_bills.export_resolution import (  # noqa: E402
+    apply_option_c_post_pass,
+    classify_recurrence_type,
+    enrich_from_final_original_bill_id,
+    ensure_columns,
+    strip_timezone_columns,
+    verify_effective_originals,
+)
 
 
-def apply_option_c_post_pass(df: pd.DataFrame) -> pd.DataFrame:
-    """Same semantics as scripts/export_amnon_from_our_scan.py, adapted to
-    operate over the complete warehouse universe (not a subset).
-
-    Algorithm:
-    1. Capture factual reprise signal as ``is_recurring_upstream``.
-    2. Walk each recurring bill up the chain. Stop at: an ancestor with
-       is_original=True → traceable. Self-loop, off-universe parent, or
-       cycle → untraceable.
-    3. Traceable: keep is_original=False, flatten original_bill_id.
-    4. Untraceable: flip to is_original=True, reason explains why.
-    """
-    df["is_recurring_upstream"] = df["is_original"].eq(False)
-    df["effective_original_reason"] = pd.NA
-
-    universe_ids = set(df["BillID"].dropna().astype(int))
-
-    raw_parent = {
-        int(b): (None if pd.isna(p) else int(p))
-        for b, p in zip(df["BillID"], df["original_bill_id"])
-    }
-    raw_is_orig = {
-        int(b): bool(v) if pd.notna(v) else False
-        for b, v in zip(df["BillID"], df["is_original"])
-    }
-
-    def walk_to_original(bid: int) -> int | None:
-        seen: set[int] = set()
-        cur = bid
-        while cur not in seen:
-            seen.add(cur)
-            if cur not in universe_ids:
-                return None
-            if raw_is_orig.get(cur, False):
-                return cur if cur != bid else None
-            parent = raw_parent.get(cur)
-            if parent is None or parent == cur:
-                return None
-            cur = parent
-        return None
-
-    def reason_for(row: pd.Series) -> str:
-        m = row.get("method")
-        if m == "doc_fetch_failed":
-            return "doc_fetch_failed"
-        if m == "no_doc_url":
-            return "no_doc_url"
-        orig_id = row.get("original_bill_id")
-        if not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
-            return "doc_no_ancestor_found"
-        return "ancestor_outside_universe"
-
-    rec_idx = df.index[df["is_original"] == False]  # noqa: E712
-    for idx in rec_idx:
-        bid = int(df.at[idx, "BillID"])
-        ancestor = walk_to_original(bid)
-        if ancestor is not None:
-            df.at[idx, "original_bill_id"] = ancestor
-        else:
-            df.at[idx, "is_original"] = True
-            df.at[idx, "original_bill_id"] = bid
-            df.at[idx, "effective_original_reason"] = reason_for(df.loc[idx])
-
-    return df
-
-
-def verify(df: pd.DataFrame) -> dict:
-    orig = df[df["is_original"] == True]  # noqa: E712
-    rec = df[df["is_original"] == False]  # noqa: E712
-    all_ids = set(df["BillID"].dropna().astype(int))
-    chain = dict(zip(df["BillID"].astype(int), df["is_original"].astype(bool)))
-    return {
-        "originals_not_self_referencing": int(
-            (orig["original_bill_id"].astype("Int64") != orig["BillID"].astype("Int64")).sum()
-        ),
-        "recurring_self_referencing": int(
-            (rec["original_bill_id"].astype("Int64") == rec["BillID"].astype("Int64")).sum()
-        ),
-        "recurring_ancestor_outside_universe": int(
-            (~rec["original_bill_id"].isin(all_ids)).sum()
-        ),
-        "recurring_ancestor_also_recurring": int(
-            rec["original_bill_id"].astype("Int64").map(
-                lambda x: False if pd.isna(x) else not chain.get(int(x), True)
-            ).sum()
-        ),
-    }
+def _reason_for_doc_row(row: pd.Series) -> str:
+    method = row.get("method")
+    if method == "doc_fetch_failed":
+        return "doc_fetch_failed"
+    if method == "no_doc_url":
+        return "no_doc_url"
+    orig_id = row.get("original_bill_id")
+    if not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
+        return "doc_no_ancestor_found"
+    return "ancestor_outside_universe"
 
 
 def export(*, db_path: Path, output_path: Path) -> dict:
     con = duckdb.connect(str(db_path), read_only=True)
     try:
-        df = con.execute(
+        cls = con.execute("SELECT * FROM bill_classifications_doc_full").df()
+        bill_meta = con.execute(
             """
             SELECT
-                c.BillID,
-                c.KnessetNum,
-                c.Name,
-                c.PrivateNumber,
-                b.SubTypeDesc,
-                c.doc_url,
-                c.method,
-                c.matched_phrase,
-                c.is_original,
-                c.original_bill_id,
-                c.classification_source
-            FROM bill_classifications_doc_full c
-            LEFT JOIN KNS_Bill b ON c.BillID = b.BillID
-            ORDER BY c.KnessetNum, c.BillID
+                BillID,
+                SubTypeDesc
+            FROM KNS_Bill
             """
         ).df()
-        # Ancestor K# + פ/NNN reference
         bill_ref = con.execute(
             """
             SELECT BillID AS original_bill_id,
@@ -165,31 +87,31 @@ def export(*, db_path: Path, output_path: Path) -> dict:
     finally:
         con.close()
 
+    cls = ensure_columns(
+        cls,
+        {
+            "reference_candidates": "[]",
+            "reference_candidate_count": 0,
+            "reference_resolution_reason": None,
+            "reference_resolution_confidence": None,
+            "multiple_references_detected": False,
+            "submission_date": None,
+            "suspicious_self_resolution": False,
+        },
+    )
+    df = cls.merge(bill_meta, on="BillID", how="left").sort_values(["KnessetNum", "BillID"], kind="stable")
+
     raw_originals = int((df["is_original"] == True).sum())  # noqa: E712
     raw_recurring = int((df["is_original"] == False).sum())  # noqa: E712
 
-    # Derive recurrence_type from matched_phrase BEFORE the Option-C post-pass
-    # (post-pass may flip untraceable recurring → effective-original, and those
-    # rows should still carry the upstream recurrence_type for analysis).
-    def _classify_type(phrase):
-        if phrase is None or (isinstance(phrase, float) and pd.isna(phrase)):
-            return None
-        s = str(phrase)
-        # "Similar"-family: explicit דומה or "building on" phrases
-        if "דומה" in s or "המשך" in s:
-            return "similar"
-        # "Identical"-family: זהה, חוזר (re-submission), or the standard
-        # bureaucratic tabling boilerplate which almost always accompanies
-        # an identical re-submission.
-        if "זהה" in s or "חוזר" in s or s.startswith("הונחה") or s.startswith("הוגש") or s.startswith("ומספרה"):
-            return "identical"
-        return None
+    df["recurrence_type"] = df["matched_phrase"].apply(classify_recurrence_type)
 
-    df["recurrence_type"] = df["matched_phrase"].apply(_classify_type)
-
-    df = apply_option_c_post_pass(df)
-    df = df.merge(bill_ref, on="original_bill_id", how="left")
-    violations = verify(df)
+    df = apply_option_c_post_pass(df, reason_for=_reason_for_doc_row)
+    df = enrich_from_final_original_bill_id(df, bill_ref)
+    violations = verify_effective_originals(
+        df,
+        outside_label="recurring_ancestor_outside_universe",
+    )
 
     # Column ordering — most useful columns first for Amnon
     col_order = [
@@ -199,8 +121,12 @@ def export(*, db_path: Path, output_path: Path) -> dict:
         "original_knesset_num", "original_private_number",
         "is_recurring_upstream", "recurrence_type", "effective_original_reason",
         "method", "matched_phrase", "classification_source",
+        "reference_candidate_count", "reference_resolution_reason",
+        "reference_resolution_confidence", "multiple_references_detected",
+        "suspicious_self_resolution", "submission_date", "reference_candidates",
     ]
     df = df[col_order]
+    df = strip_timezone_columns(df)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_excel(output_path, index=False)
