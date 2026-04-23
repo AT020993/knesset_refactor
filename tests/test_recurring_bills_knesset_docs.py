@@ -8,11 +8,13 @@ from unittest.mock import MagicMock, patch
 import duckdb
 
 from data.recurring_bills.knesset_docs import (
+    classify_recurrence_phrase,
     classify_bill_from_doc,
     download_doc,
     extract_submission_date,
     parse_recurrence_signals,
     resolve_link_back,
+    validate_submission_date,
 )
 
 
@@ -203,6 +205,21 @@ class TestParseRecurrenceSignals:
         1.12.31
         """
         assert extract_submission_date(text, current_knesset=14) is None
+
+    def test_rejects_future_iso_submission_date(self):
+        assert validate_submission_date("2031-12-01", current_knesset=14) is None
+
+    def test_rejects_pre_state_submission_date(self):
+        assert validate_submission_date("0196-11-29", current_knesset=5) is None
+
+    def test_rejects_out_of_period_submission_date(self):
+        assert validate_submission_date("2019-08-05", current_knesset=3) is None
+
+    def test_classifies_plural_recurrence_phrases(self):
+        assert classify_recurrence_phrase("הצעות חוק זהות") == "identical"
+        assert classify_recurrence_phrase("הצעות חוק דומות") == "similar"
+        assert classify_recurrence_phrase("הצעות חוק דומות בעיקרן") == "similar"
+        assert classify_recurrence_phrase("הצעות  חוק  זהות") == "identical"
 
     def test_amnon_plural_similar_fixture_preserves_all_reference_evidence(self):
         signals = parse_recurrence_signals(AMNON_CASE_548636_TEXT, current_knesset=19)

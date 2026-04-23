@@ -8,6 +8,8 @@ import runpy
 import duckdb
 import pandas as pd
 
+from data.recurring_bills.export_resolution import classify_recurrence_type
+
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXPORT_ALL = runpy.run_path(str(_REPO_ROOT / "scripts" / "export_all_bills_classified.py"))["export"]
@@ -38,6 +40,7 @@ def _build_db(db_path: Path) -> None:
                 (2, 19, "Current bill", 222, "Private"),
                 (3, 19, "Mid-chain bill", 333, "Private"),
                 (4, 1, "Historic bill", 444, "Private"),
+                (5, 19, "Plural recurring bill", 555, "Private"),
             ],
         )
         con.execute(
@@ -97,6 +100,13 @@ def _build_db(db_path: Path) -> None:
                     "2049-11-23", False, False, None, "https://example/4.doc", "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
+                (
+                    5, 19, "Plural recurring bill", 555, False, 1,
+                    "הצעות  חוק  דומות  בעיקרן", "doc_pattern_linked", "[]", 1,
+                    "explicit_private_number_and_knesset", 0.99, False,
+                    "2014-02-24", False, False, None, "https://example/5.doc", "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
             ],
         )
     finally:
@@ -117,6 +127,7 @@ class TestExportResolution:
                 {"BillID": 2, "Name": "Current bill"},
                 {"BillID": 3, "Name": "Mid-chain bill"},
                 {"BillID": 4, "Name": "Historic bill"},
+                {"BillID": 5, "Name": "Plural recurring bill"},
             ]
         ).to_excel(excel_path, index=False)
 
@@ -151,6 +162,7 @@ class TestExportResolution:
                 {"BillID": 2, "Name": "Current bill"},
                 {"BillID": 3, "Name": "Mid-chain bill"},
                 {"BillID": 4, "Name": "Historic bill"},
+                {"BillID": 5, "Name": "Plural recurring bill"},
             ]
         ).to_excel(excel_path, index=False)
 
@@ -165,3 +177,24 @@ class TestExportResolution:
 
         assert pd.isna(row_scan["submission_date"])
         assert pd.isna(row_all["submission_date"])
+
+    def test_classify_recurrence_type_handles_plural_variants(self):
+        assert classify_recurrence_type("הצעות חוק זהות") == "identical"
+        assert classify_recurrence_type("הצעות חוק דומות") == "similar"
+        assert classify_recurrence_type("הצעות חוק דומות בעיקרן") == "similar"
+        assert classify_recurrence_type("הצעות  חוק  דומות  בעיקרן") == "similar"
+
+    def test_final_export_writes_corrected_submission_date_and_recurrence_type(self, tmp_path: Path):
+        db_path = tmp_path / "warehouse.duckdb"
+        output_all = tmp_path / "all.xlsx"
+
+        _build_db(db_path)
+        _EXPORT_ALL(db_path=db_path, output_path=output_all)
+
+        df_all = pd.read_excel(output_all)
+        historic_row = df_all.loc[df_all["BillID"] == 4].iloc[0]
+        plural_row = df_all.loc[df_all["BillID"] == 5].iloc[0]
+
+        assert pd.isna(historic_row["submission_date"])
+        assert plural_row["submission_date"] == "2014-02-24"
+        assert plural_row["recurrence_type"] == "similar"

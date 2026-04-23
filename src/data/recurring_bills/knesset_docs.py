@@ -478,6 +478,21 @@ def _normalize_hebrew_phrase_text(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", _DASH_RE.sub("-", text or "")).strip()
 
 
+def classify_recurrence_phrase(matched_phrase: object) -> str | None:
+    """Classify an extracted recurrence phrase using the parser's regex rules."""
+    if matched_phrase is None:
+        return None
+
+    phrase = _normalize_hebrew_phrase_text(str(matched_phrase))
+    if not phrase or phrase.lower() == "nan":
+        return None
+
+    for spec in _RECURRENCE_PATTERNS:
+        if spec["pattern"].search(phrase):
+            return spec["recurrence_type"]
+    return None
+
+
 def _extract_contextual_knesset(text: str, *, current_knesset: int | None = None) -> int | None:
     normalized = _normalize_hebrew_phrase_text(text)
     if current_knesset and _PATTERN_PREVIOUS_KNESSET.search(normalized):

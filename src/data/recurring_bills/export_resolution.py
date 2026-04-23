@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from data.recurring_bills.knesset_docs import validate_submission_date
+from data.recurring_bills.knesset_docs import classify_recurrence_phrase, validate_submission_date
 
 
 def ensure_columns(df: pd.DataFrame, defaults: dict[str, object]) -> pd.DataFrame:
@@ -120,21 +120,9 @@ def verify_effective_originals(
 
 
 def classify_recurrence_type(matched_phrase: object) -> str | None:
-    if matched_phrase is None or (isinstance(matched_phrase, float) and pd.isna(matched_phrase)):
+    if matched_phrase is None or pd.isna(matched_phrase):
         return None
-
-    phrase = str(matched_phrase)
-    if "דומה" in phrase or "המשך" in phrase:
-        return "similar"
-    if (
-        "זהה" in phrase
-        or "חוזר" in phrase
-        or phrase.startswith("הונחה")
-        or phrase.startswith("הוגש")
-        or phrase.startswith("ומספרה")
-    ):
-        return "identical"
-    return None
+    return classify_recurrence_phrase(matched_phrase)
 
 
 def strip_timezone_columns(df: pd.DataFrame) -> pd.DataFrame:
