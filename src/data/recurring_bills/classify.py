@@ -78,6 +78,8 @@ def build_tal_classifications(
     bulk["multiple_references_detected"] = False
     bulk["submission_date"] = bulk.get("submission_date")
     bulk["suspicious_self_resolution"] = False
+    bulk["ambiguous_reference_resolution"] = False
+    bulk["ambiguous_reference_reason"] = None
     bulk["tal_fetched_at"] = now
     bulk["last_updated"] = now
 
@@ -89,6 +91,7 @@ def build_tal_classifications(
         "reference_resolution_reason", "reference_resolution_confidence",
         "multiple_references_detected", "submission_date",
         "suspicious_self_resolution",
+        "ambiguous_reference_resolution", "ambiguous_reference_reason",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",
@@ -132,6 +135,8 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
     xl["multiple_references_detected"] = False
     xl["submission_date"] = None
     xl["suspicious_self_resolution"] = False
+    xl["ambiguous_reference_resolution"] = False
+    xl["ambiguous_reference_reason"] = None
     xl["tal_category"] = None
     xl["is_cross_term"] = None
     xl["is_within_term_dup"] = None
@@ -148,6 +153,7 @@ def build_k16_k18_fallback(excel_path: Path) -> pd.DataFrame:
         "reference_resolution_reason", "reference_resolution_confidence",
         "multiple_references_detected", "submission_date",
         "suspicious_self_resolution",
+        "ambiguous_reference_resolution", "ambiguous_reference_reason",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",
@@ -207,6 +213,8 @@ def build_k16_k18_doc_based(
                     "multiple_references_detected": False,
                     "submission_date": None,
                     "suspicious_self_resolution": False,
+                    "ambiguous_reference_resolution": False,
+                    "ambiguous_reference_reason": None,
                 })
             else:
                 first_url = docs.split("\n")[0].strip()
@@ -235,6 +243,10 @@ def build_k16_k18_doc_based(
                     "multiple_references_detected": bool(r.get("multiple_references_detected", False)),
                     "submission_date": r.get("submission_date"),
                     "suspicious_self_resolution": bool(r.get("suspicious_self_resolution", False)),
+                    "ambiguous_reference_resolution": bool(
+                        r.get("ambiguous_reference_resolution", False)
+                    ),
+                    "ambiguous_reference_reason": r.get("ambiguous_reference_reason"),
                 })
             if progress_cb:
                 progress_cb(int(i) + 1, total, bid, results[-1]["method"])
@@ -272,6 +284,7 @@ def build_k16_k18_doc_based(
         "reference_resolution_reason", "reference_resolution_confidence",
         "multiple_references_detected", "submission_date",
         "suspicious_self_resolution",
+        "ambiguous_reference_resolution", "ambiguous_reference_reason",
         "tal_category", "is_cross_term", "is_within_term_dup", "is_self_resubmission",
         "family_size", "predecessor_bill_ids",
         "classification_source", "tal_fetched_at", "last_updated",

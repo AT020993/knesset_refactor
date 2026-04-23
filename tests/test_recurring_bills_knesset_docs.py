@@ -15,6 +15,38 @@ from data.recurring_bills.knesset_docs import (
 )
 
 
+# Derived from Amnon's reported doc:
+# https://fs.knesset.gov.il/19/law/19_lst_268588.docx
+AMNON_CASE_544468_TEXT = """
+פ/2056/19
+דברי הסבר
+הצעת חוק זהה הונחה על שולחן הכנסת התשע-עשרה על ידי חבר הכנסת שמעון סולומון
+וקבוצת חברי הכנסת (פ/1915/19).
+
+---------------------------------
+הוגשה ליו"ר הכנסת והסגנים
+והונחה על שולחן הכנסת ביום
+י"ד בשבט התשע"ד – 15.1.14
+"""
+
+# Derived from Amnon's reported doc:
+# https://fs.knesset.gov.il/19/law/19_lst_273433.docx
+AMNON_CASE_548636_TEXT = """
+דברי הסבר
+הצעות חוק דומות בעיקרן הונחו על שולחן הכנסת השש-עשרה על ידי חברת הכנסת ענבל גבריאלי
+וקבוצת חברי הכנסת (פ/611), על ידי חבר הכנסת אילן שלגי וקבוצת חברי הכנסת (פ/3064)
+וחבר הכנסת דני יתום (פ/3249), על שולחן הכנסת השבע-עשרה על ידי חבר הכנסת יואל חסון
+(פ/818/17) וחבר הכנסת יולי יואל אדלשטיין (פ/2457/17), ועל שולחן הכנסת השמונה-עשרה
+על ידי חבר הכנסת יולי יואל אדלשטיין (פ/131/18).
+הצעת חוק זהה הונחה על שולחן הכנסת השמונה-עשרה על ידי חבר הכנסת אורי אורבך (פ/3068/18).
+
+---------------------------------
+הוגשה ליו"ר הכנסת והסגנים
+והונחה על שולחן הכנסת ביום
+כ"ד באדר א' התשע"ד – 24.2.14
+"""
+
+
 def _make_con(rows: list[tuple[int, int, int]]) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(":memory:")
     con.execute(
@@ -99,8 +131,22 @@ class TestParseRecurrenceSignals:
         signals = parse_recurrence_signals(text)
         assert signals["submission_date"] == "2014-01-15"
 
+    def test_amnon_plural_similar_fixture_preserves_all_reference_evidence(self):
+        signals = parse_recurrence_signals(AMNON_CASE_548636_TEXT, current_knesset=19)
+        assert signals["is_recurring"] is True
+        assert signals["multiple_references_detected"] is True
+        assert signals["reference_candidate_count"] == 7
+        recurrence_types = {candidate["recurrence_type"] for candidate in signals["reference_candidates"]}
+        assert recurrence_types == {"identical", "similar"}
+        assert signals["submission_date"] == "2014-02-24"
+
     def test_extracts_older_knesset_name(self):
         text = "הצעת חוק זהה הונחה על שולחן הכנסת הארבע-עשרה."
+        signals = parse_recurrence_signals(text, current_knesset=15)
+        assert signals["recurrence_phrases"][0]["contextual_knesset"] == 14
+
+    def test_extracts_numeric_knesset_form(self):
+        text = "הצעת חוק זהה הונחה על שולחן הכנסת ה-14."
         signals = parse_recurrence_signals(text, current_knesset=15)
         assert signals["recurrence_phrases"][0]["contextual_knesset"] == 14
 
@@ -249,6 +295,25 @@ class TestClassifyBillFromDoc:
         assert result["original_bill_id"] == 164137
         assert result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
 
+    def test_numeric_older_knesset_phrase_beats_same_knesset_fallback(self, tmp_path: Path):
+        con = _make_con(
+            [
+                (170608, 15, 1147),
+                (164020, 14, 1147),
+            ]
+        )
+        text = "הצעה זהה הונחה על שולחן הכנסת ה-14 ומספרה פ/1147."
+        result = _classify_from_text(
+            tmp_path=tmp_path,
+            warehouse_con=con,
+            text=text,
+            bill_id=167879,
+            current_knesset=15,
+        )
+
+        assert result["original_bill_id"] == 164020
+        assert result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
+
     def test_explicit_private_number_and_knesset_beats_bare_header_reference(self, tmp_path: Path):
         con = _make_con(
             [
@@ -257,21 +322,10 @@ class TestClassifyBillFromDoc:
                 (488544, 19, 1915),
             ]
         )
-        text = """
-        פ/2056/19
-        דברי הסבר
-        הצעת חוק זהה הונחה על שולחן הכנסת התשע-עשרה על ידי חבר הכנסת שמעון סולומון
-        וקבוצת חברי הכנסת (פ/1915/19).
-
-        ---------------------------------
-        הוגשה ליו"ר הכנסת והסגנים
-        והונחה על שולחן הכנסת ביום
-        י"ד בשבט התשע"ד – 15.1.14
-        """
         result = _classify_from_text(
             tmp_path=tmp_path,
             warehouse_con=con,
-            text=text,
+            text=AMNON_CASE_544468_TEXT,
             bill_id=544468,
             current_knesset=19,
         )
@@ -360,12 +414,39 @@ class TestClassifyBillFromDoc:
     def test_both_identical_and_similar_references_are_preserved(self, tmp_path: Path):
         con = _make_con(
             [
-                (170001, 17, 100),
-                (180001, 18, 101),
+                (160611, 16, 611),
+                (163064, 16, 3064),
+                (163249, 16, 3249),
+                (170818, 17, 818),
+                (172457, 17, 2457),
+                (180131, 18, 131),
+                (183068, 18, 3068),
+            ]
+        )
+        result = _classify_from_text(
+            tmp_path=tmp_path,
+            warehouse_con=con,
+            text=AMNON_CASE_548636_TEXT,
+            bill_id=548636,
+            current_knesset=19,
+        )
+
+        assert result["original_bill_id"] == 183068
+        assert result["multiple_references_detected"] is True
+        assert result["reference_candidate_count"] == 7
+        recurrence_types = {candidate["recurrence_type"] for candidate in result["reference_candidates"]}
+        assert recurrence_types == {"identical", "similar"}
+        assert result["reference_resolution_reason"] == "explicit_private_number_and_knesset"
+
+    def test_equally_strong_primary_candidates_are_marked_ambiguous(self, tmp_path: Path):
+        con = _make_con(
+            [
+                (180100, 18, 100),
+                (180101, 18, 101),
             ]
         )
         text = """
-        הצעת חוק דומה הוגשה בכנסת השבע-עשרה (פ/100/17).
+        הצעת חוק זהה הונחה על שולחן הכנסת השמונה-עשרה (פ/100/18).
         הצעת חוק זהה הונחה על שולחן הכנסת השמונה-עשרה (פ/101/18).
         """
         result = _classify_from_text(
@@ -376,11 +457,39 @@ class TestClassifyBillFromDoc:
             current_knesset=19,
         )
 
-        assert result["original_bill_id"] == 180001
-        assert result["multiple_references_detected"] is True
-        assert result["reference_candidate_count"] == 2
-        recurrence_types = {candidate["recurrence_type"] for candidate in result["reference_candidates"]}
-        assert recurrence_types == {"identical", "similar"}
+        assert result["original_bill_id"] is None
+        assert result["method"] == "doc_pattern_unresolved"
+        assert result["ambiguous_reference_resolution"] is True
+        assert result["ambiguous_reference_reason"] == "multiple_equally_strong_candidates"
+        assert result["reference_resolution_reason"] == "ambiguous_primary_reference_candidates"
+        top_candidates = [c for c in result["reference_candidates"] if c["tied_for_best"]]
+        assert {candidate["resolved_bill_id"] for candidate in top_candidates} == {180100, 180101}
+
+    def test_suspicious_self_reference_never_wins_over_valid_candidate(self, tmp_path: Path):
+        con = _make_con(
+            [
+                (544468, 19, 2056),
+                (488544, 19, 1915),
+            ]
+        )
+        text = """
+        הצעת חוק זהה הונחה על שולחן הכנסת התשע-עשרה (פ/2056/19).
+        הצעת חוק זהה הונחה על שולחן הכנסת התשע-עשרה (פ/1915/19).
+        """
+        result = _classify_from_text(
+            tmp_path=tmp_path,
+            warehouse_con=con,
+            text=text,
+            bill_id=544468,
+            current_knesset=19,
+        )
+
+        assert result["original_bill_id"] == 488544
+        assert result["suspicious_self_resolution"] is True
+        assert result["ambiguous_reference_resolution"] is False
+        selected = [candidate for candidate in result["reference_candidates"] if candidate["selected"]]
+        assert [candidate["resolved_bill_id"] for candidate in selected] == [488544]
+        assert all(candidate["resolved_bill_id"] != 544468 for candidate in selected)
 
     def test_no_pattern(self, tmp_path: Path):
         result = _classify_from_text(

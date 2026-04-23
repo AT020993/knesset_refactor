@@ -57,6 +57,10 @@ def _reason_for_doc_row(row: pd.Series) -> str:
         return "doc_fetch_failed"
     if method == "no_doc_url":
         return "no_doc_url"
+    if bool(row.get("ambiguous_reference_resolution", False)):
+        return "ambiguous_doc_reference"
+    if bool(row.get("suspicious_self_resolution", False)):
+        return "suspicious_self_reference_only"
     orig_id = row.get("original_bill_id")
     if not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
         return "doc_no_ancestor_found"
@@ -97,6 +101,8 @@ def export(*, db_path: Path, output_path: Path) -> dict:
             "multiple_references_detected": False,
             "submission_date": None,
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         },
     )
     df = cls.merge(bill_meta, on="BillID", how="left").sort_values(["KnessetNum", "BillID"], kind="stable")
@@ -123,7 +129,8 @@ def export(*, db_path: Path, output_path: Path) -> dict:
         "method", "matched_phrase", "classification_source",
         "reference_candidate_count", "reference_resolution_reason",
         "reference_resolution_confidence", "multiple_references_detected",
-        "suspicious_self_resolution", "submission_date", "reference_candidates",
+        "suspicious_self_resolution", "ambiguous_reference_resolution",
+        "ambiguous_reference_reason", "submission_date", "reference_candidates",
     ]
     df = df[col_order]
     df = strip_timezone_columns(df)

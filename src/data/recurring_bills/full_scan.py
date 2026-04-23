@@ -91,7 +91,8 @@ def build_doc_based_full(
         reference_candidates, reference_candidate_count,
         reference_resolution_reason, reference_resolution_confidence,
         multiple_references_detected, submission_date,
-        suspicious_self_resolution, doc_url, classification_source, last_updated.
+        suspicious_self_resolution, ambiguous_reference_resolution,
+        ambiguous_reference_reason, doc_url, classification_source, last_updated.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -148,6 +149,8 @@ def build_doc_based_full(
                     "multiple_references_detected": False,
                     "submission_date": None,
                     "suspicious_self_resolution": False,
+                    "ambiguous_reference_resolution": False,
+                    "ambiguous_reference_reason": None,
                     "doc_url": None,
                 })
             else:
@@ -176,6 +179,10 @@ def build_doc_based_full(
                     "multiple_references_detected": bool(r.get("multiple_references_detected", False)),
                     "submission_date": r.get("submission_date"),
                     "suspicious_self_resolution": bool(r.get("suspicious_self_resolution", False)),
+                    "ambiguous_reference_resolution": bool(
+                        r.get("ambiguous_reference_resolution", False)
+                    ),
+                    "ambiguous_reference_reason": r.get("ambiguous_reference_reason"),
                     "doc_url": doc_url,
                 })
 
@@ -216,6 +223,8 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
                 multiple_references_detected BOOLEAN,
                 submission_date VARCHAR,
                 suspicious_self_resolution BOOLEAN,
+                ambiguous_reference_resolution BOOLEAN,
+                ambiguous_reference_reason VARCHAR,
                 doc_url VARCHAR,
                 classification_source VARCHAR,
                 last_updated TIMESTAMP
@@ -230,6 +239,8 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
             "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS multiple_references_detected BOOLEAN",
             "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS submission_date VARCHAR",
             "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS suspicious_self_resolution BOOLEAN",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS ambiguous_reference_resolution BOOLEAN",
+            "ALTER TABLE bill_classifications_doc_full ADD COLUMN IF NOT EXISTS ambiguous_reference_reason VARCHAR",
         ]:
             con.execute(ddl)
         con.register("incoming", df)
@@ -257,6 +268,8 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
                 multiple_references_detected,
                 submission_date,
                 suspicious_self_resolution,
+                ambiguous_reference_resolution,
+                ambiguous_reference_reason,
                 doc_url,
                 classification_source,
                 last_updated
@@ -277,6 +290,8 @@ def write_full_scan_table(df: pd.DataFrame, *, db_path: Path) -> None:
                 multiple_references_detected,
                 submission_date,
                 suspicious_self_resolution,
+                ambiguous_reference_resolution,
+                ambiguous_reference_reason,
                 doc_url,
                 classification_source,
                 last_updated

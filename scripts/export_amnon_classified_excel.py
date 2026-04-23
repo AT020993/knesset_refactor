@@ -69,6 +69,10 @@ def _reason_for_excel_row(row: pd.Series) -> str:
     orig_id = row.get("original_bill_id")
     if src == "tal_alovitz" and not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
         return _reason_for_tal_self_loop(row)
+    if bool(row.get("ambiguous_reference_resolution", False)):
+        return "ambiguous_doc_reference"
+    if bool(row.get("suspicious_self_resolution", False)):
+        return "suspicious_self_reference_only"
     if src == "doc_based_unresolved_k16_k18":
         return "doc_unresolved"
     return "ancestor_outside_excel"
@@ -112,6 +116,8 @@ def export(
             "multiple_references_detected": False,
             "submission_date": None,
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         },
     )
     merged = xl.merge(cls, on="BillID", how="left")

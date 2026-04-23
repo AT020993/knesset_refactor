@@ -30,6 +30,10 @@ TEXTUTIL_TIMEOUT_S = 30
 
 _RECURRENCE_PATTERNS = [
     {
+        "pattern": re.compile(r"הצעות\s+חוק\s+דומות(?:\s+בעיקרן)?"),
+        "recurrence_type": "similar",
+    },
+    {
         "pattern": re.compile(r"הצעת\s+חוק\s+דומה"),
         "recurrence_type": "similar",
     },
@@ -39,6 +43,10 @@ _RECURRENCE_PATTERNS = [
     },
     {
         "pattern": re.compile(r"הצעת\s+חוק\s+זהה"),
+        "recurrence_type": "identical",
+    },
+    {
+        "pattern": re.compile(r"הצעות\s+חוק\s+זהות"),
         "recurrence_type": "identical",
     },
     {
@@ -114,8 +122,9 @@ _HEBREW_KNESSET_NUMS = {
     "העשרים וחמש": 25,
 }
 _PATTERN_SUBMISSION_DATE = re.compile(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})")
-_PATTERN_CONTEXT_BREAK = re.compile(r"(?:\n\s*\n|[.!?;:])")
+_PATTERN_CONTEXT_BREAK = re.compile(r"(?:\n\s*\n|[.!?])")
 _PATTERN_PREVIOUS_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+הקודמת")
+_PATTERN_NUMERIC_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+ה[-\s]*(\d{1,2})(?:\b|$)")
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u05BE]")
 _WHITESPACE_RE = re.compile(r"\s+")
 _NORMALIZED_KNESSET_NUMS = {
@@ -124,7 +133,7 @@ _NORMALIZED_KNESSET_NUMS = {
 
 _SCAN_CHAR_LIMIT = 4000
 _SUBMISSION_DATE_TAIL_CHARS = 2000
-_CONTEXT_WINDOW_CHARS = 260
+_CONTEXT_WINDOW_CHARS = 1600
 
 for _phrase, _number in _HEBREW_KNESSET_NUMS.items():
     normalized_phrase = _WHITESPACE_RE.sub(" ", _DASH_RE.sub("-", _phrase)).strip()
@@ -299,6 +308,11 @@ def _extract_contextual_knesset(text: str, *, current_knesset: int | None = None
     if current_knesset and _PATTERN_PREVIOUS_KNESSET.search(normalized):
         return current_knesset - 1 if current_knesset > 1 else None
 
+    numeric_match = _PATTERN_NUMERIC_KNESSET.search(normalized)
+    if numeric_match:
+        knesset_num = int(numeric_match.group(1))
+        return knesset_num if 1 <= knesset_num <= 25 else None
+
     for phrase in _SORTED_NORMALIZED_KNESSET_PHRASES:
         pattern = rf"(?:בכנסת|הכנסת)\s+{re.escape(phrase)}(?:\b|$)"
         if re.search(pattern, normalized):
@@ -353,6 +367,13 @@ def _extract_reference_mentions(occurrences: list[dict]) -> list[dict]:
                 continue
             seen.add(dedupe_key)
             explicit_knesset = int(match.group(2)) if match.group(2) else None
+            phrase_start = occurrence.get("phrase_in_context_start", 0)
+            phrase_end = phrase_start + len(occurrence["phrase_text"])
+            appears_after_phrase = match.start() >= phrase_end
+            if appears_after_phrase:
+                char_distance = match.start() - phrase_end
+            else:
+                char_distance = max(0, phrase_start - match.end())
             mentions.append(
                 {
                     "phrase_index": phrase_index,
@@ -365,6 +386,8 @@ def _extract_reference_mentions(occurrences: list[dict]) -> list[dict]:
                     "explicit_knesset": explicit_knesset,
                     "contextual_knesset": occurrence["contextual_knesset"],
                     "referenced_knesset": explicit_knesset or occurrence["contextual_knesset"],
+                    "appears_after_phrase": appears_after_phrase,
+                    "char_distance_from_phrase": int(char_distance),
                 }
             )
     return mentions
@@ -500,7 +523,9 @@ def _resolve_reference_candidate(
     candidate["reference_resolution_confidence"] = None
     candidate["priority"] = 0
     candidate["selected"] = False
+    candidate["selection_rank"] = None
     candidate["suspicious_self_resolution"] = False
+    candidate["tied_for_best"] = False
 
     if mention["explicit_knesset"] is not None:
         resolved_bill_id = _query_exact_bill_id(
@@ -586,17 +611,72 @@ def _pick_primary_candidate(candidates: list[dict]) -> dict | None:
     if not selectable:
         return None
 
-    selectable.sort(
-        key=lambda candidate: (
-            -int(candidate.get("priority", 0)),
-            0 if candidate.get("recurrence_type") == "identical" else 1,
-            int(candidate.get("phrase_index", 0)),
-            int(candidate.get("reference_index", 0)),
+    def _selection_rank(candidate: dict) -> tuple[int, int, int, int]:
+        return (
+            int(candidate.get("priority", 0)),
+            1 if candidate.get("recurrence_type") == "identical" else 0,
+            1 if candidate.get("appears_after_phrase", False) else 0,
+            -int(candidate.get("char_distance_from_phrase", 1_000_000)),
         )
-    )
-    primary = selectable[0]
+
+    best_by_bill: dict[int, tuple[tuple[int, int, int, int], dict]] = {}
+    for candidate in selectable:
+        rank = _selection_rank(candidate)
+        candidate["selection_rank"] = list(rank)
+        resolved_bill_id = int(candidate["resolved_bill_id"])
+        current = best_by_bill.get(resolved_bill_id)
+        if current is None or rank > current[0]:
+            best_by_bill[resolved_bill_id] = (rank, candidate)
+
+    top_rank = max(rank for rank, _ in best_by_bill.values())
+    top_candidates = [
+        candidate
+        for rank, candidate in best_by_bill.values()
+        if rank == top_rank
+    ]
+    if len(top_candidates) > 1:
+        for candidate in top_candidates:
+            candidate["tied_for_best"] = True
+        return None
+
+    primary = top_candidates[0]
     primary["selected"] = True
     return primary
+
+
+def _has_ambiguous_primary_candidates(candidates: list[dict]) -> bool:
+    selectable = [
+        candidate
+        for candidate in candidates
+        if candidate.get("resolved_bill_id") is not None
+        and not candidate.get("suspicious_self_resolution", False)
+    ]
+    if not selectable:
+        return False
+
+    best_rank_by_bill: dict[int, tuple[int, int, int, int]] = {}
+    for candidate in selectable:
+        selection_rank = candidate.get("selection_rank")
+        if selection_rank is None:
+            selection_rank = [
+                int(candidate.get("priority", 0)),
+                1 if candidate.get("recurrence_type") == "identical" else 0,
+                1 if candidate.get("appears_after_phrase", False) else 0,
+                -int(candidate.get("char_distance_from_phrase", 1_000_000)),
+            ]
+        resolved_bill_id = int(candidate["resolved_bill_id"])
+        rank_tuple = tuple(int(value) for value in selection_rank)
+        current = best_rank_by_bill.get(resolved_bill_id)
+        if current is None or rank_tuple > current:
+            best_rank_by_bill[resolved_bill_id] = rank_tuple
+
+    top_rank = max(best_rank_by_bill.values())
+    top_bill_ids = [
+        bill_id
+        for bill_id, rank in best_rank_by_bill.items()
+        if rank == top_rank
+    ]
+    return len(top_bill_ids) > 1
 
 
 def _build_name_fallback_candidate(
@@ -623,7 +703,9 @@ def _build_name_fallback_candidate(
         "reference_resolution_confidence": confidence,
         "priority": priority,
         "selected": False,
+        "selection_rank": None,
         "suspicious_self_resolution": False,
+        "tied_for_best": False,
     }
 
 
@@ -745,6 +827,8 @@ def classify_bill_from_doc(
             "multiple_references_detected": False,
             "submission_date": None,
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         }
 
     cache_path = cache_dir / f"{bill_id}.{ext}"
@@ -766,6 +850,8 @@ def classify_bill_from_doc(
                 "multiple_references_detected": False,
                 "submission_date": None,
                 "suspicious_self_resolution": False,
+                "ambiguous_reference_resolution": False,
+                "ambiguous_reference_reason": None,
             }
         if path is None:
             return {
@@ -780,6 +866,8 @@ def classify_bill_from_doc(
                 "multiple_references_detected": False,
                 "submission_date": None,
                 "suspicious_self_resolution": False,
+                "ambiguous_reference_resolution": False,
+                "ambiguous_reference_reason": None,
             }
     else:
         path = cache_path
@@ -798,6 +886,8 @@ def classify_bill_from_doc(
             "multiple_references_detected": False,
             "submission_date": None,
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         }
 
     signals = parse_recurrence_signals(text, current_knesset=current_knesset)
@@ -815,6 +905,8 @@ def classify_bill_from_doc(
             "multiple_references_detected": False,
             "submission_date": signals["submission_date"],
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         }
 
     resolved_candidates = [
@@ -835,6 +927,9 @@ def classify_bill_from_doc(
     if name_fallback_candidate is not None:
         resolved_candidates.append(name_fallback_candidate)
     primary = _pick_primary_candidate(resolved_candidates)
+    ambiguous_reference_resolution = primary is None and _has_ambiguous_primary_candidates(
+        resolved_candidates
+    )
     suspicious_self_resolution = any(
         candidate.get("suspicious_self_resolution", False)
         for candidate in resolved_candidates
@@ -854,14 +949,22 @@ def classify_bill_from_doc(
             "multiple_references_detected": signals["multiple_references_detected"],
             "submission_date": signals["submission_date"],
             "suspicious_self_resolution": suspicious_self_resolution,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
         }
 
-    if suspicious_self_resolution:
+    if ambiguous_reference_resolution:
+        resolution_reason = "ambiguous_primary_reference_candidates"
+        ambiguity_reason = "multiple_equally_strong_candidates"
+    elif suspicious_self_resolution:
         resolution_reason = "suspicious_self_reference_only"
+        ambiguity_reason = None
     elif resolved_candidates:
         resolution_reason = "no_resolved_reference_candidates"
+        ambiguity_reason = None
     else:
         resolution_reason = "no_reference_candidates_in_recurrence_context"
+        ambiguity_reason = None
 
     return {
         "is_recurring": True,
@@ -875,4 +978,6 @@ def classify_bill_from_doc(
         "multiple_references_detected": signals["multiple_references_detected"],
         "submission_date": signals["submission_date"],
         "suspicious_self_resolution": suspicious_self_resolution,
+        "ambiguous_reference_resolution": ambiguous_reference_resolution,
+        "ambiguous_reference_reason": ambiguity_reason,
     }

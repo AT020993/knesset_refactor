@@ -59,6 +59,10 @@ def _reason_for_doc_row(row: pd.Series) -> str:
         return "doc_fetch_failed"
     if method == "no_doc_url":
         return "no_doc_url"
+    if bool(row.get("ambiguous_reference_resolution", False)):
+        return "ambiguous_doc_reference"
+    if bool(row.get("suspicious_self_resolution", False)):
+        return "suspicious_self_reference_only"
     orig_id = row.get("original_bill_id")
     if not pd.isna(orig_id) and int(orig_id) == int(row["BillID"]):
         return "doc_no_ancestor_found"
@@ -100,6 +104,8 @@ def export(
             "multiple_references_detected": False,
             "submission_date": None,
             "suspicious_self_resolution": False,
+            "ambiguous_reference_resolution": False,
+            "ambiguous_reference_reason": None,
             "classification_source": None,
         },
     )

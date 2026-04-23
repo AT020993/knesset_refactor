@@ -57,6 +57,8 @@ def _build_db(db_path: Path) -> None:
                 multiple_references_detected BOOLEAN,
                 submission_date VARCHAR,
                 suspicious_self_resolution BOOLEAN,
+                ambiguous_reference_resolution BOOLEAN,
+                ambiguous_reference_reason VARCHAR,
                 doc_url VARCHAR,
                 classification_source VARCHAR,
                 last_updated TIMESTAMP
@@ -65,27 +67,27 @@ def _build_db(db_path: Path) -> None:
         )
         con.executemany(
             """
-            INSERT INTO bill_classifications_doc_full VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO bill_classifications_doc_full VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     1, 18, "Original bill", 111, True, 1,
                     None, "doc_no_pattern", "[]", 0, None, None, False,
-                    "2013-01-01", False, "https://example/1.doc", "doc_based_full",
+                    "2013-01-01", False, False, None, "https://example/1.doc", "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
                     2, 19, "Current bill", 222, False, 3,
                     "הצעת חוק זהה", "doc_pattern_linked", "[]", 1,
                     "explicit_private_number_and_knesset", 0.99, False,
-                    "2014-01-15", False, "https://example/2.doc", "doc_based_full",
+                    "2014-01-15", False, False, None, "https://example/2.doc", "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
                     3, 19, "Mid-chain bill", 333, False, 1,
                     "הצעת חוק דומה", "doc_pattern_linked", "[]", 1,
                     "same_knesset_private_number_fallback", 0.78, False,
-                    "2014-01-10", False, "https://example/3.doc", "doc_based_full",
+                    "2014-01-10", False, False, None, "https://example/3.doc", "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
             ],
