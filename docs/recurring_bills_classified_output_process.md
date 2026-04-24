@@ -63,6 +63,10 @@ Not allowed:
 - using the source document id as a target bill number
 - resolving a reference-less phrase by matching the source bill title to another bill
 - resolving a bare `פ/NNN` by trying the same or prior Knesset
+- using same-Knesset title/name fallback resolution. The former
+  `same_knesset_name_fallback` path is disabled for this deliverable and must
+  not appear in exported `target_resolution_method` /
+  `reference_resolution_reason` values.
 
 When a phrase says an older Knesset but gives no bill number or link, the target remains unresolved. Example:
 
@@ -112,6 +116,9 @@ These values are not accuracy, precision, recall, or validation-set performance.
 - `Reference Resolution`: one row per extracted reference or unresolved phrase evidence.
 - `Data Dictionary`: every exported column, its worksheet, kind, definition, and possible values.
 
+The generated `.xlsx` must contain all three worksheets with these exact names.
+An output containing only a legacy `Sheet1` worksheet is invalid.
+
 ## Known Limitations
 
 - Old Knesset documents often mention prior bills without a private bill number or link. Those rows remain unresolved by design.
@@ -128,9 +135,11 @@ Regression tests cover:
 - the professor example URL `https://fs.knesset.gov.il//11/law/11_lst_534232.doc`
 - no source-Knesset fallback for bare `פ/NNN`
 - no source-name fallback for reference-less older-Knesset phrases
+- no `same_knesset_name_fallback` values in exported resolution methods
 - one row per reference in the `Reference Resolution` worksheet
 - preservation of all resolved references in multi-reference documents
 - data dictionary worksheet creation
+- exact workbook sheet names via `openpyxl.load_workbook(..., read_only=True)`
 
 Recommended command:
 

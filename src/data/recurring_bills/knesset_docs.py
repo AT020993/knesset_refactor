@@ -19,7 +19,6 @@ import time
 from pathlib import Path
 
 import requests
-from data.recurring_bills.normalize import normalize_name
 
 log = logging.getLogger(__name__)
 
@@ -858,36 +857,6 @@ def _has_ambiguous_primary_candidates(candidates: list[dict]) -> bool:
     return len(top_bill_ids) > 1
 
 
-def _build_name_fallback_candidate(
-    *,
-    occurrence: dict,
-    resolved_bill_id: int | None,
-    resolution_reason: str,
-    confidence: float,
-    priority: int,
-) -> dict:
-    return {
-        "phrase_index": 0,
-        "phrase_text": occurrence["phrase_text"],
-        "recurrence_type": occurrence["recurrence_type"],
-        "context": occurrence["context"],
-        "reference_index": -1,
-        "reference_text": None,
-        "private_number": None,
-        "explicit_knesset": None,
-        "contextual_knesset": occurrence.get("contextual_knesset"),
-        "referenced_knesset": occurrence.get("contextual_knesset"),
-        "resolved_bill_id": resolved_bill_id,
-        "reference_resolution_reason": resolution_reason,
-        "reference_resolution_confidence": confidence,
-        "priority": priority,
-        "selected": False,
-        "selection_rank": None,
-        "suspicious_self_resolution": False,
-        "tied_for_best": False,
-    }
-
-
 def _build_unresolved_phrase_candidate(*, occurrence: dict, phrase_index: int) -> dict:
     return {
         "phrase_index": phrase_index,
@@ -909,99 +878,6 @@ def _build_unresolved_phrase_candidate(*, occurrence: dict, phrase_index: int) -
         "suspicious_self_resolution": False,
         "tied_for_best": False,
     }
-
-
-def _query_name_match_candidates(
-    *,
-    current_bill_id: int,
-    current_knesset: int,
-    warehouse_con,
-) -> list[tuple[int, int]]:
-    current_row = warehouse_con.execute(
-        """
-        SELECT Name FROM KNS_Bill
-        WHERE BillID = ?
-        LIMIT 1
-        """,
-        [current_bill_id],
-    ).fetchone()
-    if not current_row or not current_row[0]:
-        return []
-
-    current_norm = normalize_name(current_row[0])
-    if not current_norm:
-        return []
-
-    rows = warehouse_con.execute(
-        """
-        SELECT BillID, KnessetNum, Name
-        FROM KNS_Bill
-        WHERE BillID <> ? AND KnessetNum <= ? AND Name IS NOT NULL
-        ORDER BY KnessetNum DESC, BillID ASC
-        """,
-        [current_bill_id, current_knesset],
-    ).fetchall()
-    return [
-        (int(bill_id), int(knesset_num))
-        for bill_id, knesset_num, name in rows
-        if normalize_name(name) == current_norm
-    ]
-
-
-def _resolve_by_name_fallback(
-    *,
-    signals: dict,
-    current_bill_id: int,
-    current_knesset: int,
-    warehouse_con,
-) -> dict | None:
-    name_matches = _query_name_match_candidates(
-        current_bill_id=current_bill_id,
-        current_knesset=current_knesset,
-        warehouse_con=warehouse_con,
-    )
-    if not name_matches or not signals["recurrence_phrases"]:
-        return None
-
-    occurrence = signals["recurrence_phrases"][0]
-    contextual_knessets = [
-        phrase["contextual_knesset"]
-        for phrase in signals["recurrence_phrases"]
-        if phrase.get("contextual_knesset") is not None
-    ]
-
-    for contextual_knesset in contextual_knessets:
-        scoped = [match for match in name_matches if match[1] == contextual_knesset]
-        if len(scoped) == 1:
-            return _build_name_fallback_candidate(
-                occurrence=occurrence,
-                resolved_bill_id=scoped[0][0],
-                resolution_reason="contextual_knesset_name_match",
-                confidence=0.72,
-                priority=3,
-            )
-
-    same_knesset = [match for match in name_matches if match[1] == current_knesset]
-    if len(same_knesset) == 1:
-        return _build_name_fallback_candidate(
-            occurrence=occurrence,
-            resolved_bill_id=same_knesset[0][0],
-            resolution_reason="same_knesset_name_fallback",
-            confidence=0.58,
-            priority=2,
-        )
-
-    prior_knessets = [match for match in name_matches if match[1] < current_knesset]
-    if len(prior_knessets) == 1:
-        return _build_name_fallback_candidate(
-            occurrence=occurrence,
-            resolved_bill_id=prior_knessets[0][0],
-            resolution_reason="prior_knesset_name_fallback",
-            confidence=0.52,
-            priority=1,
-        )
-
-    return None
 
 
 def classify_bill_from_doc(

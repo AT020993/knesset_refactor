@@ -6,6 +6,7 @@ from pathlib import Path
 import runpy
 
 import duckdb
+from openpyxl import load_workbook
 import pandas as pd
 
 from data.recurring_bills.export_resolution import classify_recurrence_type
@@ -18,6 +19,11 @@ _EXPORT_ALL = runpy.run_path(
 _EXPORT_OUR_SCAN = runpy.run_path(
     str(_REPO_ROOT / "scripts" / "export_amnon_from_our_scan.py")
 )["export"]
+_REQUIRED_EXPORT_SHEETS = [
+    "Classified Bills",
+    "Reference Resolution",
+    "Data Dictionary",
+]
 
 
 def _build_db(db_path: Path) -> None:
@@ -505,11 +511,28 @@ class TestExportResolution:
         _build_db(db_path)
         _EXPORT_ALL(db_path=db_path, output_path=output_all)
 
-        workbook = pd.ExcelFile(output_all)
-        assert "Reference Resolution" in workbook.sheet_names
-        assert "Data Dictionary" in workbook.sheet_names
+        wb = load_workbook(output_all, read_only=True, data_only=True)
+        try:
+            assert wb.sheetnames == _REQUIRED_EXPORT_SHEETS
+        finally:
+            wb.close()
 
+        workbook = pd.ExcelFile(output_all)
+        assert workbook.sheet_names == _REQUIRED_EXPORT_SHEETS
+
+        classified = pd.read_excel(workbook, sheet_name="Classified Bills")
         refs = pd.read_excel(workbook, sheet_name="Reference Resolution")
+        dictionary = pd.read_excel(workbook, sheet_name="Data Dictionary")
+        dictionary_columns = set(dictionary["column"].dropna())
+        assert set(classified.columns).issubset(dictionary_columns)
+        assert set(refs.columns).issubset(dictionary_columns)
+        assert "same_knesset_name_fallback" not in set(
+            refs["target_resolution_method"].dropna()
+        )
+        assert "same_knesset_name_fallback" not in set(
+            classified["target_resolution_method"].dropna()
+        )
+
         ambiguous_refs = refs.loc[refs["source_bill_id"] == 8]
         assert ambiguous_refs["reference_index"].tolist() == [1, 2]
         assert ambiguous_refs["target_bill_number_extracted"].tolist() == [1396, 3512]
@@ -526,8 +549,13 @@ class TestExportResolution:
         )
         assert pd.isna(professor_example["target_resolution_confidence"])
 
-        classified = pd.read_excel(workbook, sheet_name="Classified Bills")
         source_row = classified.loc[classified["source_bill_id"] == 11].iloc[0]
         assert source_row["target_resolution_status"] == "unresolved_no_link_or_number"
+        assert pd.isna(source_row["direct_reference_bill_id"])
+        assert pd.isna(source_row["direct_reference_knesset_num"])
+        assert pd.isna(source_row["direct_reference_private_number"])
+        assert pd.isna(source_row["direct_reference"])
         assert bool(source_row["is_effective_original"]) is True
         assert source_row["effective_original_bill_id"] == 11
+        assert source_row["effective_original_knesset_num"] == 11
+        assert source_row["effective_original_private_number"] == 274
