@@ -12,8 +12,12 @@ from data.recurring_bills.export_resolution import classify_recurrence_type
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_EXPORT_ALL = runpy.run_path(str(_REPO_ROOT / "scripts" / "export_all_bills_classified.py"))["export"]
-_EXPORT_OUR_SCAN = runpy.run_path(str(_REPO_ROOT / "scripts" / "export_amnon_from_our_scan.py"))["export"]
+_EXPORT_ALL = runpy.run_path(
+    str(_REPO_ROOT / "scripts" / "export_all_bills_classified.py")
+)["export"]
+_EXPORT_OUR_SCAN = runpy.run_path(
+    str(_REPO_ROOT / "scripts" / "export_amnon_from_our_scan.py")
+)["export"]
 
 
 def _build_db(db_path: Path) -> None:
@@ -41,6 +45,11 @@ def _build_db(db_path: Path) -> None:
                 (3, 19, "Mid-chain bill", 333, "Private"),
                 (4, 1, "Historic bill", 444, "Private"),
                 (5, 19, "Plural recurring bill", 555, "Private"),
+                (6, 16, "Linked to unresolved parent", 666, "Private"),
+                (7, 15, "Unresolved parent", 777, "Private"),
+                (8, 16, "Ambiguous multi-reference bill", 888, "Private"),
+                (9, 15, "Similar bill one", 1396, "Private"),
+                (10, 15, "Similar bill two", 3512, "Private"),
             ],
         )
         con.execute(
@@ -75,36 +84,223 @@ def _build_db(db_path: Path) -> None:
             """,
             [
                 (
-                    1, 18, "Original bill", 111, True, 1,
-                    None, "doc_no_pattern", "[]", 0, None, None, False,
-                    "2013-01-01", False, False, None, "https://example/1.doc", "doc_based_full",
+                    1,
+                    18,
+                    "Original bill",
+                    111,
+                    True,
+                    1,
+                    None,
+                    "doc_no_pattern",
+                    "[]",
+                    0,
+                    None,
+                    None,
+                    False,
+                    "2013-01-01",
+                    False,
+                    False,
+                    None,
+                    "https://example/1.doc",
+                    "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
-                    2, 19, "Current bill", 222, False, 3,
-                    "הצעת חוק זהה", "doc_pattern_linked", "[]", 1,
-                    "explicit_private_number_and_knesset", 0.99, False,
-                    "2014-01-15", False, False, None, "https://example/2.doc", "doc_based_full",
+                    2,
+                    19,
+                    "Current bill",
+                    222,
+                    False,
+                    3,
+                    "הצעת חוק זהה",
+                    "doc_pattern_linked",
+                    "[]",
+                    1,
+                    "explicit_private_number_and_knesset",
+                    0.99,
+                    False,
+                    "2014-01-15",
+                    False,
+                    False,
+                    None,
+                    "https://example/2.doc",
+                    "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
-                    3, 19, "Mid-chain bill", 333, False, 1,
-                    "הצעת חוק דומה", "doc_pattern_linked", "[]", 1,
-                    "same_knesset_private_number_fallback", 0.78, False,
-                    "2014-01-10", False, False, None, "https://example/3.doc", "doc_based_full",
+                    3,
+                    19,
+                    "Mid-chain bill",
+                    333,
+                    False,
+                    1,
+                    "הצעת חוק דומה",
+                    "doc_pattern_linked",
+                    "[]",
+                    1,
+                    "same_knesset_private_number_fallback",
+                    0.78,
+                    False,
+                    "2014-01-10",
+                    False,
+                    False,
+                    None,
+                    "https://example/3.doc",
+                    "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
-                    4, 1, "Historic bill", 444, True, 4,
-                    None, "doc_no_pattern", "[]", 0, None, None, False,
-                    "2049-11-23", False, False, None, "https://example/4.doc", "doc_based_full",
+                    4,
+                    1,
+                    "Historic bill",
+                    444,
+                    True,
+                    4,
+                    None,
+                    "doc_no_pattern",
+                    "[]",
+                    0,
+                    None,
+                    None,
+                    False,
+                    "2049-11-23",
+                    False,
+                    False,
+                    None,
+                    "https://example/4.doc",
+                    "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
                 (
-                    5, 19, "Plural recurring bill", 555, False, 1,
-                    "הצעות  חוק  דומות  בעיקרן", "doc_pattern_linked", "[]", 1,
-                    "explicit_private_number_and_knesset", 0.99, False,
-                    "2014-02-24", False, False, None, "https://example/5.doc", "doc_based_full",
+                    5,
+                    19,
+                    "Plural recurring bill",
+                    555,
+                    False,
+                    1,
+                    "הצעות  חוק  דומות  בעיקרן",
+                    "doc_pattern_linked",
+                    "[]",
+                    1,
+                    "explicit_private_number_and_knesset",
+                    0.99,
+                    False,
+                    "2014-02-24",
+                    False,
+                    False,
+                    None,
+                    "https://example/5.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    6,
+                    16,
+                    "Linked to unresolved parent",
+                    666,
+                    False,
+                    7,
+                    "הצעת חוק זהה",
+                    "doc_pattern_linked",
+                    """[{"resolved_bill_id": 7, "private_number": 777, "referenced_knesset": 15, "reference_text": "פ/777", "reference_resolution_reason": "contextual_knesset_phrase_match", "reference_resolution_confidence": 0.92, "selected": true, "suspicious_self_resolution": false}]""",
+                    1,
+                    "contextual_knesset_phrase_match",
+                    0.92,
+                    False,
+                    "2004-05-17",
+                    False,
+                    False,
+                    None,
+                    "https://example/6.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    7,
+                    15,
+                    "Unresolved parent",
+                    777,
+                    False,
+                    7,
+                    "הצעת חוק דומה",
+                    "doc_pattern_unresolved",
+                    "[]",
+                    0,
+                    "no_reference_candidates_in_recurrence_context",
+                    None,
+                    False,
+                    "2000-01-01",
+                    False,
+                    False,
+                    None,
+                    "https://example/7.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    8,
+                    16,
+                    "Ambiguous multi-reference bill",
+                    888,
+                    False,
+                    8,
+                    "הצעת חוק דומה",
+                    "doc_pattern_unresolved",
+                    """[{"resolved_bill_id": 9, "private_number": 1396, "referenced_knesset": 15, "reference_text": "פ/1396", "reference_resolution_reason": "contextual_knesset_phrase_match", "reference_resolution_confidence": 0.92, "selected": false, "suspicious_self_resolution": false, "tied_for_best": true}, {"resolved_bill_id": 10, "private_number": 3512, "referenced_knesset": 15, "reference_text": "פ/3512", "reference_resolution_reason": "contextual_knesset_phrase_match", "reference_resolution_confidence": 0.92, "selected": false, "suspicious_self_resolution": false, "tied_for_best": true}]""",
+                    2,
+                    "ambiguous_primary_reference_candidates",
+                    None,
+                    True,
+                    "2004-05-17",
+                    False,
+                    True,
+                    "multiple_equally_strong_candidates",
+                    "https://example/8.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    9,
+                    15,
+                    "Similar bill one",
+                    1396,
+                    True,
+                    9,
+                    None,
+                    "doc_no_pattern",
+                    "[]",
+                    0,
+                    None,
+                    None,
+                    False,
+                    "2000-01-01",
+                    False,
+                    False,
+                    None,
+                    "https://example/9.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    10,
+                    15,
+                    "Similar bill two",
+                    3512,
+                    True,
+                    10,
+                    None,
+                    "doc_no_pattern",
+                    "[]",
+                    0,
+                    None,
+                    None,
+                    False,
+                    "2000-01-01",
+                    False,
+                    False,
+                    None,
+                    "https://example/10.doc",
+                    "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
             ],
@@ -131,7 +327,9 @@ class TestExportResolution:
             ]
         ).to_excel(excel_path, index=False)
 
-        _EXPORT_OUR_SCAN(excel_path=excel_path, db_path=db_path, output_path=output_scan)
+        _EXPORT_OUR_SCAN(
+            excel_path=excel_path, db_path=db_path, output_path=output_scan
+        )
         _EXPORT_ALL(db_path=db_path, output_path=output_all)
 
         df_scan = pd.read_excel(output_scan)
@@ -141,11 +339,11 @@ class TestExportResolution:
         row_all = df_all.loc[df_all["BillID"] == 2].iloc[0]
 
         assert row_scan["original_bill_id"] == 1
-        assert row_all["original_bill_id"] == 1
+        assert row_all["effective_original_bill_id"] == 1
         assert row_scan["original_knesset_num"] == 18
-        assert row_all["original_knesset_num"] == 18
+        assert row_all["effective_original_knesset_num"] == 18
         assert row_scan["original_private_number"] == 111
-        assert row_all["original_private_number"] == 111
+        assert row_all["effective_original_private_number"] == 111
         assert row_scan["submission_date"] == "2014-01-15"
         assert row_all["submission_date"] == "2014-01-15"
 
@@ -166,7 +364,9 @@ class TestExportResolution:
             ]
         ).to_excel(excel_path, index=False)
 
-        _EXPORT_OUR_SCAN(excel_path=excel_path, db_path=db_path, output_path=output_scan)
+        _EXPORT_OUR_SCAN(
+            excel_path=excel_path, db_path=db_path, output_path=output_scan
+        )
         _EXPORT_ALL(db_path=db_path, output_path=output_all)
 
         df_scan = pd.read_excel(output_scan)
@@ -184,7 +384,9 @@ class TestExportResolution:
         assert classify_recurrence_type("הצעות חוק דומות בעיקרן") == "similar"
         assert classify_recurrence_type("הצעות  חוק  דומות  בעיקרן") == "similar"
 
-    def test_final_export_writes_corrected_submission_date_and_recurrence_type(self, tmp_path: Path):
+    def test_final_export_writes_corrected_submission_date_and_recurrence_type(
+        self, tmp_path: Path
+    ):
         db_path = tmp_path / "warehouse.duckdb"
         output_all = tmp_path / "all.xlsx"
 
@@ -198,3 +400,40 @@ class TestExportResolution:
         assert pd.isna(historic_row["submission_date"])
         assert plural_row["submission_date"] == "2014-02-24"
         assert plural_row["recurrence_type"] == "similar"
+
+    def test_final_export_preserves_direct_reference_when_effective_origin_is_unresolved(
+        self, tmp_path: Path
+    ):
+        db_path = tmp_path / "warehouse.duckdb"
+        output_all = tmp_path / "all.xlsx"
+
+        _build_db(db_path)
+        _EXPORT_ALL(db_path=db_path, output_path=output_all)
+
+        df_all = pd.read_excel(output_all)
+        row = df_all.loc[df_all["BillID"] == 6].iloc[0]
+
+        assert bool(row["is_recurring_upstream"]) is True
+        assert row["direct_reference_bill_id"] == 7
+        assert row["direct_reference_knesset_num"] == 15
+        assert row["direct_reference_private_number"] == 777
+        assert row["direct_reference"] == "15/777"
+        assert row["cited_references"] == "15/777"
+
+    def test_final_export_surfaces_all_resolved_reference_candidates(
+        self, tmp_path: Path
+    ):
+        db_path = tmp_path / "warehouse.duckdb"
+        output_all = tmp_path / "all.xlsx"
+
+        _build_db(db_path)
+        _EXPORT_ALL(db_path=db_path, output_path=output_all)
+
+        df_all = pd.read_excel(output_all)
+        row = df_all.loc[df_all["BillID"] == 8].iloc[0]
+
+        assert bool(row["ambiguous_reference_resolution"]) is True
+        assert pd.isna(row["direct_reference_bill_id"])
+        assert row["cited_reference_count"] == 2
+        assert row["cited_bill_ids"] == "9; 10"
+        assert row["cited_references"] == "15/1396; 15/3512"

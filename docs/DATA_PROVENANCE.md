@@ -15,7 +15,7 @@ All parliamentary data (MKs, factions, committees, bills, queries, agendas, voti
 
 - **Faction coalition status**: [`data/faction_coalition_status_all_knessets.csv`](../data/faction_coalition_status_all_knessets.csv) — hand-curated per-faction coalition/opposition labels across Knessets 1–25 (K21 and K22 marked "Unknown" — interim). See the Coalition Status section of [`../CLAUDE.md`](../CLAUDE.md) for the update protocol.
 - **CAP taxonomy + democratic-erosion codebook**: [`data/taxonomies/`](../data/taxonomies/) — research codebooks used by the CAP annotation system.
-- **Recurring-bills classification**: cached from `pmb.teca-it.com` (Dr. Tal Alovitz's dataset) into a local DuckDB table plus a Parquet snapshot (see `src/data/recurring_bills/`).
+- **Recurring-bills classification**: cached from `pmb.teca-it.com` (Dr. Tal Alovitz's dataset) into a local DuckDB table plus a Parquet snapshot (see `src/data/recurring_bills/`). The Prof. Amnon sendable workbook is generated from the local warehouse/doc scan by [`scripts/export_all_bills_classified.py`](../scripts/export_all_bills_classified.py) at `data/snapshots/All_Private_Bills_K1_K25_classified.xlsx`; see [`classification_process.md`](classification_process.md) for its column contract and validation caveats.
 
 ## Licensing
 

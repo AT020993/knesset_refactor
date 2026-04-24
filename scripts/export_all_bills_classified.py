@@ -12,8 +12,9 @@ with:
 
 - Bill identity: BillID, KnessetNum, Name, PrivateNumber, SubTypeDesc
 - Document link: doc_url (the fs.knesset.gov.il link our classifier read)
-- Classification: is_original, original_bill_id, original_knesset_num,
-  original_private_number
+- Direct citation columns: direct_reference, cited_references, cited_bill_ids
+- Effective classification: is_effective_original, effective_original_bill_id,
+  effective_original_knesset_num, effective_original_private_number
 - Method provenance: method, matched_phrase, classification_source
 - Option-C presentation: is_recurring_upstream, effective_original_reason
 
@@ -42,6 +43,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from data.recurring_bills.export_resolution import (  # noqa: E402
+    add_reference_summary_columns,
     apply_option_c_post_pass,
     classify_recurrence_type,
     enrich_from_final_original_bill_id,
@@ -106,15 +108,22 @@ def export(*, db_path: Path, output_path: Path) -> dict:
             "ambiguous_reference_reason": None,
         },
     )
-    df = cls.merge(bill_meta, on="BillID", how="left").sort_values(["KnessetNum", "BillID"], kind="stable")
+    df = cls.merge(bill_meta, on="BillID", how="left").sort_values(
+        ["KnessetNum", "BillID"], kind="stable"
+    )
 
     raw_originals = int((df["is_original"] == True).sum())  # noqa: E712
     raw_recurring = int((df["is_original"] == False).sum())  # noqa: E712
 
     df["recurrence_type"] = df["matched_phrase"].apply(classify_recurrence_type)
+    df = add_reference_summary_columns(df, bill_ref)
 
     df = apply_option_c_post_pass(df, reason_for=_reason_for_doc_row)
     df = enrich_from_final_original_bill_id(df, bill_ref)
+    df["is_effective_original"] = df["is_original"]
+    df["effective_original_bill_id"] = df["original_bill_id"]
+    df["effective_original_knesset_num"] = df["original_knesset_num"]
+    df["effective_original_private_number"] = df["original_private_number"]
     df = sanitize_submission_dates(df)
     violations = verify_effective_originals(
         df,
@@ -123,16 +132,37 @@ def export(*, db_path: Path, output_path: Path) -> dict:
 
     # Column ordering — most useful columns first for Amnon
     col_order = [
-        "BillID", "KnessetNum", "Name", "PrivateNumber", "SubTypeDesc",
+        "BillID",
+        "KnessetNum",
+        "Name",
+        "PrivateNumber",
+        "SubTypeDesc",
         "doc_url",
-        "is_original", "original_bill_id",
-        "original_knesset_num", "original_private_number",
-        "is_recurring_upstream", "recurrence_type", "effective_original_reason",
-        "method", "matched_phrase", "classification_source",
-        "reference_candidate_count", "reference_resolution_reason",
-        "reference_resolution_confidence", "multiple_references_detected",
-        "suspicious_self_resolution", "ambiguous_reference_resolution",
-        "ambiguous_reference_reason", "submission_date", "reference_candidates",
+        "direct_reference_bill_id",
+        "direct_reference_knesset_num",
+        "direct_reference_private_number",
+        "direct_reference",
+        "cited_reference_count",
+        "cited_bill_ids",
+        "cited_references",
+        "is_effective_original",
+        "effective_original_bill_id",
+        "effective_original_knesset_num",
+        "effective_original_private_number",
+        "is_recurring_upstream",
+        "recurrence_type",
+        "effective_original_reason",
+        "method",
+        "matched_phrase",
+        "classification_source",
+        "reference_candidate_count",
+        "reference_resolution_reason",
+        "reference_resolution_confidence",
+        "multiple_references_detected",
+        "suspicious_self_resolution",
+        "ambiguous_reference_resolution",
+        "ambiguous_reference_reason",
+        "submission_date",
     ]
     df = df[col_order]
     df = strip_timezone_columns(df)
@@ -144,17 +174,26 @@ def export(*, db_path: Path, output_path: Path) -> dict:
         "total_rows": len(df),
         "raw_originals": raw_originals,
         "raw_recurring": raw_recurring,
-        "effective_originals": int((df["is_original"] == True).sum()),  # noqa: E712
-        "effective_recurring": int((df["is_original"] == False).sum()),  # noqa: E712
+        "effective_originals": int((df["is_effective_original"] == True).sum()),  # noqa: E712
+        "effective_recurring": int((df["is_effective_original"] == False).sum()),  # noqa: E712
         "is_recurring_upstream_true": int(df["is_recurring_upstream"].sum()),
-        "promoted_to_effective_original": int(df["effective_original_reason"].notna().sum()),
+        "promoted_to_effective_original": int(
+            df["effective_original_reason"].notna().sum()
+        ),
         "by_method": df["method"].value_counts(dropna=False).to_dict(),
-        "by_recurrence_type": df["recurrence_type"].value_counts(dropna=False).to_dict(),
-        "by_reason": df["effective_original_reason"].value_counts(dropna=False).to_dict(),
-        "per_knesset": df.groupby("KnessetNum").agg(
+        "by_recurrence_type": df["recurrence_type"]
+        .value_counts(dropna=False)
+        .to_dict(),
+        "by_reason": df["effective_original_reason"]
+        .value_counts(dropna=False)
+        .to_dict(),
+        "per_knesset": df.groupby("KnessetNum")
+        .agg(
             total=("BillID", "count"),
             recurring=("is_recurring_upstream", "sum"),
-        ).reset_index().to_dict("records"),
+        )
+        .reset_index()
+        .to_dict("records"),
         "violations": violations,
         "output_path": str(output_path),
     }
@@ -162,11 +201,15 @@ def export(*, db_path: Path, output_path: Path) -> dict:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--db", type=Path,
-                   default=_REPO_ROOT / "data" / "warehouse.duckdb")
-    p.add_argument("--output", type=Path,
-                   default=_REPO_ROOT / "data" / "snapshots"
-                                      / "All_Private_Bills_K1_K25_classified.xlsx")
+    p.add_argument("--db", type=Path, default=_REPO_ROOT / "data" / "warehouse.duckdb")
+    p.add_argument(
+        "--output",
+        type=Path,
+        default=_REPO_ROOT
+        / "data"
+        / "snapshots"
+        / "All_Private_Bills_K1_K25_classified.xlsx",
+    )
     args = p.parse_args()
 
     if not args.db.exists():
@@ -179,24 +222,32 @@ def main() -> int:
     print()
     print("Raw (from our doc-scan):")
     print(f"  Originals: {stats['raw_originals']}")
-    print(f"  Recurring: {stats['raw_recurring']}  ({100*stats['raw_recurring']/stats['total_rows']:.2f}%)")
+    print(
+        f"  Recurring: {stats['raw_recurring']}  ({100 * stats['raw_recurring'] / stats['total_rows']:.2f}%)"
+    )
     print()
     print("Effective (after Option-C post-pass):")
     print(f"  Originals: {stats['effective_originals']}")
     print(f"  Recurring: {stats['effective_recurring']}")
-    print(f"  Promoted to effective-original: {stats['promoted_to_effective_original']}")
+    print(
+        f"  Promoted to effective-original: {stats['promoted_to_effective_original']}"
+    )
     print()
     print("Per-Knesset recurrence rates:")
     for r in stats["per_knesset"]:
         pct = 100 * r["recurring"] / r["total"] if r["total"] else 0
-        print(f"  K{int(r['KnessetNum']):<3}  {r['total']:>6}  recurring={r['recurring']:>5}  ({pct:5.2f}%)")
+        print(
+            f"  K{int(r['KnessetNum']):<3}  {r['total']:>6}  recurring={r['recurring']:>5}  ({pct:5.2f}%)"
+        )
     print()
     print("Recurrence type (identical vs similar):")
     for t, n in stats["by_recurrence_type"].items():
         print(f"  {t}: {n}")
     print()
     print("Method distribution:")
-    for m, n in sorted(stats["by_method"].items(), key=lambda kv: -kv[1] if kv[1] is not pd.NA else 0):
+    for m, n in sorted(
+        stats["by_method"].items(), key=lambda kv: -kv[1] if kv[1] is not pd.NA else 0
+    ):
         print(f"  {m}: {n}")
     print()
     print("Effective-original reasons:")
