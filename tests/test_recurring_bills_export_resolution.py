@@ -50,6 +50,20 @@ def _build_db(db_path: Path) -> None:
                 (8, 16, "Ambiguous multi-reference bill", 888, "Private"),
                 (9, 15, "Similar bill one", 1396, "Private"),
                 (10, 15, "Similar bill two", 3512, "Private"),
+                (
+                    11,
+                    11,
+                    "Source old-Knesset phrase bill",
+                    274,
+                    "Private",
+                ),
+                (
+                    12,
+                    11,
+                    "Same-name source-Knesset bill",
+                    294,
+                    "Private",
+                ),
             ],
         )
         con.execute(
@@ -136,10 +150,10 @@ def _build_db(db_path: Path) -> None:
                     1,
                     "הצעת חוק דומה",
                     "doc_pattern_linked",
-                    "[]",
+                    """[{"resolved_bill_id": 1, "private_number": 111, "referenced_knesset": 18, "reference_text": "פ/111/18", "reference_resolution_reason": "explicit_private_number_and_knesset", "reference_resolution_confidence": 0.99, "selected": true, "suspicious_self_resolution": false}]""",
                     1,
-                    "same_knesset_private_number_fallback",
-                    0.78,
+                    "explicit_private_number_and_knesset",
+                    0.99,
                     False,
                     "2014-01-10",
                     False,
@@ -303,6 +317,50 @@ def _build_db(db_path: Path) -> None:
                     "doc_based_full",
                     pd.Timestamp("2026-04-23 00:00:00"),
                 ),
+                (
+                    11,
+                    11,
+                    "Source old-Knesset phrase bill",
+                    274,
+                    False,
+                    12,
+                    "הצעת חוק זהה",
+                    "doc_pattern_linked",
+                    """[{"context": "הצעת חוק זהה הוגשה בכנסת העשירית ע\\"י חברי הכנסת", "contextual_knesset": 10, "explicit_knesset": null, "phrase_index": 0, "phrase_text": "הצעת חוק זהה", "priority": 2, "private_number": null, "recurrence_type": "identical", "reference_index": -1, "reference_resolution_confidence": 0.58, "reference_resolution_reason": "same_knesset_name_fallback", "reference_text": null, "referenced_knesset": 10, "resolved_bill_id": 12, "selected": true, "selection_rank": [2, 1, 0, -1000000], "suspicious_self_resolution": false, "tied_for_best": false}]""",
+                    1,
+                    "same_knesset_name_fallback",
+                    0.58,
+                    False,
+                    "1986-02-17",
+                    False,
+                    False,
+                    None,
+                    "https://fs.knesset.gov.il//11/law/11_lst_534232.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
+                (
+                    12,
+                    11,
+                    "Same-name source-Knesset bill",
+                    294,
+                    True,
+                    12,
+                    None,
+                    "doc_no_pattern",
+                    "[]",
+                    0,
+                    None,
+                    None,
+                    False,
+                    "1986-02-17",
+                    False,
+                    False,
+                    None,
+                    "https://example/12.doc",
+                    "doc_based_full",
+                    pd.Timestamp("2026-04-23 00:00:00"),
+                ),
             ],
         )
     finally:
@@ -384,7 +442,7 @@ class TestExportResolution:
         assert classify_recurrence_type("הצעות חוק דומות בעיקרן") == "similar"
         assert classify_recurrence_type("הצעות  חוק  דומות  בעיקרן") == "similar"
 
-    def test_final_export_writes_corrected_submission_date_and_recurrence_type(
+    def test_final_export_writes_corrected_submission_date_and_explicit_relation_type(
         self, tmp_path: Path
     ):
         db_path = tmp_path / "warehouse.duckdb"
@@ -399,7 +457,7 @@ class TestExportResolution:
 
         assert pd.isna(historic_row["submission_date"])
         assert plural_row["submission_date"] == "2014-02-24"
-        assert plural_row["recurrence_type"] == "similar"
+        assert plural_row["explicit_relation_type"] == "similar"
 
     def test_final_export_preserves_direct_reference_when_effective_origin_is_unresolved(
         self, tmp_path: Path
@@ -437,3 +495,39 @@ class TestExportResolution:
         assert row["cited_reference_count"] == 2
         assert row["cited_bill_ids"] == "9; 10"
         assert row["cited_references"] == "15/1396; 15/3512"
+
+    def test_final_export_writes_reference_resolution_sheet_with_one_row_per_reference(
+        self, tmp_path: Path
+    ):
+        db_path = tmp_path / "warehouse.duckdb"
+        output_all = tmp_path / "all.xlsx"
+
+        _build_db(db_path)
+        _EXPORT_ALL(db_path=db_path, output_path=output_all)
+
+        workbook = pd.ExcelFile(output_all)
+        assert "Reference Resolution" in workbook.sheet_names
+        assert "Data Dictionary" in workbook.sheet_names
+
+        refs = pd.read_excel(workbook, sheet_name="Reference Resolution")
+        ambiguous_refs = refs.loc[refs["source_bill_id"] == 8]
+        assert ambiguous_refs["reference_index"].tolist() == [1, 2]
+        assert ambiguous_refs["target_bill_number_extracted"].tolist() == [1396, 3512]
+
+        professor_example = refs.loc[refs["source_bill_id"] == 11].iloc[0]
+        assert professor_example["source_knesset"] == 11
+        assert professor_example["source_doc_id"] == 534232
+        assert professor_example["target_knesset_extracted"] == 10
+        assert pd.isna(professor_example["target_bill_number_extracted"])
+        assert pd.isna(professor_example["target_url_extracted"])
+        assert (
+            professor_example["target_resolution_status"]
+            == "unresolved_no_link_or_number"
+        )
+        assert pd.isna(professor_example["target_resolution_confidence"])
+
+        classified = pd.read_excel(workbook, sheet_name="Classified Bills")
+        source_row = classified.loc[classified["source_bill_id"] == 11].iloc[0]
+        assert source_row["target_resolution_status"] == "unresolved_no_link_or_number"
+        assert bool(source_row["is_effective_original"]) is True
+        assert source_row["effective_original_bill_id"] == 11

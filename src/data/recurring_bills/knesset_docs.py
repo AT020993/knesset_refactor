@@ -121,7 +121,9 @@ _HEBREW_KNESSET_NUMS = {
     "העשרים-וחמש": 25,
     "העשרים וחמש": 25,
 }
-_PATTERN_NUMERIC_SUBMISSION_DATE = re.compile(r"(?<!\d)(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})(?!\d)")
+_PATTERN_NUMERIC_SUBMISSION_DATE = re.compile(
+    r"(?<!\d)(\d{1,4})[./-](\d{1,2})[./-](\d{1,4})(?!\d)"
+)
 _PATTERN_CONTEXT_BREAK = re.compile(r"(?:\n\s*\n|[.!?])")
 _PATTERN_PREVIOUS_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+הקודמת")
 _PATTERN_NUMERIC_KNESSET = re.compile(r"(?:בכנסת|הכנסת)\s+ה[-\s]*(\d{1,2})(?:\b|$)")
@@ -254,7 +256,9 @@ def extract_text(path: Path) -> str | None:
                 parts.append(page.extract_text() or "")
             text = "\n".join(parts)
             if text and _hebrew_ratio(text) < 0.1:
-                log.warning("PDF text has low Hebrew ratio (likely custom font): %s", path)
+                log.warning(
+                    "PDF text has low Hebrew ratio (likely custom font): %s", path
+                )
                 return None
             return text
         except Exception as exc:  # noqa: BLE001
@@ -285,10 +289,15 @@ def _submission_year_bounds(current_knesset: int | None) -> tuple[int, int]:
         return (_SUBMISSION_DATE_FLOOR.year, today.year)
 
     start_year, end_year = bounds
-    return (max(_SUBMISSION_DATE_FLOOR.year, start_year - 1), min(today.year, end_year + 1))
+    return (
+        max(_SUBMISSION_DATE_FLOOR.year, start_year - 1),
+        min(today.year, end_year + 1),
+    )
 
 
-def _is_plausible_submission_date(value: date, *, current_knesset: int | None = None) -> bool:
+def _is_plausible_submission_date(
+    value: date, *, current_knesset: int | None = None
+) -> bool:
     today = date.today()
     if value < _SUBMISSION_DATE_FLOOR or value > today:
         return False
@@ -297,7 +306,9 @@ def _is_plausible_submission_date(value: date, *, current_knesset: int | None = 
     return min_year <= value.year <= max_year
 
 
-def _resolve_submission_year(raw_year: int, *, current_knesset: int | None = None) -> int | None:
+def _resolve_submission_year(
+    raw_year: int, *, current_knesset: int | None = None
+) -> int | None:
     if raw_year >= 100:
         return raw_year
 
@@ -346,7 +357,11 @@ def validate_submission_date(
     if raw_date is None:
         return None
     if isinstance(raw_date, date):
-        return raw_date.isoformat() if _is_plausible_submission_date(raw_date, current_knesset=current_knesset) else None
+        return (
+            raw_date.isoformat()
+            if _is_plausible_submission_date(raw_date, current_knesset=current_knesset)
+            else None
+        )
 
     text = str(raw_date).strip()
     if not text or text.lower() == "nan":
@@ -357,7 +372,11 @@ def validate_submission_date(
     except ValueError:
         return None
 
-    return parsed.isoformat() if _is_plausible_submission_date(parsed, current_knesset=current_knesset) else None
+    return (
+        parsed.isoformat()
+        if _is_plausible_submission_date(parsed, current_knesset=current_knesset)
+        else None
+    )
 
 
 def _iter_submission_date_candidates(
@@ -493,7 +512,9 @@ def classify_recurrence_phrase(matched_phrase: object) -> str | None:
     return None
 
 
-def _extract_contextual_knesset(text: str, *, current_knesset: int | None = None) -> int | None:
+def _extract_contextual_knesset(
+    text: str, *, current_knesset: int | None = None
+) -> int | None:
     normalized = _normalize_hebrew_phrase_text(text)
     if current_knesset and _PATTERN_PREVIOUS_KNESSET.search(normalized):
         return current_knesset - 1 if current_knesset > 1 else None
@@ -510,7 +531,9 @@ def _extract_contextual_knesset(text: str, *, current_knesset: int | None = None
     return None
 
 
-def _find_recurrence_occurrences(text: str, *, current_knesset: int | None = None) -> list[dict]:
+def _find_recurrence_occurrences(
+    text: str, *, current_knesset: int | None = None
+) -> list[dict]:
     head = text[:_SCAN_CHAR_LIMIT]
     occurrences: list[dict] = []
     seen_spans: set[tuple[int, int, str]] = set()
@@ -521,7 +544,9 @@ def _find_recurrence_occurrences(text: str, *, current_knesset: int | None = Non
             if key in seen_spans:
                 continue
             seen_spans.add(key)
-            context_start, context = _extract_local_context(head, match.start(), match.end())
+            context_start, context = _extract_local_context(
+                head, match.start(), match.end()
+            )
             occurrences.append(
                 {
                     "phrase_text": match.group(0),
@@ -547,7 +572,8 @@ def _extract_reference_mentions(occurrences: list[dict]) -> list[dict]:
     for phrase_index, occurrence in enumerate(occurrences):
         ref_matches = list(_PATTERN_PRIVATE_REF.finditer(occurrence["context"]))
         post_phrase_matches = [
-            match for match in ref_matches
+            match
+            for match in ref_matches
             if match.start() >= occurrence.get("phrase_in_context_start", 0)
         ]
         chosen_matches = post_phrase_matches or ref_matches
@@ -575,7 +601,8 @@ def _extract_reference_mentions(occurrences: list[dict]) -> list[dict]:
                     "private_number": int(match.group(1)),
                     "explicit_knesset": explicit_knesset,
                     "contextual_knesset": occurrence["contextual_knesset"],
-                    "referenced_knesset": explicit_knesset or occurrence["contextual_knesset"],
+                    "referenced_knesset": explicit_knesset
+                    or occurrence["contextual_knesset"],
                     "appears_after_phrase": appears_after_phrase,
                     "char_distance_from_phrase": int(char_distance),
                 }
@@ -612,13 +639,17 @@ def parse_recurrence_signals(text: str, *, current_knesset: int | None = None) -
     return {
         "is_recurring": bool(occurrences),
         "matched_phrase": occurrences[0]["phrase_text"] if occurrences else None,
-        "referenced_private_numbers": [mention["private_number"] for mention in mentions],
+        "referenced_private_numbers": [
+            mention["private_number"] for mention in mentions
+        ],
         "referenced_knesset": referenced_knesset,
         "recurrence_phrases": occurrences,
         "reference_candidates": mentions,
         "reference_candidate_count": len(mentions),
         "multiple_references_detected": len(mentions) > 1,
-        "submission_date": extract_submission_date(text, current_knesset=current_knesset),
+        "submission_date": extract_submission_date(
+            text, current_knesset=current_knesset
+        ),
     }
 
 
@@ -683,21 +714,7 @@ def resolve_link_back(
             exclude_bill_id=current_bill_id,
         )
 
-    same_knesset = _query_exact_bill_id(
-        private_number=private_number,
-        knesset_num=current_knesset,
-        warehouse_con=warehouse_con,
-        exclude_bill_id=current_bill_id,
-    )
-    if same_knesset is not None:
-        return same_knesset
-
-    return _query_prior_bill_id(
-        private_number=private_number,
-        current_knesset=current_knesset,
-        warehouse_con=warehouse_con,
-        exclude_bill_id=current_bill_id,
-    )
+    return None
 
 
 def _resolve_reference_candidate(
@@ -737,7 +754,9 @@ def _resolve_reference_candidate(
             return candidate
         if resolved_bill_id is not None:
             candidate["resolved_bill_id"] = resolved_bill_id
-            candidate["reference_resolution_reason"] = "explicit_private_number_and_knesset"
+            candidate["reference_resolution_reason"] = (
+                "explicit_private_number_and_knesset"
+            )
             candidate["reference_resolution_confidence"] = 0.99
             candidate["priority"] = 4
             return candidate
@@ -760,34 +779,8 @@ def _resolve_reference_candidate(
             candidate["priority"] = 3
             return candidate
 
-    same_knesset = _query_exact_bill_id(
-        private_number=mention["private_number"],
-        knesset_num=current_knesset,
-        warehouse_con=warehouse_con,
-        exclude_bill_id=current_bill_id,
-    )
-    if same_knesset is not None:
-        candidate["resolved_bill_id"] = same_knesset
-        candidate["reference_resolution_reason"] = "same_knesset_private_number_fallback"
-        candidate["reference_resolution_confidence"] = 0.78
-        candidate["priority"] = 2
-        return candidate
-
-    prior_knesset = _query_prior_bill_id(
-        private_number=mention["private_number"],
-        current_knesset=current_knesset,
-        warehouse_con=warehouse_con,
-        exclude_bill_id=current_bill_id,
-    )
-    if prior_knesset is not None:
-        candidate["resolved_bill_id"] = prior_knesset
-        candidate["reference_resolution_reason"] = "prior_knesset_private_number_fallback"
-        candidate["reference_resolution_confidence"] = 0.6
-        candidate["priority"] = 1
-        return candidate
-
-    candidate["reference_resolution_reason"] = "no_matching_bill_for_reference"
-    candidate["reference_resolution_confidence"] = 0.2
+    candidate["reference_resolution_reason"] = "unresolved_missing_target_knesset"
+    candidate["reference_resolution_confidence"] = None
     return candidate
 
 
@@ -820,9 +813,7 @@ def _pick_primary_candidate(candidates: list[dict]) -> dict | None:
 
     top_rank = max(rank for rank, _ in best_by_bill.values())
     top_candidates = [
-        candidate
-        for rank, candidate in best_by_bill.values()
-        if rank == top_rank
+        candidate for rank, candidate in best_by_bill.values() if rank == top_rank
     ]
     if len(top_candidates) > 1:
         for candidate in top_candidates:
@@ -862,9 +853,7 @@ def _has_ambiguous_primary_candidates(candidates: list[dict]) -> bool:
 
     top_rank = max(best_rank_by_bill.values())
     top_bill_ids = [
-        bill_id
-        for bill_id, rank in best_rank_by_bill.items()
-        if rank == top_rank
+        bill_id for bill_id, rank in best_rank_by_bill.items() if rank == top_rank
     ]
     return len(top_bill_ids) > 1
 
@@ -892,6 +881,29 @@ def _build_name_fallback_candidate(
         "reference_resolution_reason": resolution_reason,
         "reference_resolution_confidence": confidence,
         "priority": priority,
+        "selected": False,
+        "selection_rank": None,
+        "suspicious_self_resolution": False,
+        "tied_for_best": False,
+    }
+
+
+def _build_unresolved_phrase_candidate(*, occurrence: dict, phrase_index: int) -> dict:
+    return {
+        "phrase_index": phrase_index,
+        "phrase_text": occurrence["phrase_text"],
+        "recurrence_type": occurrence["recurrence_type"],
+        "context": occurrence["context"],
+        "reference_index": -1,
+        "reference_text": None,
+        "private_number": None,
+        "explicit_knesset": None,
+        "contextual_knesset": occurrence.get("contextual_knesset"),
+        "referenced_knesset": occurrence.get("contextual_knesset"),
+        "resolved_bill_id": None,
+        "reference_resolution_reason": "unresolved_no_link_or_number",
+        "reference_resolution_confidence": None,
+        "priority": 0,
         "selected": False,
         "selection_rank": None,
         "suspicious_self_resolution": False,
@@ -1108,28 +1120,34 @@ def classify_bill_from_doc(
         )
         for mention in signals["reference_candidates"]
     ]
-    # Name matching is a weaker backstop than a cited פ/... reference.
-    # Keep it for reference-less recurrence phrases, but do not let it
-    # compete with or pad explicit citation evidence.
-    name_fallback_candidate = None
     if not signals["reference_candidates"]:
-        name_fallback_candidate = _resolve_by_name_fallback(
-            signals=signals,
-            current_bill_id=bill_id,
-            current_knesset=current_knesset,
-            warehouse_con=warehouse_con,
-        )
-    if name_fallback_candidate is not None:
-        resolved_candidates.append(name_fallback_candidate)
+        seen_contexts: set[str] = set()
+        resolved_candidates = []
+        for phrase_index, occurrence in enumerate(signals["recurrence_phrases"]):
+            context_key = (
+                occurrence.get("context") or occurrence.get("phrase_text") or ""
+            ).strip(" \t\r\n.!?")
+            if context_key in seen_contexts:
+                continue
+            seen_contexts.add(context_key)
+            resolved_candidates.append(
+                _build_unresolved_phrase_candidate(
+                    occurrence=occurrence,
+                    phrase_index=phrase_index,
+                )
+            )
+
     primary = _pick_primary_candidate(resolved_candidates)
-    ambiguous_reference_resolution = primary is None and _has_ambiguous_primary_candidates(
-        resolved_candidates
+    ambiguous_reference_resolution = (
+        primary is None and _has_ambiguous_primary_candidates(resolved_candidates)
     )
     suspicious_self_resolution = any(
         candidate.get("suspicious_self_resolution", False)
         for candidate in resolved_candidates
     )
-    matched_phrase = primary["phrase_text"] if primary is not None else signals["matched_phrase"]
+    matched_phrase = (
+        primary["phrase_text"] if primary is not None else signals["matched_phrase"]
+    )
 
     if primary is not None:
         return {
@@ -1140,7 +1158,9 @@ def classify_bill_from_doc(
             "reference_candidates": resolved_candidates,
             "reference_candidate_count": len(resolved_candidates),
             "reference_resolution_reason": primary["reference_resolution_reason"],
-            "reference_resolution_confidence": primary["reference_resolution_confidence"],
+            "reference_resolution_confidence": primary[
+                "reference_resolution_confidence"
+            ],
             "multiple_references_detected": signals["multiple_references_detected"],
             "submission_date": signals["submission_date"],
             "suspicious_self_resolution": suspicious_self_resolution,
@@ -1153,6 +1173,19 @@ def classify_bill_from_doc(
         ambiguity_reason = "multiple_equally_strong_candidates"
     elif suspicious_self_resolution:
         resolution_reason = "suspicious_self_reference_only"
+        ambiguity_reason = None
+    elif resolved_candidates and all(
+        candidate.get("reference_resolution_reason") == "unresolved_no_link_or_number"
+        for candidate in resolved_candidates
+    ):
+        resolution_reason = "unresolved_no_link_or_number"
+        ambiguity_reason = None
+    elif resolved_candidates and all(
+        candidate.get("reference_resolution_reason")
+        == "unresolved_missing_target_knesset"
+        for candidate in resolved_candidates
+    ):
+        resolution_reason = "unresolved_missing_target_knesset"
         ambiguity_reason = None
     elif resolved_candidates:
         resolution_reason = "no_resolved_reference_candidates"
@@ -1170,7 +1203,8 @@ def classify_bill_from_doc(
         "reference_candidate_count": len(resolved_candidates),
         "reference_resolution_reason": resolution_reason,
         "reference_resolution_confidence": 0.0 if suspicious_self_resolution else None,
-        "multiple_references_detected": signals["multiple_references_detected"],
+        "multiple_references_detected": signals["multiple_references_detected"]
+        or len(resolved_candidates) > 1,
         "submission_date": signals["submission_date"],
         "suspicious_self_resolution": suspicious_self_resolution,
         "ambiguous_reference_resolution": ambiguous_reference_resolution,

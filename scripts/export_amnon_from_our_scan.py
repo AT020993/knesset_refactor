@@ -50,6 +50,7 @@ from data.recurring_bills.export_resolution import (  # noqa: E402
     ensure_columns,
     sanitize_submission_dates,
     strip_timezone_columns,
+    suppress_source_metadata_reference_resolutions,
     verify_effective_originals,
 )
 
@@ -115,6 +116,7 @@ def export(
     raw_originals = int((merged["is_original"] == True).sum())  # noqa: E712
     raw_recurring = int((merged["is_original"] == False).sum())  # noqa: E712
 
+    merged = suppress_source_metadata_reference_resolutions(merged)
     merged = apply_option_c_post_pass(merged, reason_for=_reason_for_doc_row)
     merged = enrich_from_final_original_bill_id(merged, bill_ref)
     merged = sanitize_submission_dates(merged)
@@ -132,12 +134,14 @@ def export(
         "input_rows": len(xl),
         "output_rows": len(merged),
         "unmatched": int(merged["classification_source"].isna().sum()),
-        "by_source": merged["classification_source"].value_counts(dropna=False).to_dict(),
+        "by_source": merged["classification_source"]
+        .value_counts(dropna=False)
+        .to_dict(),
         "by_method": merged["method"].value_counts(dropna=False).to_dict(),
         "raw_originals": raw_originals,
         "raw_recurring": raw_recurring,
-        "effective_originals": int((merged["is_original"] == True).sum()),  # noqa: E712
-        "effective_recurring": int((merged["is_original"] == False).sum()),  # noqa: E712
+        "effective_originals": int(merged["is_original"].eq(True).sum()),
+        "effective_recurring": int(merged["is_original"].eq(False).sum()),
         "is_recurring_upstream_true": int(merged["is_recurring_upstream"].sum()),
         "promoted_to_effective_original": int(
             merged["effective_original_reason"].notna().sum()
@@ -152,13 +156,20 @@ def export(
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--excel", type=Path,
-                   default=_REPO_ROOT / "data" / "Private.Bills.Final.091123.xlsx")
-    p.add_argument("--db", type=Path,
-                   default=_REPO_ROOT / "data" / "warehouse.duckdb")
-    p.add_argument("--output", type=Path,
-                   default=_REPO_ROOT / "data" / "snapshots"
-                                      / "Private.Bills.Final.091123_with_our_classification.xlsx")
+    p.add_argument(
+        "--excel",
+        type=Path,
+        default=_REPO_ROOT / "data" / "Private.Bills.Final.091123.xlsx",
+    )
+    p.add_argument("--db", type=Path, default=_REPO_ROOT / "data" / "warehouse.duckdb")
+    p.add_argument(
+        "--output",
+        type=Path,
+        default=_REPO_ROOT
+        / "data"
+        / "snapshots"
+        / "Private.Bills.Final.091123_with_our_classification.xlsx",
+    )
     args = p.parse_args()
 
     if not args.excel.exists():
@@ -172,7 +183,9 @@ def main() -> int:
 
     print(f"Input rows:  {stats['input_rows']}")
     print(f"Output rows: {stats['output_rows']}")
-    print(f"Unmatched:   {stats['unmatched']} (no row in bill_classifications_doc_full)")
+    print(
+        f"Unmatched:   {stats['unmatched']} (no row in bill_classifications_doc_full)"
+    )
     print()
     print("Raw (from our doc-scan):")
     print(f"  Originals: {stats['raw_originals']}")
@@ -182,7 +195,9 @@ def main() -> int:
     print(f"  Originals: {stats['effective_originals']}")
     print(f"  Recurring: {stats['effective_recurring']}")
     print()
-    print(f"is_recurring_upstream=True (factual reprise signal): {stats['is_recurring_upstream_true']}")
+    print(
+        f"is_recurring_upstream=True (factual reprise signal): {stats['is_recurring_upstream_true']}"
+    )
     print(f"Promoted to effective-original: {stats['promoted_to_effective_original']}")
     print()
     print("By scan method:")
@@ -203,7 +218,10 @@ def main() -> int:
     print()
     print(f"Wrote: {stats['output_path']}")
     if not all_zero:
-        print("WARNING: integrity violations detected — inspect before sending", file=sys.stderr)
+        print(
+            "WARNING: integrity violations detected — inspect before sending",
+            file=sys.stderr,
+        )
         return 2
     return 0
 

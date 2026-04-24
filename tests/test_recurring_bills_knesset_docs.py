@@ -91,7 +91,10 @@ def _make_con(rows: list[tuple[int, int, int]]) -> duckdb.DuckDBPyConnection:
     if rows:
         con.executemany(
             "INSERT INTO KNS_Bill (BillID, KnessetNum, PrivateNumber, Name) VALUES (?, ?, ?, ?)",
-            [(bill_id, knesset_num, private_number, f'Bill {bill_id}') for bill_id, knesset_num, private_number in rows],
+            [
+                (bill_id, knesset_num, private_number, f"Bill {bill_id}")
+                for bill_id, knesset_num, private_number in rows
+            ],
         )
     return con
 
@@ -127,7 +130,9 @@ def _classify_from_text(
     cache = tmp_path / f"{bill_id}.doc"
     cache.write_bytes(b"cached")
     extraction = MagicMock(returncode=0, stdout=text.encode(), stderr=b"")
-    with patch("data.recurring_bills.knesset_docs.subprocess.run", return_value=extraction):
+    with patch(
+        "data.recurring_bills.knesset_docs.subprocess.run", return_value=extraction
+    ):
         return classify_bill_from_doc(
             bill_id=bill_id,
             current_knesset=current_knesset,
@@ -193,10 +198,16 @@ class TestParseRecurrenceSignals:
         assert extract_submission_date(K1_FOOTNOTE_TAIL_TEXT, current_knesset=1) is None
 
     def test_prefers_contextual_submission_block_over_earlier_tail_dates(self):
-        assert extract_submission_date(K8_SUBMISSION_TAIL_TEXT, current_knesset=8) == "1974-10-21"
+        assert (
+            extract_submission_date(K8_SUBMISSION_TAIL_TEXT, current_knesset=8)
+            == "1974-10-21"
+        )
 
     def test_extracts_numeric_ymd_submission_date_from_bottom_block(self):
-        assert extract_submission_date(K14_SUBMISSION_TAIL_TEXT, current_knesset=14) == "1998-07-27"
+        assert (
+            extract_submission_date(K14_SUBMISSION_TAIL_TEXT, current_knesset=14)
+            == "1998-07-27"
+        )
 
     def test_rejects_future_submission_date(self):
         text = """
@@ -226,7 +237,10 @@ class TestParseRecurrenceSignals:
         assert signals["is_recurring"] is True
         assert signals["multiple_references_detected"] is True
         assert signals["reference_candidate_count"] == 7
-        recurrence_types = {candidate["recurrence_type"] for candidate in signals["reference_candidates"]}
+        recurrence_types = {
+            candidate["recurrence_type"]
+            for candidate in signals["reference_candidates"]
+        }
         assert recurrence_types == {"identical", "similar"}
         assert signals["submission_date"] == "2014-02-24"
 
@@ -271,7 +285,7 @@ class TestResolveLinkBack:
         )
         assert result == 167458
 
-    def test_same_knesset_fallback_precedes_earlier_knesset(self):
+    def test_missing_knesset_does_not_fall_back_to_source_knesset(self):
         con = _make_con([(167458, 16, 285), (200001, 17, 285)])
         result = resolve_link_back(
             private_number=285,
@@ -279,7 +293,7 @@ class TestResolveLinkBack:
             current_knesset=17,
             warehouse_con=con,
         )
-        assert result == 200001
+        assert result is None
 
     def test_returns_none_on_no_match(self):
         con = _make_con([])
@@ -334,8 +348,10 @@ class TestClassifyBillFromDoc:
 
     def test_404_returns_fetch_failed(self, tmp_path: Path):
         resp = MagicMock(status_code=404)
-        with patch("data.recurring_bills.knesset_docs.requests.get", return_value=resp), \
-             patch("data.recurring_bills.knesset_docs.time.sleep"):
+        with (
+            patch("data.recurring_bills.knesset_docs.requests.get", return_value=resp),
+            patch("data.recurring_bills.knesset_docs.time.sleep"),
+        ):
             result = classify_bill_from_doc(
                 bill_id=10001,
                 current_knesset=16,
@@ -346,7 +362,7 @@ class TestClassifyBillFromDoc:
         assert result["method"] == "doc_fetch_failed"
         assert result["is_recurring"] is False
 
-    def test_same_knesset_reference_beats_prior_knesset_fallback(self, tmp_path: Path):
+    def test_bare_private_number_does_not_infer_source_knesset(self, tmp_path: Path):
         con = _make_con(
             [
                 (10001, 17, 285),
@@ -363,10 +379,17 @@ class TestClassifyBillFromDoc:
         )
 
         assert result["is_recurring"] is True
-        assert result["original_bill_id"] == 10001
-        assert result["reference_resolution_reason"] == "same_knesset_private_number_fallback"
+        assert result["original_bill_id"] is None
+        assert result["method"] == "doc_pattern_unresolved"
+        assert (
+            result["reference_resolution_reason"] == "unresolved_missing_target_knesset"
+        )
+        assert result["reference_candidates"][0]["private_number"] == 285
+        assert result["reference_candidates"][0]["referenced_knesset"] is None
 
-    def test_explicit_older_knesset_name_beats_same_knesset_fallback(self, tmp_path: Path):
+    def test_explicit_older_knesset_name_beats_same_knesset_fallback(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (170094, 15, 2582),
@@ -383,9 +406,13 @@ class TestClassifyBillFromDoc:
         )
 
         assert result["original_bill_id"] == 164137
-        assert result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
+        assert (
+            result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
+        )
 
-    def test_numeric_older_knesset_phrase_beats_same_knesset_fallback(self, tmp_path: Path):
+    def test_numeric_older_knesset_phrase_beats_same_knesset_fallback(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (170608, 15, 1147),
@@ -402,9 +429,13 @@ class TestClassifyBillFromDoc:
         )
 
         assert result["original_bill_id"] == 164020
-        assert result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
+        assert (
+            result["reference_resolution_reason"] == "contextual_knesset_phrase_match"
+        )
 
-    def test_explicit_private_number_and_knesset_beats_bare_header_reference(self, tmp_path: Path):
+    def test_explicit_private_number_and_knesset_beats_bare_header_reference(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (544468, 19, 2056),
@@ -421,12 +452,17 @@ class TestClassifyBillFromDoc:
         )
 
         assert result["original_bill_id"] == 488544
-        assert result["reference_resolution_reason"] == "explicit_private_number_and_knesset"
+        assert (
+            result["reference_resolution_reason"]
+            == "explicit_private_number_and_knesset"
+        )
         assert result["submission_date"] == "2014-01-15"
         assert result["reference_candidate_count"] == 1
         assert result["reference_candidates"][0]["reference_text"] == "פ/1915/19"
 
-    def test_explicit_reference_does_not_gain_name_fallback_candidate(self, tmp_path: Path):
+    def test_explicit_reference_does_not_gain_name_fallback_candidate(
+        self, tmp_path: Path
+    ):
         con = _make_named_con(
             [
                 (544468, 19, 2056, "הצעת חוק לדוגמה"),
@@ -443,9 +479,13 @@ class TestClassifyBillFromDoc:
 
         assert result["original_bill_id"] == 488544
         assert result["reference_candidate_count"] == 1
-        assert [candidate["reference_text"] for candidate in result["reference_candidates"]] == ["פ/1915/19"]
+        assert [
+            candidate["reference_text"] for candidate in result["reference_candidates"]
+        ] == ["פ/1915/19"]
 
-    def test_multiple_references_do_not_pick_unrelated_first_match(self, tmp_path: Path):
+    def test_multiple_references_do_not_pick_unrelated_first_match(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (544468, 19, 2056),
@@ -466,7 +506,10 @@ class TestClassifyBillFromDoc:
         )
 
         assert result["original_bill_id"] == 488544
-        assert all(candidate["private_number"] != 2056 for candidate in result["reference_candidates"])
+        assert all(
+            candidate["private_number"] != 2056
+            for candidate in result["reference_candidates"]
+        )
 
     def test_non_original_bill_does_not_silently_self_resolve(self, tmp_path: Path):
         con = _make_con([(544468, 19, 2056)])
@@ -485,7 +528,9 @@ class TestClassifyBillFromDoc:
         assert result["suspicious_self_resolution"] is True
         assert result["reference_resolution_reason"] == "suspicious_self_reference_only"
 
-    def test_name_fallback_resolves_unique_prior_match(self, tmp_path: Path):
+    def test_reference_less_old_knesset_phrase_does_not_resolve_from_source_metadata(
+        self, tmp_path: Path
+    ):
         con = duckdb.connect(":memory:")
         con.execute(
             """
@@ -505,6 +550,7 @@ class TestClassifyBillFromDoc:
             [
                 (150383, 10, 90, 'הצעת חוק מורשת העדות, התשמ"ה-1985'),
                 (151979, 11, 161, 'הצעת חוק מורשת העדות, התשמ"ה-1985'),
+                (151980, 11, 294, 'הצעת חוק מורשת העדות, התשמ"ה-1985'),
             ],
         )
         text = "הצעת חוק זהה הוגשה בכנסת העשירית."
@@ -516,15 +562,22 @@ class TestClassifyBillFromDoc:
             current_knesset=11,
         )
 
-        assert result["original_bill_id"] == 150383
-        assert result["reference_resolution_reason"] == "contextual_knesset_name_match"
+        assert result["original_bill_id"] is None
+        assert result["method"] == "doc_pattern_unresolved"
+        assert result["reference_resolution_reason"] == "unresolved_no_link_or_number"
         assert result["reference_candidate_count"] == 1
+        candidate = result["reference_candidates"][0]
+        assert candidate["private_number"] is None
+        assert candidate["referenced_knesset"] == 10
+        assert candidate["resolved_bill_id"] is None
 
-    def test_unresolved_explicit_reference_does_not_fall_back_by_name(self, tmp_path: Path):
+    def test_unresolved_explicit_reference_does_not_fall_back_by_name(
+        self, tmp_path: Path
+    ):
         con = _make_named_con(
             [
-                (150383, 10, 90, "הצעת חוק מורשת העדות, התשמ\"ה-1985"),
-                (151979, 11, 161, "הצעת חוק מורשת העדות, התשמ\"ה-1985"),
+                (150383, 10, 90, 'הצעת חוק מורשת העדות, התשמ"ה-1985'),
+                (151979, 11, 161, 'הצעת חוק מורשת העדות, התשמ"ה-1985'),
             ]
         )
         text = "הצעת חוק זהה הוגשה בכנסת העשירית (פ/9999/10)."
@@ -538,7 +591,9 @@ class TestClassifyBillFromDoc:
 
         assert result["original_bill_id"] is None
         assert result["method"] == "doc_pattern_unresolved"
-        assert result["reference_resolution_reason"] == "no_resolved_reference_candidates"
+        assert (
+            result["reference_resolution_reason"] == "no_resolved_reference_candidates"
+        )
         assert result["reference_candidate_count"] == 1
         assert result["reference_candidates"][0]["reference_text"] == "פ/9999/10"
 
@@ -565,11 +620,18 @@ class TestClassifyBillFromDoc:
         assert result["original_bill_id"] == 183068
         assert result["multiple_references_detected"] is True
         assert result["reference_candidate_count"] == 7
-        recurrence_types = {candidate["recurrence_type"] for candidate in result["reference_candidates"]}
+        recurrence_types = {
+            candidate["recurrence_type"] for candidate in result["reference_candidates"]
+        }
         assert recurrence_types == {"identical", "similar"}
-        assert result["reference_resolution_reason"] == "explicit_private_number_and_knesset"
+        assert (
+            result["reference_resolution_reason"]
+            == "explicit_private_number_and_knesset"
+        )
 
-    def test_equally_strong_primary_candidates_are_marked_ambiguous(self, tmp_path: Path):
+    def test_equally_strong_primary_candidates_are_marked_ambiguous(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (180100, 18, 100),
@@ -591,12 +653,24 @@ class TestClassifyBillFromDoc:
         assert result["original_bill_id"] is None
         assert result["method"] == "doc_pattern_unresolved"
         assert result["ambiguous_reference_resolution"] is True
-        assert result["ambiguous_reference_reason"] == "multiple_equally_strong_candidates"
-        assert result["reference_resolution_reason"] == "ambiguous_primary_reference_candidates"
-        top_candidates = [c for c in result["reference_candidates"] if c["tied_for_best"]]
-        assert {candidate["resolved_bill_id"] for candidate in top_candidates} == {180100, 180101}
+        assert (
+            result["ambiguous_reference_reason"] == "multiple_equally_strong_candidates"
+        )
+        assert (
+            result["reference_resolution_reason"]
+            == "ambiguous_primary_reference_candidates"
+        )
+        top_candidates = [
+            c for c in result["reference_candidates"] if c["tied_for_best"]
+        ]
+        assert {candidate["resolved_bill_id"] for candidate in top_candidates} == {
+            180100,
+            180101,
+        }
 
-    def test_suspicious_self_reference_never_wins_over_valid_candidate(self, tmp_path: Path):
+    def test_suspicious_self_reference_never_wins_over_valid_candidate(
+        self, tmp_path: Path
+    ):
         con = _make_con(
             [
                 (544468, 19, 2056),
@@ -618,7 +692,11 @@ class TestClassifyBillFromDoc:
         assert result["original_bill_id"] == 488544
         assert result["suspicious_self_resolution"] is True
         assert result["ambiguous_reference_resolution"] is False
-        selected = [candidate for candidate in result["reference_candidates"] if candidate["selected"]]
+        selected = [
+            candidate
+            for candidate in result["reference_candidates"]
+            if candidate["selected"]
+        ]
         assert [candidate["resolved_bill_id"] for candidate in selected] == [488544]
         assert all(candidate["resolved_bill_id"] != 544468 for candidate in selected)
 
