@@ -122,11 +122,13 @@ An output containing only a legacy `Sheet1` worksheet is invalid.
 ## Known Limitations
 
 - Old Knesset documents often mention prior bills without a private bill number or link. Those rows remain unresolved by design.
+- Rows without a source document URL are exported as `no_doc_url`; rows whose source document could not be downloaded or parsed are exported as `doc_fetch_failed`. These rows are not classified by title/name guessing.
 - OCR or legacy `.doc` extraction can lose punctuation or layout.
 - `target_url_extracted` is currently blank because target URL extraction is not implemented.
 - Source document URLs prove only source-document identity, not target-bill identity.
 - Private bill numbers are not globally unique across Knessets; a bare `פ/NNN` is not enough for target resolution.
 - `explicit_relation_type` is phrase-based and must not be read as legal-text similarity.
+- Confidence columns are heuristic resolution scores only; they are not measured accuracy percentages.
 
 ## Validation
 
@@ -148,3 +150,13 @@ PYTHONPATH="./src" .venv/bin/python -m pytest \
   tests/test_recurring_bills_knesset_docs.py \
   tests/test_recurring_bills_export_resolution.py -q
 ```
+
+Latest workbook audit also checks:
+
+- exactly the three expected worksheets
+- dictionary coverage for all exported columns
+- no duplicate `BillID`
+- no direct/cited self-reference in the main sheet
+- no future, pre-1948, or unparseable `submission_date`
+- no `same_knesset_name_fallback` values
+- value equality between the checked workbook and a fresh export from the current warehouse
