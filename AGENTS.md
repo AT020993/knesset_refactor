@@ -206,7 +206,7 @@ Match rates: Bills 99.6%, Agendas 100%, Queries only 13% (24K entries for K10-K1
 | Low query coding match (~13%) | Expected — 24K entries for K10-K18 not in API |
 | `scripts/upload_to_gcs.py` hangs | Use `gsutil` instead |
 | Chart changes not visible | `@st.cache_resource` — restart Streamlit server |
-| `Parameter.make_metavar() missing 'ctx'` on typer CLI | click 8.3+ broke typer 0.12.x. Pin `click>=8.1,<8.3` in requirements.txt AND pyproject.toml (list `click` BEFORE `typer[all]` in pyproject.toml — the cloud-constraints regex parser stops at the first `]`, which is inside `typer[all]`) |
+| `Parameter.make_metavar() missing 'ctx'` on typer CLI | click 8.2+ broke typer 0.12.x. Pin `click>=8.1,<8.2` in requirements.txt AND pyproject.toml (list `click` BEFORE `typer[all]` in pyproject.toml — the cloud-constraints regex parser stops at the first `]`, which is inside `typer[all]`) |
 | AGENTS.md silently committed to git after subagent edit | `.gitignore` blocks new files, not already-tracked ones. If a merge shows `create mode 100644 AGENTS.md`, investigate — run `git rm --cached AGENTS.md` before pushing to restore the untracked-by-intent status |
 
 ## Tests
