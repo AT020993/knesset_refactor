@@ -21,7 +21,7 @@ xenon>=0.9.0
 
 # Security scanning
 safety>=2.3.0
-bandit>=1.7.0
+bandit>=1.9.4
 pip-audit>=2.6.0
 semgrep>=1.45.0
 
