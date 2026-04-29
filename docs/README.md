@@ -25,6 +25,7 @@ This directory and the repo root hold all user- and developer-facing documentati
 
 - [`CAP_ANNOTATION_GUIDE.md`](CAP_ANNOTATION_GUIDE.md) — CAP bill-classification annotation workflow.
 - [`classification_process.md`](classification_process.md) — recurring-bills classification method and the sendable Prof. Amnon workbook contract.
+- [`QUERY_EXPORTS.md`](QUERY_EXPORTS.md) — generating and validating the sendable all-parliamentary-queries CSV.
 - [`FULL_DATASET_DOWNLOAD.md`](FULL_DATASET_DOWNLOAD.md) — exporting a full filtered query result.
 - [`../PERFORMANCE_OPTIMIZATIONS.md`](../PERFORMANCE_OPTIMIZATIONS.md) — caching strategies and bottleneck notes.
 - [`DATA_PROVENANCE.md`](DATA_PROVENANCE.md) — where the data comes from, how it is refreshed, licensing notes.
