@@ -17,7 +17,7 @@ ruff>=0.8.0
 mypy>=1.4.0
 pylint>=2.17.0
 radon>=6.0.0
-xenon>=0.9.0
+xenon>=0.9.3
 
 # Security scanning
 safety>=2.3.0
