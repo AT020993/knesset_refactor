@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Imported the Knesset-25 bill policy codings from `Bills_KN_25_Nov25.xlsx`
+  into the deployed warehouse: 2,750 non-empty `majoril`/`minoril` rows were
+  matched by `BillID`, with blank workbook rows ignored so existing codings are
+  not cleared.
+- Added an audit utility for the full bills export and regression coverage for
+  deterministic bill aggregation ordering and streaming full-CSV downloads.
+
+### Changed
+- Full CSV downloads now stream through DuckDB `COPY` instead of materializing
+  the entire result as a pandas DataFrame; row counts strip top-level
+  `ORDER BY` before wrapping the query in `COUNT(*)`.
+- Bill full-detail query aggregations now use stable ordering for concatenated
+  member, plenum-session, and document fields.
+- Bill coding imports now accept `religion` as an alias for
+  `StateReligion`.
+
 ## [3.0.0] — 2026-06-09
 
 Breaking change to the Parquet snapshot contract: the bundle now emits **eight** files (adds `votes_list.parquet` + `mk_votes.parquet`). Per the versioning rule, any change to the bundle shape bumps the major version so the number stays a reliable integrity signal — even though this release is purely additive and existing snapshots are unchanged.

@@ -8,6 +8,7 @@ downloads and SQL query modifications.
 import io
 import logging
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -46,7 +47,74 @@ class DatasetExporter:
         sql = re.sub(r'\s+LIMIT\s+\d+', '', sql, flags=re.IGNORECASE)
         # Remove standalone OFFSET clause
         sql = re.sub(r'\s+OFFSET\s+\d+', '', sql, flags=re.IGNORECASE)
-        return sql.strip()
+        return sql.strip().rstrip(";").strip()
+
+    @staticmethod
+    def _find_top_level_keyword(sql: str, keyword: str) -> int:
+        """Find a keyword outside parentheses and string literals."""
+        keyword_lower = keyword.lower()
+        depth = 0
+        quote: str | None = None
+        i = 0
+
+        while i < len(sql):
+            char = sql[i]
+
+            if quote:
+                if char == quote:
+                    if i + 1 < len(sql) and sql[i + 1] == quote:
+                        i += 2
+                        continue
+                    quote = None
+                i += 1
+                continue
+
+            if char in {"'", '"'}:
+                quote = char
+                i += 1
+                continue
+
+            if char == "(":
+                depth += 1
+                i += 1
+                continue
+            if char == ")":
+                depth = max(0, depth - 1)
+                i += 1
+                continue
+
+            if depth == 0 and sql[i : i + len(keyword)].lower() == keyword_lower:
+                before = sql[i - 1] if i > 0 else " "
+                after_index = i + len(keyword)
+                after = sql[after_index] if after_index < len(sql) else " "
+                if not (before.isalnum() or before == "_") and not (
+                    after.isalnum() or after == "_"
+                ):
+                    return i
+
+            i += 1
+
+        return -1
+
+    @classmethod
+    def remove_top_level_order_by(cls, sql: str) -> str:
+        """Remove only the final top-level ORDER BY clause from a SELECT query."""
+        stripped = sql.strip().rstrip(";")
+        order_index = cls._find_top_level_keyword(stripped, "ORDER BY")
+        if order_index == -1:
+            return stripped
+        return stripped[:order_index].strip()
+
+    @classmethod
+    def build_count_query(cls, modified_sql: str) -> str:
+        """Build a memory-efficient COUNT query for a displayed SQL statement."""
+        full_sql_no_limit = cls.remove_limit_offset_from_query(modified_sql)
+        count_sql = cls.remove_top_level_order_by(full_sql_no_limit)
+        return f"SELECT COUNT(*) as total FROM ({count_sql}) as subquery"
+
+    @staticmethod
+    def _quote_duckdb_path(path: Path) -> str:
+        return "'" + path.as_posix().replace("'", "''") + "'"
 
     def get_full_dataset_row_count(
         self, modified_sql: str, params: Optional[Sequence[Any]] = None
@@ -61,8 +129,7 @@ class DatasetExporter:
         Returns:
             Total row count, or 0 if error
         """
-        full_sql_no_limit = self.remove_limit_offset_from_query(modified_sql)
-        full_count_sql = f"SELECT COUNT(*) as total FROM ({full_sql_no_limit}) as subquery"
+        full_count_sql = self.build_count_query(modified_sql)
 
         try:
             with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
@@ -103,6 +170,36 @@ class DatasetExporter:
         except Exception as e:
             self.logger.error(f"Error fetching full dataset: {e}", exc_info=True)
             return None
+
+    def export_full_dataset_csv_bytes(
+        self, modified_sql: str, params: Optional[Sequence[Any]] = None
+    ) -> tuple[bytes, int]:
+        """Export the full result set to CSV without materializing a pandas DataFrame."""
+        full_sql_no_limit = self.remove_limit_offset_from_query(modified_sql)
+        row_count = self.get_full_dataset_row_count(modified_sql, params)
+        temp_path: Path | None = None
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as temp_file:
+                temp_path = Path(temp_file.name)
+
+            copy_sql = (
+                f"COPY ({full_sql_no_limit}) TO {self._quote_duckdb_path(temp_path)} "
+                "(HEADER, DELIMITER ',')"
+            )
+            with get_db_connection(self.db_path, read_only=True, logger_obj=self.logger) as con:
+                if params:
+                    con.execute(copy_sql, list(params))
+                else:
+                    con.execute(copy_sql)
+
+            csv_data = temp_path.read_bytes()
+            if not csv_data.startswith(b"\xef\xbb\xbf"):
+                csv_data = b"\xef\xbb\xbf" + csv_data
+            return csv_data, row_count
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     def render_full_dataset_download(
         self,
@@ -151,10 +248,11 @@ class DatasetExporter:
         """Handle full CSV dataset download."""
         with st.spinner("Preparing full dataset..."):
             try:
-                full_df = self.fetch_full_dataset(modified_sql, params)
+                csv_data, row_count = self.export_full_dataset_csv_bytes(
+                    modified_sql, params
+                )
 
-                if full_df is not None and not full_df.empty:
-                    csv_data = full_df.to_csv(index=False).encode("utf-8-sig")
+                if csv_data:
                     st.download_button(
                         "💾 Click to Save Full CSV",
                         csv_data,
@@ -162,7 +260,7 @@ class DatasetExporter:
                         "text/csv",
                         key=f"full_csv_download_{safe_name}"
                     )
-                    st.success(f"✅ Prepared {len(full_df):,} rows for download")
+                    st.success(f"✅ Prepared {row_count:,} rows for download")
                 else:
                     st.error("Failed to retrieve full dataset")
             except Exception as e:

@@ -34,7 +34,7 @@ BillSupportingMemberFactions AS (
     LEFT JOIN StandardFactionLookup sfl ON BI.PersonID = sfl.PersonID
         AND B.KnessetNum = sfl.KnessetNum
         AND sfl.rn = 1
-    WHERE (BI.Ordinal > 1 OR BI.IsInitiator IS NULL)
+    WHERE BI.Ordinal > 1
 ),
 BillMergeInfo AS (
     SELECT
@@ -68,7 +68,10 @@ BillPlenumSessions AS (
             WHEN ps.StartDate IS NOT NULL AND ps.FinishDate IS NOT NULL
             THEN DATE_DIFF('minute', CAST(ps.StartDate AS TIMESTAMP), CAST(ps.FinishDate AS TIMESTAMP))
         END) as AvgPlenumSessionDurationMinutes,
-        GROUP_CONCAT(DISTINCT CAST(ps.Number AS VARCHAR) || ': ' || ps.Name, ' | ') as PlenumSessionNames
+        GROUP_CONCAT(
+            DISTINCT CAST(ps.Number AS VARCHAR) || ': ' || ps.Name,
+            ' | ' ORDER BY CAST(ps.Number AS VARCHAR) || ': ' || ps.Name
+        ) as PlenumSessionNames
     FROM KNS_PlmSessionItem psi
     JOIN KNS_PlenumSession ps ON psi.PlenumSessionID = ps.PlenumSessionID
     WHERE psi.ItemID IS NOT NULL
@@ -128,7 +131,10 @@ BillDocuments AS (
         ) AND db.GroupTypeDesc NOT LIKE 'הצעת חוק לקריאה השנייה והשלישית%' THEN 1 END) AS OtherDocCount,
 
         -- Keep legacy concatenated format for backward compatibility (exports)
-        GROUP_CONCAT(DISTINCT db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath, ' | ') as DocumentLinks
+        GROUP_CONCAT(
+            DISTINCT db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath,
+            ' | ' ORDER BY db.GroupTypeDesc || ' (' || db.ApplicationDesc || '): ' || db.FilePath
+        ) as DocumentLinks
 
     FROM KNS_DocumentBill db
     WHERE db.FilePath IS NOT NULL
@@ -172,8 +178,14 @@ SELECT
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             CASE
                 WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN BI.PersonID END) > 0 THEN
-                    GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
-                ELSE GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
+                    GROUP_CONCAT(
+                        DISTINCT CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN (Pi.FirstName || ' ' || Pi.LastName) END,
+                        ', ' ORDER BY CASE WHEN BI.Ordinal = 1 AND BI.IsInitiator = true THEN (Pi.FirstName || ' ' || Pi.LastName) END
+                    )
+                ELSE GROUP_CONCAT(
+                    DISTINCT CASE WHEN BI.Ordinal = 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END,
+                    ', ' ORDER BY CASE WHEN BI.Ordinal = 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END
+                )
             END
         ELSE 'Government Initiative'
     END AS BillMainInitiatorNames,
@@ -210,37 +222,43 @@ SELECT
     END AS MergedWithLeadingBill,
 
     CASE
-        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
-            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName) END, ', ')
+        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 THEN BI.PersonID END) > 0 THEN
+            GROUP_CONCAT(
+                DISTINCT CASE WHEN BI.Ordinal > 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END,
+                ', ' ORDER BY CASE WHEN BI.Ordinal > 1 THEN (Pi.FirstName || ' ' || Pi.LastName) END
+            )
         ELSE 'None'
     END AS BillSupportingMemberNames,
     CASE
-        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) > 0 THEN
-            GROUP_CONCAT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sufs.NewFactionName, sf.Name, 'Unknown Faction') || ')') END, ', ')
+        WHEN COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 THEN BI.PersonID END) > 0 THEN
+            GROUP_CONCAT(
+                DISTINCT CASE WHEN BI.Ordinal > 1 THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sufs.NewFactionName, sf.Name, 'Unknown Faction') || ')') END,
+                ', ' ORDER BY CASE WHEN BI.Ordinal > 1 THEN (Pi.FirstName || ' ' || Pi.LastName || ' (' || COALESCE(sufs.NewFactionName, sf.Name, 'Unknown Faction') || ')') END
+            )
         ELSE 'None'
     END AS BillSupportingMembersWithFactions,
     COUNT(DISTINCT BI.PersonID) AS BillTotalMemberCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 THEN BI.PersonID END) AS BillMainInitiatorCount,
-    COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 OR BI.IsInitiator IS NULL THEN BI.PersonID END) AS BillSupportingMemberCount,
+    COUNT(DISTINCT CASE WHEN BI.Ordinal > 1 THEN BI.PersonID END) AS BillSupportingMemberCount,
 
     -- Coalition/Opposition member counts
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID
-                        WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) AS BillCoalitionMemberCount,
+                        WHEN BI.Ordinal > 1 AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) AS BillCoalitionMemberCount,
     COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID
-                        WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) AS BillOppositionMemberCount,
+                        WHEN BI.Ordinal > 1 AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) AS BillOppositionMemberCount,
 
     -- Coalition/Opposition member percentages
     CASE
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Coalition' THEN BI.PersonID
-                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) * 100.0)
+                                      WHEN BI.Ordinal > 1 AND sufs.CoalitionStatus = 'Coalition' THEN BI.PersonID END) * 100.0)
                   / COUNT(DISTINCT BI.PersonID), 1)
         ELSE 0.0
     END AS BillCoalitionMemberPercentage,
     CASE
         WHEN COUNT(DISTINCT BI.PersonID) > 0 THEN
             ROUND((COUNT(DISTINCT CASE WHEN BI.Ordinal = 1 AND ufs.CoalitionStatus = 'Opposition' THEN BI.PersonID
-                                      WHEN (BI.Ordinal > 1 OR BI.IsInitiator IS NULL) AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) * 100.0)
+                                      WHEN BI.Ordinal > 1 AND sufs.CoalitionStatus = 'Opposition' THEN BI.PersonID END) * 100.0)
                   / COUNT(DISTINCT BI.PersonID), 1)
         ELSE 0.0
     END AS BillOppositionMemberPercentage,

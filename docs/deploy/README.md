@@ -98,7 +98,7 @@ PYTHONPATH=./src .venv/bin/python -m data.snapshots.exporter \
     --warehouse data/warehouse.duckdb \
     --output-dir data/snapshots/                              # step 2
 
-ls data/snapshots/                                           # 7 parquets + manifest.json
+ls data/snapshots/                                           # 8 parquets + manifest.json
 jq '.generated_at_utc, .warehouse_mtime_utc' data/snapshots/manifest.json
 ```
 

@@ -13,9 +13,7 @@ Covers:
 - Edge cases (empty files, missing columns, duplicates)
 """
 
-import tempfile
 from pathlib import Path
-from typing import Generator
 
 import duckdb
 import pandas as pd
@@ -191,6 +189,33 @@ class TestBillImport:
         result = importer.import_bill_coding(path)
         assert result.rows_updated == 4
         assert result.rows_imported == 0
+
+    def test_import_bills_maps_religion_alias_to_state_religion(
+        self, importer: ResearchCodingImporter, tmp_path: Path
+    ) -> None:
+        """Bill files may use religion for the StateReligion coding column."""
+        df = pd.DataFrame({
+            "BillID": [100],
+            "majoril": [13],
+            "minoril": [1399],
+            "religion": [1],
+            "territories": [1],
+        })
+        path = tmp_path / "bills_religion_alias.xlsx"
+        df.to_excel(path, index=False)
+
+        result = importer.import_bill_coding(path)
+
+        assert result.rows_imported == 1
+        assert len(result.errors) == 0
+
+        conn = duckdb.connect(str(importer.db_path))
+        row = conn.execute(
+            "SELECT MajorIL, MinorIL, StateReligion, Territories "
+            "FROM UserBillCoding WHERE BillID = 100"
+        ).fetchone()
+        conn.close()
+        assert row == (13, 1399, 1, 1)
 
     def test_import_bills_missing_id_column(self, importer: ResearchCodingImporter, tmp_path: Path) -> None:
         df = pd.DataFrame({"MAJORIL": [1, 2], "MINORIL": [10, 20]})

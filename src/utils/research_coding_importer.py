@@ -115,6 +115,7 @@ class ResearchCodingImporter:
         "minoril": "MinorIL",
         "majorcap": "MajorCAP",
         "minorcap": "MinorCAP",
+        "religion": "StateReligion",
         "statereligion": "StateReligion",
         "territories": "Territories",
     }
@@ -181,7 +182,7 @@ class ResearchCodingImporter:
                     except (UnicodeDecodeError, UnicodeError):
                         continue
                 else:
-                    return None, f"Could not decode CSV with any supported encoding"
+                    return None, "Could not decode CSV with any supported encoding"
             else:
                 return None, f"Unsupported file format: {suffix}"
 

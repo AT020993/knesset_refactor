@@ -6,21 +6,22 @@ This feature allows users to download the complete filtered dataset from predefi
 ## Implementation Details
 
 ### Files Modified
-1. **src/ui/renderers/data_refresh/page.py**
-   - Added `_remove_limit_offset_from_query()` static method
-   - Added `_render_full_dataset_download()` method
-   - Integrated full download UI into `_render_query_results_display()`
+1. **src/ui/renderers/data_refresh/dataset_exporter.py**
+   - Owns SQL cleanup, full row counts, CSV streaming, Excel fetches, and the
+     full-download controls.
+2. **src/ui/renderers/data_refresh/page.py**
+   - Wires the exporter into the query-results display.
 
 ### Key Components
 
-#### 1. SQL Query Modification (`_remove_limit_offset_from_query`)
+#### 1. SQL Query Modification (`DatasetExporter.remove_limit_offset_from_query`)
 ```python
 @staticmethod
 def _remove_limit_offset_from_query(sql: str) -> str:
     """Remove LIMIT and OFFSET clauses from SQL query."""
     sql = re.sub(r'\s+LIMIT\s+\d+', '', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\s+OFFSET\s+\d+', '', sql, flags=re.IGNORECASE)
-    return sql.strip()
+    return sql.strip().rstrip(";").strip()
 ```
 
 **How it works:**
@@ -28,6 +29,8 @@ def _remove_limit_offset_from_query(sql: str) -> str:
 - Removes OFFSET clauses (e.g., "OFFSET 2000")
 - Case-insensitive matching
 - Preserves all other SQL components (WHERE, ORDER BY, GROUP BY, CTEs, etc.)
+- Row-count queries additionally remove only the final top-level `ORDER BY`;
+  nested/window `ORDER BY` clauses are preserved.
 
 **Tested scenarios:**
 - ✅ Simple queries with LIMIT only
@@ -209,9 +212,14 @@ SELECT * FROM cte WHERE x = 1 LIMIT 1000
 - Read-only connections for safety
 
 ### Memory Efficiency
-- Pandas DataFrame loads entire result set into memory
-- For very large datasets (>100,000 rows), consider chunking
-- Current implementation suitable for datasets up to 500,000 rows
+- CSV full-dataset downloads use DuckDB `COPY` to stream the query result to a
+  temporary file before handing the bytes to Streamlit, avoiding a full pandas
+  DataFrame during query execution.
+- Row counts remove display-only `LIMIT`/`OFFSET` and top-level `ORDER BY` before
+  wrapping the query in `COUNT(*)`, so large ordered queries do not sort just to
+  count rows.
+- Excel full-dataset downloads still materialize a pandas DataFrame because
+  `openpyxl` generation needs tabular data in memory.
 
 ### File Naming Convention
 - Paginated download: `{query_name}_results.csv`
@@ -235,16 +243,18 @@ SELECT * FROM cte WHERE x = 1 LIMIT 1000
 7. **Cached Results**: Cache full dataset for repeated downloads
 
 ### Performance Optimizations
-1. **Streaming**: Stream results to file instead of loading all in memory
-2. **Parallel Processing**: Parallel execution for very large datasets
-3. **Query Optimization**: Add indexes for common filter columns
+1. **Parallel Processing**: Parallel execution for very large datasets
+2. **Query Optimization**: Add indexes for common filter columns
+3. **Compressed Downloads**: Offer ZIP compression for large CSV files
 
 ## Maintenance
 
 ### Code Location
-- **Main implementation**: `src/ui/renderers/data_refresh/page.py`
-- **Helper function**: `DataRefreshPageRenderer._remove_limit_offset_from_query()`
-- **UI rendering**: `DataRefreshPageRenderer._render_full_dataset_download()`
+- **Main implementation**: `src/ui/renderers/data_refresh/dataset_exporter.py`
+- **Helper functions**: `DatasetExporter.remove_limit_offset_from_query()`,
+  `DatasetExporter.build_count_query()`, and
+  `DatasetExporter.export_full_dataset_csv_bytes()`
+- **UI wiring**: `src/ui/renderers/data_refresh/page.py`
 
 ### Dependencies
 - `pandas`: DataFrame operations, CSV/Excel export
