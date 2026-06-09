@@ -164,6 +164,23 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         );
         INSERT INTO UserAgendaCoding VALUES
             (9001, 1, 100, 0, 0, 'exact', 1.00, 'RA', NULL);
+
+        CREATE TABLE WebVoteHeader (
+            vote_id BIGINT, knesset_num INTEGER, vote_date VARCHAR,
+            vote_type VARCHAR, item_title VARCHAR, is_accepted BOOLEAN,
+            is_electronic BOOLEAN, total_for INTEGER, total_against INTEGER,
+            total_abstain INTEGER, total_present INTEGER
+        );
+        INSERT INTO WebVoteHeader VALUES
+            (10, 26, '2026-06-01T00:00:00', 'אלקטרונית', 'הצבעה לדוגמה', TRUE, TRUE, 2, 1, 0, 0);
+
+        CREATE TABLE WebVoteMk (
+            vote_id BIGINT, mk_id BIGINT, mk_name VARCHAR,
+            faction_name VARCHAR, position VARCHAR
+        );
+        INSERT INTO WebVoteMk VALUES
+            (10, 1, 'כהן יעל', 'מפלגה א', 'for'),
+            (10, 2, 'לוי דן',  'מפלגה ב', 'against');
         """
     )
     con.close()
