@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-06-09
+
+Breaking change to the Parquet snapshot contract: the bundle now emits **eight** files (adds `votes_list.parquet` + `mk_votes.parquet`). Per the versioning rule, any change to the bundle shape bumps the major version so the number stays a reliable integrity signal — even though this release is purely additive and existing snapshots are unchanged.
+
+### Added
+- **Live plenum-vote ingestion** (`data.votes`): pulls current-Knesset per-MK votes from the live Knesset site API (`WebSiteApi/knessetapi/Votes`), since the official OData `Votes.svc` is frozen at 2021 and carries no Knesset-25 data. Resolves each `MkName` to a `PersonID` via a term-scoped name matcher (validated 118/118 on a Knesset-25 sample). Writes the `WebVoteHeader` + `WebVoteMk` warehouse tables. Incremental — re-runs fetch only new votes. Run with `python -m data.votes.ingest --knesset 25`.
+- Two new snapshots from `data.queries.packs.votes`: `votes_list.parquet` (vote headers + tallies) and `mk_votes.parquet` (per-MK positions, resolved to `PersonID`), registered in `data.snapshots.exporter`.
+
 ## [2.0.0] — 2026-04-19
 
 Breaking change to the Parquet snapshot contract: the bundle now emits **six** files instead of seven. Per the versioning rule established at `v1.0.0`, any shape change to the bundle bumps the major version — even when no downstream consumer is affected — so that the version number remains a reliable integrity signal.
@@ -34,6 +42,7 @@ Breaking change to the Parquet snapshot contract: the bundle now emits **six** f
 
 First tagged release. The `v1.0.0` tag pins the Parquet snapshot contract consumed by downstream repos — see [`src/data/snapshots/exporter.py`](src/data/snapshots/exporter.py) and the snapshot contract section in [`CLAUDE.md`](CLAUDE.md). Byte-idempotent on an unchanged warehouse; breaking Parquet-shape changes bump the major version.
 
-[Unreleased]: https://github.com/AT020993/knesset_refactor/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/AT020993/knesset_refactor/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/AT020993/knesset_refactor/releases/tag/v3.0.0
 [2.0.0]: https://github.com/AT020993/knesset_refactor/releases/tag/v2.0.0
 [1.0.0]: https://github.com/AT020993/knesset_refactor/releases/tag/v1.0.0
