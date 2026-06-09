@@ -51,9 +51,11 @@ python scripts/diagnose_db.py
 
 ## Snapshot contract (downstream `knesset-platform`)
 
-`src/data/snapshots/exporter.py` is the **only** interface other repos use — they never import this codebase. `v1.0.0` tag on main pins the contract; bump major on breaking Parquet-shape changes. Repo: [`knesset-platform`](https://github.com/AT020993/knesset-platform).
+`src/data/snapshots/exporter.py` is the **only** interface other repos use — they never import this codebase. The `vN.0.0` tag on main pins the contract; bump major on any Parquet-bundle-shape change. Repo: [`knesset-platform`](https://github.com/AT020993/knesset-platform).
 
-Produces 7 Parquets (`mk_summary`, `mk_bills`, `mk_questions`, `mk_motions`, `parties_list`, `committees_list`, `topics_list`) + `manifest.json`. Byte-idempotent on unchanged warehouse.
+Produces **8** Parquets (`mk_summary`, `mk_bills`, `mk_questions`, `mk_motions`, `parties_list`, `committees_list`, `votes_list`, `mk_votes`) + `manifest.json` as of **v3.0.0**. Byte-idempotent on unchanged warehouse. (`topics_list` was removed in v2.0.0; `votes_list` + `mk_votes` added in v3.0.0.)
+
+**Votes (`votes_list` / `mk_votes`)** are sourced separately from the OData pipeline: the official `Votes.svc` is frozen at 2021 (no Knesset-25), so per-MK votes come from the **live Knesset site API** via `data.votes.ingest` (run `python -m data.votes.ingest --knesset 25`), which writes the `WebVoteHeader` + `WebVoteMk` warehouse tables that these snapshots shape. The ingester is incremental and must run before the exporter for vote snapshots to reflect new votes. See `src/data/votes/` and `src/data/queries/packs/votes.py`.
 
 **🔴 Stable `ORDER BY` required** in every pack query used by the exporter — DuckDB parallel execution shuffles rows otherwise, breaking byte-idempotence. See `src/data/queries/packs/{mks,parties,committees}.py` for the pattern.
 
