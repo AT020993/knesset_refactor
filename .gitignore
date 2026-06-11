@@ -2,6 +2,8 @@
 /data/*
 !/data/taxonomies/
 !/data/faction_coalition_status*.csv
+!/data/seeds/
+!/data/seeds/*.csv
 *.duckdb
 *.parquet
 

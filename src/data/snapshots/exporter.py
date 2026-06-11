@@ -85,6 +85,98 @@ WHERE a.InitiatorPersonID IS NOT NULL
 ORDER BY a.AgendaID, a.InitiatorPersonID
 """.strip()
 
+# --- Curated snapshots -------------------------------------------------------
+# Two snapshots have NO source in the OData warehouse: their content is
+# editorially authored (product spec deck) and lives in committed seed CSVs
+# under ``data/seeds/`` (regenerate via ``scripts/seeds/build_curated_seeds.py``).
+# The warehouse connection is read-only, so we read the CSVs straight from disk
+# via an absolute path rather than staging them into the warehouse.
+_SEEDS_DIR = Path(__file__).resolve().parents[3] / "data" / "seeds"
+
+# party_metadata — faction ideology (deck slide 6). Keyed by party_id (primary)
+# and standardised_name. founded_date / URLs / source_url are not authored yet
+# → emitted as NULL so the API's PartyMetadata shape stays complete.
+_PARTY_METADATA_SQL = f"""
+SELECT
+    CAST(party_id AS BIGINT)  AS party_id,
+    standardised_name,
+    CAST(NULL AS VARCHAR)     AS founded_date,
+    CAST(NULL AS VARCHAR)     AS platform_url,
+    CAST(NULL AS VARCHAR)     AS bylaws_url,
+    CAST(NULL AS VARCHAR)     AS website_url,
+    ideology_he,
+    CAST(NULL AS VARCHAR)     AS source_url
+FROM read_csv(
+    '{_SEEDS_DIR / "party_metadata.csv"}',
+    header = true,
+    columns = {{'party_id': 'BIGINT', 'standardised_name': 'VARCHAR', 'ideology_he': 'VARCHAR'}}
+)
+ORDER BY party_id
+""".strip()
+
+# committee_topics_ministries — ministries each committee oversees (deck slide 8
+# notes). CAP topic mapping is still pending (deck: "שחף מתייעץ עם אמנון") so
+# cap_code / cap_label_he are NULL for now.
+_COMMITTEE_TOPICS_MINISTRIES_SQL = f"""
+SELECT
+    CAST(committee_id AS BIGINT)  AS committee_id,
+    CAST(knesset_num AS INTEGER)  AS knesset_num,
+    CAST(NULL AS INTEGER)         AS cap_code,
+    CAST(NULL AS VARCHAR)         AS cap_label_he,
+    ministry_he,
+    notes_he
+FROM read_csv(
+    '{_SEEDS_DIR / "committee_topics_ministries.csv"}',
+    header = true,
+    columns = {{'committee_id': 'BIGINT', 'knesset_num': 'INTEGER', 'ministry_he': 'VARCHAR', 'notes_he': 'VARCHAR'}}
+)
+ORDER BY committee_id, ministry_he
+""".strip()
+
+# committee_sessions_by_type — discussion counts by type. KNS_CommitteeSession's
+# own TypeDesc is only open/confidential, so the *purpose* of a session is
+# derived from its agenda items (KNS_CmtSessionItem.ItemTypeID): each session is
+# labelled by its most-frequent item type (deterministic tiebreak), then sessions
+# are counted per (committee, knesset, label). Item types observed:
+#   2 → bills (legislation), 11 → general/oversight, 4 → rapid-debate proposals,
+#   6000/6003 & item-less sessions → other/procedural.
+# Secondary legislation (חקיקת משנה) has no distinct item type in this data, so it
+# legitimately does not appear. Totals reconcile with committees_list.session_count.
+_COMMITTEE_SESSIONS_BY_TYPE_SQL = """
+WITH item_type_counts AS (
+    SELECT
+        CommitteeSessionID AS session_id,
+        ItemTypeID,
+        COUNT(*)           AS n,
+        ROW_NUMBER() OVER (
+            PARTITION BY CommitteeSessionID
+            ORDER BY COUNT(*) DESC, ItemTypeID ASC
+        )                  AS rn
+    FROM KNS_CmtSessionItem
+    GROUP BY CommitteeSessionID, ItemTypeID
+),
+session_primary AS (
+    SELECT session_id, ItemTypeID AS primary_item_type
+    FROM item_type_counts
+    WHERE rn = 1
+)
+SELECT
+    CAST(cs.CommitteeID AS BIGINT) AS committee_id,
+    CAST(cs.KnessetNum AS INTEGER) AS knesset_num,
+    CASE sp.primary_item_type
+        WHEN 2  THEN 'חקיקה'
+        WHEN 11 THEN 'דיון כללי (פיקוח)'
+        WHEN 4  THEN 'הצעות לדיון מהיר (הלס"י)'
+        ELSE 'אחר'
+    END                            AS type_he,
+    COUNT(DISTINCT cs.CommitteeSessionID) AS session_count
+FROM KNS_CommitteeSession cs
+LEFT JOIN session_primary sp ON cs.CommitteeSessionID = sp.session_id
+WHERE cs.CommitteeID IS NOT NULL
+GROUP BY committee_id, knesset_num, type_he
+ORDER BY committee_id, knesset_num, session_count DESC, type_he
+""".strip()
+
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
 # for reproducibility guarantees (byte-equivalent manifest on unchanged data).
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
@@ -96,6 +188,9 @@ SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("committees_list", COMMITTEES_QUERIES["committee_list"]["sql"]),
     ("votes_list", VOTES_QUERIES["votes_list"]["sql"]),
     ("mk_votes", VOTES_QUERIES["mk_votes"]["sql"]),
+    ("party_metadata", _PARTY_METADATA_SQL),
+    ("committee_topics_ministries", _COMMITTEE_TOPICS_MINISTRIES_SQL),
+    ("committee_sessions_by_type", _COMMITTEE_SESSIONS_BY_TYPE_SQL),
 )
 
 # Keep BILLS_QUERIES referenced so lint doesn't drop the import —
@@ -124,16 +219,16 @@ def export_snapshot(
     # COPY … TO … FORMAT PARQUET streams directly from DuckDB's columnar engine;
     # no pandas roundtrip. COMPRESSION ZSTD trades a bit of CPU for ~2x smaller
     # files vs. snappy on our data shapes.
-    con.execute(
-        f"COPY ({sql}) TO '{tmp_path}' (FORMAT PARQUET, COMPRESSION ZSTD)"
-    )
+    con.execute(f"COPY ({sql}) TO '{tmp_path}' (FORMAT PARQUET, COMPRESSION ZSTD)")
     row = con.execute(f"SELECT COUNT(*) FROM read_parquet('{tmp_path}')").fetchone()
     assert row is not None  # COUNT(*) always returns one row
     rows = int(row[0])
     size_bytes = tmp_path.stat().st_size
     digest = _sha256_of_file(tmp_path)
     os.replace(tmp_path, final_path)
-    log.info("exported %s: rows=%d bytes=%d sha256=%s…", name, rows, size_bytes, digest[:12])
+    log.info(
+        "exported %s: rows=%d bytes=%d sha256=%s…", name, rows, size_bytes, digest[:12]
+    )
     return SnapshotEntry(rows=int(rows), sha256=digest, bytes=int(size_bytes))
 
 

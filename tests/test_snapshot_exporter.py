@@ -75,7 +75,19 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         );
         INSERT INTO KNS_CommitteeSession VALUES
             (9001, 500, 26, '2026-01-10'),
-            (9002, 500, 26, '2026-01-17');
+            (9002, 500, 26, '2026-01-17'),
+            (9003, 500, 26, '2026-01-24');
+
+        CREATE TABLE KNS_CmtSessionItem (
+            CmtSessionItemID BIGINT, ItemID BIGINT, CommitteeSessionID BIGINT,
+            Ordinal BIGINT, StatusID BIGINT, Name VARCHAR, ItemTypeID BIGINT,
+            LastUpdatedDate VARCHAR
+        );
+        -- session 9001 → legislation (ItemTypeID 2), 9002 → oversight (11),
+        -- 9003 → no items (folds into 'אחר'); exercises every derivation branch.
+        INSERT INTO KNS_CmtSessionItem VALUES
+            (1, 101, 9001, 1, 1, 'חוק לדוגמה', 2, '2026-01-10'),
+            (2, 102, 9002, 1, 1, 'סקירה כללית', 11, '2026-01-17');
 
         CREATE TABLE UserCAPTaxonomy (
             MajorCode INTEGER, MajorTopic_HE VARCHAR, MajorTopic_EN VARCHAR,
@@ -296,3 +308,73 @@ def test_mk_bills_exports_major_cap_from_supported_sources(
         (7001, 2),  # legacy UserBillCoding.MajorCAP path
         (7002, 1),  # UserBillCAP.CAPMinorCode -> UserCAPTaxonomy.MajorCode fallback
     ]
+
+
+def test_curated_snapshots_match_api_contract(tiny_warehouse: Path, tmp_path: Path) -> None:
+    """party_metadata + committee_topics_ministries are read from the committed
+    seed CSVs and must expose exactly the columns the FastAPI handlers SELECT."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        pm_cols = {
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'party_metadata.parquet'}'"
+            ).fetchall()
+        }
+        assert pm_cols == {
+            "party_id", "standardised_name", "founded_date", "platform_url",
+            "bylaws_url", "website_url", "ideology_he", "source_url",
+        }
+        # Likud (1096) ideology is authored — non-null.
+        ideology = con.execute(
+            f"SELECT ideology_he FROM '{out / 'party_metadata.parquet'}' WHERE party_id = 1096"
+        ).fetchone()
+        assert ideology is not None and ideology[0].startswith("סיעת הליכוד")
+
+        tm_cols = {
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'committee_topics_ministries.parquet'}'"
+            ).fetchall()
+        }
+        assert tm_cols == {
+            "committee_id", "knesset_num", "cap_code", "cap_label_he",
+            "ministry_he", "notes_he",
+        }
+        # Finance committee (4186) oversees the Finance Minister; CAP still pending.
+        fin = con.execute(
+            f"SELECT cap_code, ministry_he FROM '{out / 'committee_topics_ministries.parquet'}'"
+            " WHERE committee_id = 4186"
+        ).fetchall()
+        assert ("שר האוצר",) in {(m,) for _cap, m in fin}
+        assert all(cap is None for cap, _m in fin)
+    finally:
+        con.close()
+
+
+def test_committee_sessions_by_type_derivation_and_reconciliation(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Each session is labelled by its primary item type, item-less sessions fall
+    to 'אחר', and the per-type counts sum back to the committees_list total."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        rows = dict(
+            con.execute(
+                f"SELECT type_he, session_count FROM '{out / 'committee_sessions_by_type.parquet'}'"
+                " WHERE committee_id = 500 ORDER BY type_he"
+            ).fetchall()
+        )
+        assert rows == {"חקיקה": 1, "דיון כללי (פיקוח)": 1, "אחר": 1}
+        # Reconciles with committees_list.session_count (3 sessions on committee 500).
+        total_by_type = sum(rows.values())
+        list_count = con.execute(
+            f"SELECT session_count FROM '{out / 'committees_list.parquet'}' WHERE committee_id = 500"
+        ).fetchone()[0]
+        assert total_by_type == list_count == 3
+    finally:
+        con.close()
