@@ -193,13 +193,33 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         INSERT INTO WebVoteMk VALUES
             (10, 1, 'כהן יעל', 'מפלגה א', 'for'),
             (10, 2, 'לוי דן',  'מפלגה ב', 'against');
+
+        CREATE TABLE WebMkCv (
+            mk_id BIGINT, birth_date VARCHAR, birth_place_he VARCHAR,
+            education_he VARCHAR, military_service_he VARCHAR, languages_he VARCHAR
+        );
+        INSERT INTO WebMkCv VALUES
+            (1, '14/12/1952', 'תל אביב, ישראל', 'תואר ראשון', 'סרן', 'עברית, אנגלית'),
+            (2, '01/01/1970', 'חיפה, ישראל',    'תואר שני',  NULL,   'עברית');
+
+        CREATE TABLE WebMkCommittee (
+            mk_id BIGINT, knesset_num BIGINT, committee_name_he VARCHAR,
+            role_he VARCHAR, from_date VARCHAR, to_date VARCHAR
+        );
+        -- mk 1: current member of committee 500 (name matches KNS_Committee after
+        -- normalisation). mk 2: a PAST membership (to_date set) → excluded.
+        INSERT INTO WebMkCommittee VALUES
+            (1, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', NULL),
+            (2, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', '2026-01-01T00:00:00');
         """
     )
     con.close()
     return wh
 
 
-def test_export_produces_all_snapshots_and_manifest(tiny_warehouse: Path, tmp_path: Path) -> None:
+def test_export_produces_all_snapshots_and_manifest(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
     out = tmp_path / "snapshots"
     manifest = export_all(tiny_warehouse, out)
 
@@ -209,7 +229,10 @@ def test_export_produces_all_snapshots_and_manifest(tiny_warehouse: Path, tmp_pa
     for name in expected_names:
         f = out / f"{name}.parquet"
         assert f.exists(), f"missing {f}"
-        assert hashlib.sha256(f.read_bytes()).hexdigest() == manifest.snapshots[name].sha256
+        assert (
+            hashlib.sha256(f.read_bytes()).hexdigest()
+            == manifest.snapshots[name].sha256
+        )
     # Manifest round-trips.
     on_disk = read_manifest(out / "manifest.json")
     assert on_disk.snapshots == manifest.snapshots
@@ -217,7 +240,9 @@ def test_export_produces_all_snapshots_and_manifest(tiny_warehouse: Path, tmp_pa
     assert manifest.snapshots["mk_summary"].rows >= 2
 
 
-def test_export_is_idempotent_for_parquet_bytes(tiny_warehouse: Path, tmp_path: Path) -> None:
+def test_export_is_idempotent_for_parquet_bytes(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
     """Re-running on an unchanged warehouse produces byte-identical Parquet files.
 
     Guards the manifest's ability to serve as a cache key for downstream
@@ -231,7 +256,9 @@ def test_export_is_idempotent_for_parquet_bytes(tiny_warehouse: Path, tmp_path: 
         )
 
 
-def test_export_leaves_no_dot_new_files_on_success(tiny_warehouse: Path, tmp_path: Path) -> None:
+def test_export_leaves_no_dot_new_files_on_success(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
     out = tmp_path / "snapshots"
     export_all(tiny_warehouse, out)
     assert list(out.glob("*.new")) == []
@@ -245,10 +272,7 @@ def test_rename_failure_does_not_corrupt_prior_snapshot(
     a consistent snapshot set."""
     out = tmp_path / "snapshots"
     m1 = export_all(tiny_warehouse, out)
-    original = {
-        name: (out / f"{name}.parquet").read_bytes()
-        for name in m1.snapshots
-    }
+    original = {name: (out / f"{name}.parquet").read_bytes() for name in m1.snapshots}
     original_manifest_bytes = (out / "manifest.json").read_bytes()
 
     call_count = {"n": 0}
@@ -258,9 +282,13 @@ def test_rename_failure_does_not_corrupt_prior_snapshot(
         if call_count["n"] == 3:
             raise OSError("simulated rename failure")
         import os as _os
+
         _os.rename(src, dst)  # fall through to real rename
 
-    with patch("data.snapshots.exporter.os.replace", side_effect=replace_that_fails_on_third_call):
+    with patch(
+        "data.snapshots.exporter.os.replace",
+        side_effect=replace_that_fails_on_third_call,
+    ):
         with pytest.raises(OSError, match="simulated rename failure"):
             export_all(tiny_warehouse, out)
 
@@ -310,7 +338,9 @@ def test_mk_bills_exports_major_cap_from_supported_sources(
     ]
 
 
-def test_curated_snapshots_match_api_contract(tiny_warehouse: Path, tmp_path: Path) -> None:
+def test_curated_snapshots_match_api_contract(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
     """party_metadata + committee_topics_ministries are read from the committed
     seed CSVs and must expose exactly the columns the FastAPI handlers SELECT."""
     out = tmp_path / "snapshots"
@@ -324,8 +354,14 @@ def test_curated_snapshots_match_api_contract(tiny_warehouse: Path, tmp_path: Pa
             ).fetchall()
         }
         assert pm_cols == {
-            "party_id", "standardised_name", "founded_date", "platform_url",
-            "bylaws_url", "website_url", "ideology_he", "source_url",
+            "party_id",
+            "standardised_name",
+            "founded_date",
+            "platform_url",
+            "bylaws_url",
+            "website_url",
+            "ideology_he",
+            "source_url",
         }
         # Likud (1096) ideology is authored — non-null.
         ideology = con.execute(
@@ -340,8 +376,12 @@ def test_curated_snapshots_match_api_contract(tiny_warehouse: Path, tmp_path: Pa
             ).fetchall()
         }
         assert tm_cols == {
-            "committee_id", "knesset_num", "cap_code", "cap_label_he",
-            "ministry_he", "notes_he",
+            "committee_id",
+            "knesset_num",
+            "cap_code",
+            "cap_label_he",
+            "ministry_he",
+            "notes_he",
         }
         # Finance committee (4186) oversees the Finance Minister; CAP still pending.
         fin = con.execute(
@@ -350,6 +390,71 @@ def test_curated_snapshots_match_api_contract(tiny_warehouse: Path, tmp_path: Pa
         ).fetchall()
         assert ("שר האוצר",) in {(m,) for _cap, m in fin}
         assert all(cap is None for cap, _m in fin)
+    finally:
+        con.close()
+
+
+def test_mk_cv_snapshot_matches_api_contract(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'mk_cv.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == [
+            "mk_id",
+            "birth_date",
+            "birth_place_he",
+            "education_he",
+            "military_service_he",
+            "languages_he",
+        ]
+        row = con.execute(
+            f"SELECT birth_date, languages_he FROM '{out / 'mk_cv.parquet'}' WHERE mk_id = 1"
+        ).fetchone()
+        assert row == ("14/12/1952", "עברית, אנגלית")
+    finally:
+        con.close()
+
+
+def test_committee_members_resolve_id_and_drop_past_memberships(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Committee NAME resolves to committees_list id, each member carries their
+    faction, and memberships that have ended (to_date set) are excluded."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'committee_members_by_faction.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == [
+            "committee_id",
+            "knesset_num",
+            "mk_id",
+            "mk_name_he",
+            "faction_id",
+            "faction_name",
+            "role_he",
+            "is_current",
+        ]
+        rows = con.execute(
+            f"SELECT committee_id, mk_id, faction_name FROM "
+            f"'{out / 'committee_members_by_faction.parquet'}'"
+        ).fetchall()
+        # mk 1 (current) resolves to committee 500 with faction 'מפלגה א';
+        # mk 2's ended membership is dropped.
+        assert rows == [(500, 1, "מפלגה א")]
     finally:
         con.close()
 

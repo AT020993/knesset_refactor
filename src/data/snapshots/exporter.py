@@ -177,6 +177,66 @@ GROUP BY committee_id, knesset_num, type_he
 ORDER BY committee_id, knesset_num, session_count DESC, type_he
 """.strip()
 
+# mk_cv — MK biographical fields, ingested from the Knesset site backend into
+# WebMkCv (see data.mk_details.ingest). Columns map 1:1 to the API's MkCv shape.
+_MK_CV_SQL = """
+SELECT
+    mk_id,
+    birth_date,
+    birth_place_he,
+    education_he,
+    military_service_he,
+    languages_he
+FROM WebMkCv
+ORDER BY mk_id
+""".strip()
+
+# committee_members_by_faction — currently-serving members per committee, grouped
+# downstream by faction. Source is WebMkCommittee (site backend); we keep only
+# current memberships (to_date IS NULL), resolve the committee NAME to a
+# committees_list id by normalised match (whitespace/punctuation stripped — this
+# matches the permanent committees; ad-hoc sub/joint committees with divergent
+# names simply don't resolve and are dropped, matching the spec's scope), and
+# attach each MK's latest faction for that term (same logic as mk_summary).
+_COMMITTEE_MEMBERS_SQL = r"""
+WITH latest_faction AS (
+    SELECT
+        PersonID, KnessetNum, FactionID, FactionName,
+        ROW_NUMBER() OVER (
+            PARTITION BY PersonID, KnessetNum
+            ORDER BY TRY_CAST(StartDate AS TIMESTAMP) DESC NULLS LAST,
+                     PersonToPositionID DESC
+        ) AS rn
+    FROM KNS_PersonToPosition
+    WHERE FactionID IS NOT NULL
+),
+committee_ids AS (
+    SELECT
+        CAST(CommitteeID AS BIGINT) AS committee_id,
+        KnessetNum,
+        regexp_replace(TRIM(Name), '[\s,"'']', '', 'g') AS norm_name
+    FROM KNS_Committee
+)
+SELECT DISTINCT
+    ci.committee_id                       AS committee_id,
+    CAST(wmc.knesset_num AS INTEGER)      AS knesset_num,
+    CAST(wmc.mk_id AS BIGINT)             AS mk_id,
+    TRIM(p.FirstName || ' ' || p.LastName) AS mk_name_he,
+    CAST(lf.FactionID AS BIGINT)          AS faction_id,
+    lf.FactionName                        AS faction_name,
+    wmc.role_he                           AS role_he,
+    p.IsCurrent                           AS is_current
+FROM WebMkCommittee wmc
+JOIN KNS_Person p ON p.PersonID = wmc.mk_id
+JOIN committee_ids ci
+    ON ci.KnessetNum = wmc.knesset_num
+    AND ci.norm_name = regexp_replace(TRIM(wmc.committee_name_he), '[\s,"'']', '', 'g')
+LEFT JOIN latest_faction lf
+    ON lf.PersonID = wmc.mk_id AND lf.KnessetNum = wmc.knesset_num AND lf.rn = 1
+WHERE wmc.to_date IS NULL
+ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
+""".strip()
+
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
 # for reproducibility guarantees (byte-equivalent manifest on unchanged data).
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
@@ -191,6 +251,8 @@ SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("party_metadata", _PARTY_METADATA_SQL),
     ("committee_topics_ministries", _COMMITTEE_TOPICS_MINISTRIES_SQL),
     ("committee_sessions_by_type", _COMMITTEE_SESSIONS_BY_TYPE_SQL),
+    ("mk_cv", _MK_CV_SQL),
+    ("committee_members_by_faction", _COMMITTEE_MEMBERS_SQL),
 )
 
 # Keep BILLS_QUERIES referenced so lint doesn't drop the import —
