@@ -51,7 +51,13 @@ JOIN KNS_Bill b ON bi.BillID = b.BillID
 LEFT JOIN UserBillCoding ubcoding ON bi.BillID = ubcoding.BillID
 LEFT JOIN UserBillCAP ubcap ON bi.BillID = ubcap.BillID
 LEFT JOIN UserCAPTaxonomy ubcap_tax ON ubcap.CAPMinorCode = ubcap_tax.MinorCode
+-- Only private member bills are an MK's own legislative initiative. Government
+-- ('ממשלתית') and committee ('ועדה') bills also list MKs as initiators upstream
+-- (a minister who is an MK signs the government bill), but crediting them to the
+-- MK misrepresents their legislative record, so exclude them here at the source.
+-- The ``stage`` column is thus always 'פרטית' by construction.
 WHERE bi.PersonID IS NOT NULL
+  AND b.SubTypeDesc = 'פרטית'
 ORDER BY bi.BillID, bi.Ordinal, bi.PersonID
 """.strip()
 
