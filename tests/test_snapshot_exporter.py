@@ -128,7 +128,14 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 1, NULL,
              NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 1, NULL,
-             NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
+             NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
+            -- Government + committee bills carry MK initiator rows too (a minister
+            -- who is an MK signs the government bill), but they are NOT the MK's own
+            -- legislative initiative, so mk_bills must exclude them. See 7003/7004.
+            (7003, 26, 'הצעת חוק ממשלתית', 2, 'ממשלתית', NULL, NULL, 1, NULL,
+             NULL, NULL, '2026-02-03', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
+            (7004, 26, 'הצעת חוק ועדה', 3, 'ועדה', NULL, NULL, 1, NULL,
+             NULL, NULL, '2026-02-04', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE KNS_BillInitiator (
             BillInitiatorID BIGINT, BillID BIGINT, PersonID BIGINT,
@@ -136,7 +143,9 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         );
         INSERT INTO KNS_BillInitiator VALUES
             (1, 7001, 1, TRUE, 1, '2026-02-01'),
-            (2, 7002, 2, TRUE, 1, '2026-02-02');
+            (2, 7002, 2, TRUE, 1, '2026-02-02'),
+            (3, 7003, 2, TRUE, 1, '2026-02-03'),
+            (4, 7004, 2, TRUE, 1, '2026-02-04');
 
         CREATE TABLE KNS_Query (
             QueryID BIGINT, Number DOUBLE, KnessetNum BIGINT, Name VARCHAR,
@@ -336,6 +345,32 @@ def test_mk_bills_exports_major_cap_from_supported_sources(
         (7001, 2),  # legacy UserBillCoding.MajorCAP path
         (7002, 1),  # UserBillCAP.CAPMinorCode -> UserCAPTaxonomy.MajorCode fallback
     ]
+
+
+def test_mk_bills_excludes_government_and_committee_bills(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """mk_bills is an MK's *own* legislative initiatives, so only private member
+    bills (SubTypeDesc = 'פרטית') belong. Government ('ממשלתית') and committee
+    ('ועדה') bills list ministers/MKs as initiators upstream but are not the MK's
+    own bills; they must not leak into the snapshot (which feeds every bill count
+    and list across the API)."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+
+    con = duckdb.connect()
+    stages = con.execute(
+        "SELECT DISTINCT stage FROM read_parquet(?) ORDER BY stage",
+        [str(out / "mk_bills.parquet")],
+    ).fetchall()
+    bill_ids = con.execute(
+        "SELECT DISTINCT bill_id FROM read_parquet(?) ORDER BY bill_id",
+        [str(out / "mk_bills.parquet")],
+    ).fetchall()
+    con.close()
+
+    assert stages == [("פרטית",)]
+    assert bill_ids == [(7001,), (7002,)]  # 7003 (ממשלתית) + 7004 (ועדה) excluded
 
 
 def test_curated_snapshots_match_api_contract(
