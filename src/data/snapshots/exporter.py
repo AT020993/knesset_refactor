@@ -42,7 +42,11 @@ SELECT
     bi.BillID                       AS bill_id,
     CAST(b.KnessetNum AS INTEGER)   AS knesset_num,
     b.SubTypeDesc                   AS stage,
-    COALESCE(ubcap_tax.MajorCode, ubcoding.MajorCAP) AS cap_code,
+    -- MajorIL is the last fallback: recent Knessets (K21-25) were coded only in
+    -- the MAJORIL scheme (MajorCAP is NULL), and MajorIL == MajorCAP in 99.99% of
+    -- the K10-20 overlap, so it is the same major-topic code. Without this, all
+    -- CAP/topic data for K23-25 renders empty. MajorCAP still wins where present.
+    COALESCE(ubcap_tax.MajorCode, ubcoding.MajorCAP, ubcoding.MajorIL) AS cap_code,
     b.PublicationDate               AS submit_date,
     CAST(bi.Ordinal AS INTEGER)     AS initiator_ordinal,
     bi.IsInitiator                  AS is_main_initiator
