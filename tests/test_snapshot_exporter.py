@@ -112,7 +112,10 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             Territories INTEGER, Source VARCHAR, ImportedAt TIMESTAMP
         );
         INSERT INTO UserBillCoding VALUES
-            (7001, 20, 2001, 2, 200, 0, 0, 'legacy-import', NULL);
+            (7001, 20, 2001, 2, 200, 0, 0, 'legacy-import', NULL),
+            -- Recent Knessets (K21-25) were coded in MajorIL only; MajorCAP is
+            -- NULL. cap_code must fall back to MajorIL so their topic data shows.
+            (7005, 21, 2101, NULL, NULL, 0, 0, 'k25-il-only', NULL);
 
         CREATE TABLE KNS_Bill (
             BillID BIGINT, KnessetNum BIGINT, Name VARCHAR,
@@ -135,7 +138,9 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             (7003, 26, 'הצעת חוק ממשלתית', 2, 'ממשלתית', NULL, NULL, 1, NULL,
              NULL, NULL, '2026-02-03', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             (7004, 26, 'הצעת חוק ועדה', 3, 'ועדה', NULL, NULL, 1, NULL,
-             NULL, NULL, '2026-02-04', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
+             NULL, NULL, '2026-02-04', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
+            (7005, 25, 'הצעת חוק מקודדת ב-MajorIL בלבד', 1, 'פרטית', NULL, NULL, 1, NULL,
+             NULL, NULL, '2026-02-05', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE KNS_BillInitiator (
             BillInitiatorID BIGINT, BillID BIGINT, PersonID BIGINT,
@@ -145,7 +150,8 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             (1, 7001, 1, TRUE, 1, '2026-02-01'),
             (2, 7002, 2, TRUE, 1, '2026-02-02'),
             (3, 7003, 2, TRUE, 1, '2026-02-03'),
-            (4, 7004, 2, TRUE, 1, '2026-02-04');
+            (4, 7004, 2, TRUE, 1, '2026-02-04'),
+            (5, 7005, 1, TRUE, 1, '2026-02-05');
 
         CREATE TABLE KNS_Query (
             QueryID BIGINT, Number DOUBLE, KnessetNum BIGINT, Name VARCHAR,
@@ -342,8 +348,9 @@ def test_mk_bills_exports_major_cap_from_supported_sources(
     con.close()
 
     assert rows == [
-        (7001, 2),  # legacy UserBillCoding.MajorCAP path
+        (7001, 2),  # UserBillCoding.MajorCAP wins over its own MajorIL (20)
         (7002, 1),  # UserBillCAP.CAPMinorCode -> UserCAPTaxonomy.MajorCode fallback
+        (7005, 21),  # MajorCAP is NULL -> falls back to MajorIL (K21-25 case)
     ]
 
 
@@ -370,7 +377,8 @@ def test_mk_bills_excludes_government_and_committee_bills(
     con.close()
 
     assert stages == [("פרטית",)]
-    assert bill_ids == [(7001,), (7002,)]  # 7003 (ממשלתית) + 7004 (ועדה) excluded
+    # 7003 (ממשלתית) + 7004 (ועדה) excluded; 7005 (private) kept
+    assert bill_ids == [(7001,), (7002,), (7005,)]
 
 
 def test_curated_snapshots_match_api_contract(
