@@ -135,11 +135,19 @@ SELECT
     q.QueryID                       AS question_id,
     CAST(q.KnessetNum AS INTEGER)   AS knesset_num,
     CAST(q.StatusID AS INTEGER)     AS status_id,
+    s."Desc"                        AS status_desc,
     q.TypeDesc                      AS type_he,
     uqc.MajorCAP                    AS cap_code,
     q.SubmitDate                    AS submit_date
 FROM KNS_Query q
 LEFT JOIN UserQueryCoding uqc ON q.QueryID = uqc.QueryID
+-- StatusID is only unique *within* a TypeDesc family in KNS_Status (bill/
+-- question/motion share the table) — this predicate is defensive, not
+-- currently load-bearing: verified against production, zero status ids
+-- are reused across families today. Keep it anyway; an unscoped join would
+-- silently attach a bill/motion status label to a question if that ever
+-- changes. See _BILLS_LIST_SQL for the same pattern.
+LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID AND s.TypeDesc = 'שאילתה'
 WHERE q.PersonID IS NOT NULL
 ORDER BY q.QueryID
 """.strip()
@@ -150,11 +158,16 @@ SELECT
     a.AgendaID                          AS motion_id,
     CAST(a.KnessetNum AS INTEGER)       AS knesset_num,
     CAST(a.StatusID AS INTEGER)         AS status_id,
+    s."Desc"                            AS status_desc,
     a.SubTypeDesc                       AS type_he,
     uac.MajorIL                         AS cap_code,
     a.PresidentDecisionDate             AS decision_date
 FROM KNS_Agenda a
 LEFT JOIN UserAgendaCoding uac ON a.AgendaID = uac.AgendaID
+-- Same defensive TypeDesc scoping as _MK_QUESTIONS_SQL above: StatusID is
+-- only semantically unique within a TypeDesc family, even though no
+-- production collision exists today.
+LEFT JOIN KNS_Status s ON a.StatusID = s.StatusID AND s.TypeDesc = 'הצעה לסדר היום'
 WHERE a.InitiatorPersonID IS NOT NULL
 ORDER BY a.AgendaID, a.InitiatorPersonID
 """.strip()

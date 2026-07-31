@@ -175,8 +175,12 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             TypeID BIGINT, TypeDesc VARCHAR, StatusID BIGINT,
             PersonID BIGINT, GovMinistryID BIGINT, SubmitDate VARCHAR
         );
+        -- StatusID 9 = 'נענתה' (answered) under TypeDesc='שאילתה' in KNS_Status
+        -- above (Task 4 decode). The prior placeholder (1) never matched any
+        -- KNS_Status row for the question family, which would have made the
+        -- status-decode test pass vacuously.
         INSERT INTO KNS_Query VALUES
-            (8001, 1.0, 26, 'שאילתה לדוגמה', 1, 'דחופה', 1, 2, 1, '2026-02-10');
+            (8001, 1.0, 26, 'שאילתה לדוגמה', 1, 'דחופה', 9, 2, 1, '2026-02-10');
 
         CREATE TABLE UserQueryCoding (
             QueryID INTEGER, MajorIL INTEGER, MinorIL INTEGER,
@@ -196,9 +200,13 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             CommitteeID DOUBLE, RecommendCommitteeID DOUBLE,
             MinisterPersonID DOUBLE, LastUpdatedDate VARCHAR
         );
+        -- StatusID 304 = 'לדיון בוועדה' under TypeDesc='הצעה לסדר היום' in
+        -- KNS_Status above (Task 4 decode). The prior placeholder (1) never
+        -- matched any KNS_Status row for the motion family, which would have
+        -- made the status-decode test pass vacuously.
         INSERT INTO KNS_Agenda VALUES
             (9001, 1.0, 1, NULL, NULL, 26, 'הצעה לסדר יום', 1, 'דחופה',
-             1, 1.0, NULL, NULL, '2026-02-15', NULL, NULL, NULL, NULL, NULL, NULL);
+             304, 1.0, NULL, NULL, '2026-02-15', NULL, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE UserAgendaCoding (
             AgendaID INTEGER, MajorIL INTEGER, MinorIL INTEGER,
@@ -707,3 +715,23 @@ def test_no_bill_status_falls_outside_the_ladder(
         f"WHERE status_rung IS NULL"
     ).fetchone()[0]
     assert unmapped == 0
+
+
+def test_question_and_motion_status_decode(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """These render to the public. An undecoded status_id reaches a reader
+    as 'סטטוס 304', which is why four UI blocks had to be removed
+    downstream (knesset-platform issue #34)."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    for pack in ("mk_questions", "mk_motions"):
+        rows = con.execute(
+            f"SELECT status_id, status_desc "
+            f"FROM read_parquet('{out}/{pack}.parquet') "
+            f"WHERE status_id IS NOT NULL"
+        ).fetchall()
+        assert rows, f"{pack} fixture must have at least one status"
+        for status_id, desc in rows:
+            assert desc, f"{pack} status {status_id} did not decode"
