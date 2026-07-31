@@ -47,12 +47,27 @@ _BY_STATUS: dict[int, str] = {
     sid: rung for rung, ids in BILL_STATUS_RUNGS.items() for sid in ids
 }
 
+#: Every status id the ladder covers. Derived from ``BILL_STATUS_RUNGS`` so
+#: the export guard cannot drift from the ``CASE`` generators it protects —
+#: all three read the same source.
+MAPPED_STATUS_IDS: frozenset[int] = frozenset(_BY_STATUS)
+
+
+class UnmappedBillStatusError(RuntimeError):
+    """A private-member bill carries a status with no rung in the ladder.
+
+    Raised by the exporter *before* it writes anything. The ladder is
+    hand-authored because ``KNS_Status.OrderTransition`` is NULL upstream,
+    so a Knesset introducing a new status is a real and expected event —
+    it must stop the export rather than silently emit NULL rungs.
+    """
+
 
 def rung_for(status_id: int) -> str | None:
     """Rung for a bill status id, or None if unmapped.
 
-    None is a signal, not a default — Task 2's export test fails the build
-    on any unmapped status so a new Knesset introducing one cannot silently
-    fall out of every rung.
+    None is a signal, not a default — the exporter's pre-flight guard
+    raises :class:`UnmappedBillStatusError` on any unmapped status so a new
+    Knesset introducing one cannot silently fall out of every rung.
     """
     return _BY_STATUS.get(status_id)

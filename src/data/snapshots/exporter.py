@@ -29,7 +29,12 @@ from data.queries.packs.committees import COMMITTEES_QUERIES
 from data.queries.packs.mks import MK_QUERIES
 from data.queries.packs.parties import PARTIES_QUERIES
 from data.queries.packs.votes import VOTES_QUERIES
-from data.snapshots.bill_status import BILL_STATUS_RUNGS, RUNG_ORDER
+from data.snapshots.bill_status import (
+    BILL_STATUS_RUNGS,
+    MAPPED_STATUS_IDS,
+    RUNG_ORDER,
+    UnmappedBillStatusError,
+)
 from data.snapshots.manifest import Manifest, SnapshotEntry, write_manifest
 
 log = logging.getLogger("data.snapshots.exporter")
@@ -96,6 +101,11 @@ def _bill_status_rung_order_case_sql(column: str) -> str:
     return "\n".join(lines)
 
 
+#: The one bill sub-type the snapshot bundle covers. Shared by
+#: ``_BILLS_LIST_SQL`` and the pre-flight status guard so the guard cannot
+#: check a wider population than the snapshot actually exports.
+_PRIVATE_MEMBER_SUB_TYPE = "פרטית"
+
 # bills_list — titles + decoded status + reading-stage rung, keyed on
 # bill_id. Kept as its own snapshot rather than denormalised into
 # mk_bills: titles average 70 chars and mk_bills has 165k rows against 59k
@@ -125,7 +135,7 @@ LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID AND s.TypeDesc = 'הצעת ח�
 -- Scoped to private-member bills to match mk_bills, which is 'פרטית'-only by
 -- construction (see _MK_BILLS_SQL) — a bills_list carrying government/
 -- committee bills would let a join silently reintroduce them.
-WHERE b.SubTypeDesc = 'פרטית'
+WHERE b.SubTypeDesc = '{_PRIVATE_MEMBER_SUB_TYPE}'
 ORDER BY b.BillID
 """.strip()
 
@@ -511,13 +521,53 @@ def export_snapshot(
     return SnapshotEntry(rows=int(rows), sha256=digest, bytes=int(size_bytes))
 
 
+def assert_every_bill_status_is_mapped(con: duckdb.DuckDBPyConnection) -> None:
+    """Raise if any exportable bill carries a status outside the ladder.
+
+    Scoped to ``_PRIVATE_MEMBER_SUB_TYPE`` because that is exactly what
+    ``bills_list`` exports. Checking all of ``KNS_Bill`` would fail the
+    nightly run on a government-bill status that never reaches a snapshot —
+    the fixture alone carries two such rows (status 1 on ממשלתית/ועדה).
+
+    NULL ``StatusID`` is not this guard's business: it would surface as a
+    NULL rung too, but it means *absent* data rather than an unmapped
+    status, and reporting it here would produce a nonsense id list. It is
+    100% populated upstream today.
+    """
+    id_list = ", ".join(str(i) for i in sorted(MAPPED_STATUS_IDS))
+    rows = con.execute(
+        f"""
+        SELECT DISTINCT CAST(StatusID AS INTEGER) AS status_id
+        FROM KNS_Bill
+        WHERE SubTypeDesc = '{_PRIVATE_MEMBER_SUB_TYPE}'
+          AND StatusID IS NOT NULL
+          AND CAST(StatusID AS INTEGER) NOT IN ({id_list})
+        ORDER BY status_id
+        """
+    ).fetchall()
+    if rows:
+        unmapped = [int(r[0]) for r in rows]
+        raise UnmappedBillStatusError(
+            f"unmapped status ids in KNS_Bill: {unmapped} — add them to "
+            f"BILL_STATUS_RUNGS in data/snapshots/bill_status.py. The ladder "
+            f"is hand-authored (KNS_Status.OrderTransition is NULL upstream), "
+            f"so a new status must be placed on a rung deliberately. Refusing "
+            f"to export rather than emit NULL status_rung for these bills."
+        )
+
+
 def export_all(warehouse: Path, output_dir: Path) -> Manifest:
     """Run all snapshots. Manifest is written last; individual parquets first."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     warehouse_mtime = warehouse.stat().st_mtime
     started_at = datetime.now(tz=timezone.utc)
     con = duckdb.connect(str(warehouse), read_only=True)
     try:
+        # Pre-flight, before mkdir and before a single byte is written. A
+        # raise from inside the export loop would leave fresh parquets beside
+        # a stale manifest — a state worse than either, and one the consumer
+        # reads live. Failing here leaves the previous bundle fully intact.
+        assert_every_bill_status_is_mapped(con)
+        output_dir.mkdir(parents=True, exist_ok=True)
         entries: dict[str, SnapshotEntry] = {}
         for name, sql in SNAPSHOTS:
             entries[name] = export_snapshot(con, name, sql, output_dir)

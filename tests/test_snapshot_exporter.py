@@ -10,6 +10,7 @@ from unittest.mock import patch
 import duckdb
 import pytest
 
+from data.snapshots.bill_status import UnmappedBillStatusError
 from data.snapshots.exporter import SNAPSHOTS, export_all
 from data.snapshots.manifest import read_manifest
 
@@ -816,6 +817,76 @@ def test_no_bill_status_falls_outside_the_ladder(
         f"WHERE status_rung IS NULL"
     ).fetchone()[0]
     assert unmapped == 0
+
+
+def _add_bill(warehouse: Path, bill_id: int, sub_type: str, status_id: int) -> None:
+    """Append one KNS_Bill row, cloning an existing row's shape."""
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute(
+            "INSERT INTO KNS_Bill "
+            "(SELECT * REPLACE (? AS BillID, ? AS SubTypeDesc, ? AS StatusID) "
+            " FROM KNS_Bill WHERE BillID = 7001)",
+            [bill_id, sub_type, status_id],
+        )
+    finally:
+        con.close()
+
+
+def test_export_refuses_when_a_private_bill_status_is_unmapped(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The guard must actually fire. The happy-path test above passes
+    vacuously if it never does."""
+    _add_bill(tiny_warehouse, bill_id=7999, sub_type="פרטית", status_id=182)
+    out = tmp_path / "snapshots"
+
+    with pytest.raises(UnmappedBillStatusError) as excinfo:
+        export_all(tiny_warehouse, out)
+
+    # Must name the offending id, or fixing it is a guessing game.
+    assert "182" in str(excinfo.value)
+    assert "BILL_STATUS_RUNGS" in str(excinfo.value)
+
+
+def test_export_refuses_before_writing_anything(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """A raise mid-loop would leave fresh parquets beside a stale manifest.
+    The previous bundle must survive an aborted export untouched — the
+    consumer reads that directory live."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    before = {p.name: p.read_bytes() for p in sorted(out.iterdir())}
+    assert before, "precondition: a good export exists"
+
+    _add_bill(tiny_warehouse, bill_id=7999, sub_type="פרטית", status_id=182)
+    with pytest.raises(UnmappedBillStatusError):
+        export_all(tiny_warehouse, out)
+
+    after = {p.name: p.read_bytes() for p in sorted(out.iterdir())}
+    assert after == before, "aborted export modified the existing bundle"
+
+
+def test_guard_ignores_unmapped_statuses_on_non_private_bills(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The false-positive case. bills_list exports only 'פרטית', so a
+    government or committee bill carrying an unmapped status must not stop
+    the nightly run. The fixture already ships two such rows (7003/7004 at
+    status 1); this pins that as intended rather than incidental."""
+    _add_bill(tiny_warehouse, bill_id=7998, sub_type="ממשלתית", status_id=182)
+    _add_bill(tiny_warehouse, bill_id=7997, sub_type="ועדה", status_id=183)
+    out = tmp_path / "snapshots"
+
+    export_all(tiny_warehouse, out)  # must not raise
+
+    con = duckdb.connect()
+    exported = con.execute(
+        f"SELECT COUNT(*) FROM read_parquet('{out}/bills_list.parquet') "
+        f"WHERE bill_id IN (7997, 7998)"
+    ).fetchone()[0]
+    assert exported == 0, "non-private bills must not reach bills_list"
 
 
 def test_question_and_motion_status_decode(
