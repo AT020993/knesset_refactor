@@ -239,10 +239,15 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             role_he VARCHAR, from_date VARCHAR, to_date VARCHAR
         );
         -- mk 1: current member of committee 500 (name matches KNS_Committee after
-        -- normalisation). mk 2: a PAST membership (to_date set) → excluded.
+        -- normalisation). mk 2: a PAST membership (to_date set) → excluded from
+        -- committee_members_by_faction but must still appear in mk_committees.
+        -- mk 1 also sits on an ad-hoc sub-committee with no KNS_Committee row at
+        -- all (mirrors the ~595 real unresolved names) — its membership must
+        -- still surface in mk_committees with a NULL committee_id, not vanish.
         INSERT INTO WebMkCommittee VALUES
             (1, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', NULL),
-            (2, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', '2026-01-01T00:00:00');
+            (2, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', '2026-01-01T00:00:00'),
+            (1, 26, 'ועדת משנה לנושא שאינו קיים', 'חבר', '2025-12-01T00:00:00', NULL);
         """
     )
     con.close()
@@ -522,7 +527,7 @@ def test_committee_members_resolve_id_and_drop_past_memberships(
 def test_mk_committees_exports_full_history(
     tiny_warehouse: Path, tmp_path: Path
 ) -> None:
-    """mk_committees is a straight WebMkCommittee projection — unlike
+    """mk_committees is a WebMkCommittee projection — unlike
     committee_members_by_faction it deliberately keeps PAST memberships too
     (to_date set): an MK's profile needs their whole committee history, not
     just current seats."""
@@ -539,17 +544,18 @@ def test_mk_committees_exports_full_history(
         assert cols == [
             "mk_id",
             "knesset_num",
+            "committee_id",
             "committee_name_he",
             "role_he",
             "from_date",
             "to_date",
         ]
         rows = con.execute(
-            f"SELECT mk_id, knesset_num, committee_name_he, role_he, to_date "
+            f"SELECT mk_id, knesset_num, committee_id, committee_name_he, role_he, to_date "
             f"FROM read_parquet('{out}/mk_committees.parquet')"
         ).fetchall()
         assert rows
-        for mk_id, kn, name, _role, _to_date in rows:
+        for mk_id, kn, _committee_id, name, _role, _to_date in rows:
             assert mk_id is not None and kn is not None
             assert name, "a membership with no committee name is not useful"
         # mk 2's membership ended in the fixture (to_date set) but must still
@@ -559,8 +565,37 @@ def test_mk_committees_exports_full_history(
         # or not that filter existed, so pin it explicitly.
         mk_ids = {mk_id for mk_id, *_rest in rows}
         assert mk_ids == {1, 2}
-        ended = [r for r in rows if r[4] is not None]
+        ended = [r for r in rows if r[5] is not None]
         assert ended, "past memberships (to_date set) must be retained, not dropped"
+    finally:
+        con.close()
+
+
+def test_mk_committees_resolves_committee_id_but_keeps_unresolved_rows(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """committee_id resolves through the same name-normalisation as
+    committee_members_by_faction, but — unlike that inner-joined query —
+    an unresolvable committee name must NOT drop the row: the MK's
+    membership is real even when we can't link it to a committee page."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            f"SELECT mk_id, committee_name_he, committee_id "
+            f"FROM read_parquet('{out}/mk_committees.parquet')"
+        ).fetchall()
+        by_name = {(mk_id, name): cid for mk_id, name, cid in rows}
+        # mk 1's and mk 2's 'ועדת חוץ וביטחון' membership resolves to
+        # committee 500 (matches KNS_Committee after normalisation).
+        assert by_name[(1, "ועדת חוץ וביטחון")] == 500
+        assert by_name[(2, "ועדת חוץ וביטחון")] == 500
+        # mk 1's ad-hoc sub-committee has no KNS_Committee row at all (mirrors
+        # the real ~595 unresolved names) — it must still appear, with a NULL
+        # committee_id rather than being silently dropped.
+        assert (1, "ועדת משנה לנושא שאינו קיים") in by_name
+        assert by_name[(1, "ועדת משנה לנושא שאינו קיים")] is None
     finally:
         con.close()
 

@@ -265,6 +265,30 @@ FROM WebMkCv
 ORDER BY mk_id
 """.strip()
 
+def _committee_name_norm_sql(column: str) -> str:
+    """Whitespace/punctuation-stripped normalisation for matching a free-text
+    committee name (``WebMkCommittee.committee_name_he``, from the site
+    backend) to ``KNS_Committee.Name``. Factored out so
+    ``_COMMITTEE_MEMBERS_SQL`` and ``_MK_COMMITTEES_SQL`` share one
+    definition — see ``_COMMITTEE_IDS_CTE_SQL`` below — instead of each
+    re-typing the regex and silently drifting apart."""
+    return f"regexp_replace(TRIM({column}), '[\\s,\"'']', '', 'g')"
+
+
+# committee_ids — shared CTE resolving every KNS_Committee row to its
+# normalised name. Embedded (via an f-string) into both queries below that
+# need to match a WebMkCommittee free-text committee name to a
+# committees_list id, so the resolution logic lives in exactly one place.
+_COMMITTEE_IDS_CTE_SQL = f"""
+committee_ids AS (
+    SELECT
+        CAST(CommitteeID AS BIGINT) AS committee_id,
+        KnessetNum,
+        {_committee_name_norm_sql("Name")} AS norm_name
+    FROM KNS_Committee
+)
+""".strip()
+
 # committee_members_by_faction — currently-serving members per committee, grouped
 # downstream by faction. Source is WebMkCommittee (site backend); we keep only
 # current memberships (to_date IS NULL), resolve the committee NAME to a
@@ -272,7 +296,7 @@ ORDER BY mk_id
 # matches the permanent committees; ad-hoc sub/joint committees with divergent
 # names simply don't resolve and are dropped, matching the spec's scope), and
 # attach each MK's latest faction for that term (same logic as mk_summary).
-_COMMITTEE_MEMBERS_SQL = r"""
+_COMMITTEE_MEMBERS_SQL = f"""
 WITH latest_faction AS (
     SELECT
         PersonID, KnessetNum, FactionID, FactionName,
@@ -284,13 +308,7 @@ WITH latest_faction AS (
     FROM KNS_PersonToPosition
     WHERE FactionID IS NOT NULL
 ),
-committee_ids AS (
-    SELECT
-        CAST(CommitteeID AS BIGINT) AS committee_id,
-        KnessetNum,
-        regexp_replace(TRIM(Name), '[\s,"'']', '', 'g') AS norm_name
-    FROM KNS_Committee
-)
+{_COMMITTEE_IDS_CTE_SQL}
 SELECT DISTINCT
     ci.committee_id                       AS committee_id,
     CAST(wmc.knesset_num AS INTEGER)      AS knesset_num,
@@ -304,7 +322,7 @@ FROM WebMkCommittee wmc
 JOIN KNS_Person p ON p.PersonID = wmc.mk_id
 JOIN committee_ids ci
     ON ci.KnessetNum = wmc.knesset_num
-    AND ci.norm_name = regexp_replace(TRIM(wmc.committee_name_he), '[\s,"'']', '', 'g')
+    AND ci.norm_name = {_committee_name_norm_sql("wmc.committee_name_he")}
 LEFT JOIN latest_faction lf
     ON lf.PersonID = wmc.mk_id AND lf.KnessetNum = wmc.knesset_num AND lf.rn = 1
 WHERE wmc.to_date IS NULL
@@ -317,6 +335,28 @@ ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
 # to_date IS NULL: an MK's profile needs past memberships too, not just
 # current seats, so both are kept.
 #
+# committee_id resolves through the same committee_ids CTE/normalisation as
+# committee_members_by_faction (LEFT, not that query's inner JOIN — see
+# below) so the site can link straight to /he/committee/{id} instead of
+# reimplementing the name-normalisation match on its own side of the repo
+# boundary. Verified against production: 1,000 of 1,595 rows (62.7%)
+# resolve; of the other 595, 491 (40 distinct names) have no KNS_Committee
+# row under ANY Knesset — genuine ad-hoc sub/joint committees never
+# separately catalogued (same "ad-hoc … simply don't resolve" scope note as
+# committee_members_by_faction above), e.g. "ועדת משנה לספורט" or a joint
+# committee named after the bill it's convened for. The remaining 104 (6
+# distinct names, e.g. "ועדת משנה לקידום עסקים קטנים ובינוניים") DO have a
+# same-name KNS_Committee row, just tagged to a different KnessetNum than
+# this membership's own 25 — the join is scoped to KnessetNum for both this
+# query and committee_members_by_faction, so these don't resolve either;
+# that's an existing characteristic of the shared resolution (not something
+# this task introduces), and widening the join's Knesset scope is out of
+# scope here. Unlike committee_members_by_faction — which only ever wanted
+# resolved rows and so can inner-join and drop the rest — an MK's membership
+# in any of these 595 is still real service, so the row is kept with
+# committee_id = NULL rather than dropped; dropping it would understate that
+# MK's committee record.
+#
 # LIMITATION (belongs here, not just in a plan doc, so it travels with the
 # data): WebMkCommittee covers Knesset 25 ONLY — verified against production,
 # `SELECT COUNT(DISTINCT knesset_num) FROM WebMkCommittee` = 1, 1,595 rows
@@ -326,25 +366,32 @@ ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
 # convention on the committee page) rather than implying no committee
 # service ever occurred.
 #
-# The WHERE below is defensive, not a real-world filter today: on production
-# data it excludes 0 of 1,595 rows (verified) since the ingest step already
-# skips blank committee names. Kept anyway so a future ingest regression
-# can't silently emit a membership with no committee name — such a row is
-# useless to the consumer, not just incomplete.
-_MK_COMMITTEES_SQL = """
+# The mk_id/knesset_num/committee_name_he WHERE clause below is defensive,
+# not a real-world filter today: on production data it excludes 0 of 1,595
+# rows (verified) since the ingest step already skips blank committee names.
+# Kept anyway so a future ingest regression can't silently emit a membership
+# with no committee name — such a row is useless to the consumer, not just
+# incomplete.
+_MK_COMMITTEES_SQL = f"""
+WITH {_COMMITTEE_IDS_CTE_SQL}
 SELECT
-    CAST(mk_id AS BIGINT)        AS mk_id,
-    CAST(knesset_num AS INTEGER) AS knesset_num,
-    committee_name_he,
-    role_he,
-    from_date,
-    to_date
-FROM WebMkCommittee
-WHERE mk_id IS NOT NULL
-  AND knesset_num IS NOT NULL
-  AND committee_name_he IS NOT NULL
-  AND TRIM(committee_name_he) != ''
-ORDER BY mk_id, knesset_num, committee_name_he, role_he, from_date, to_date
+    CAST(wmc.mk_id AS BIGINT)        AS mk_id,
+    CAST(wmc.knesset_num AS INTEGER) AS knesset_num,
+    ci.committee_id                  AS committee_id,
+    wmc.committee_name_he            AS committee_name_he,
+    wmc.role_he                      AS role_he,
+    wmc.from_date                    AS from_date,
+    wmc.to_date                      AS to_date
+FROM WebMkCommittee wmc
+LEFT JOIN committee_ids ci
+    ON ci.KnessetNum = wmc.knesset_num
+    AND ci.norm_name = {_committee_name_norm_sql("wmc.committee_name_he")}
+WHERE wmc.mk_id IS NOT NULL
+  AND wmc.knesset_num IS NOT NULL
+  AND wmc.committee_name_he IS NOT NULL
+  AND TRIM(wmc.committee_name_he) != ''
+ORDER BY wmc.mk_id, wmc.knesset_num, wmc.committee_name_he, wmc.role_he,
+    wmc.from_date, wmc.to_date
 """.strip()
 
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
