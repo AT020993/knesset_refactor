@@ -417,6 +417,49 @@ ORDER BY wmc.mk_id, wmc.knesset_num, wmc.committee_name_he, wmc.role_he,
     wmc.from_date, wmc.to_date
 """.strip()
 
+# committee_bills — sessions-per-bill "depth" metric: for each (committee,
+# bill) pair, how many DISTINCT sessions actually discussed it. Item/session
+# counts elsewhere (committees_list.session_count, committee_sessions_by_type)
+# answer "how many things is this committee doing" but not "how much work did
+# it put into THIS bill" — a bill discussed once and one discussed across nine
+# sessions look identical today. Join path: KNS_CmtSessionItem ->
+# KNS_CommitteeSession on CommitteeSessionID (which carries CommitteeID),
+# filtered to ItemTypeID = 2 (הצעת חוק). Verified in production: 40,284 rows
+# -> 13,398 distinct (committee, bill) pairs across 729 committees.
+#
+# knesset_num is read from KNS_Committee (the committee's own canonical term),
+# NOT from KNS_CommitteeSession.KnessetNum. The session's own KnessetNum is
+# occasionally stale relative to its committee's KNS_Committee.KnessetNum
+# (verified in production: 83 session rows disagree with their committee's
+# canonical term — e.g. committee 25's KNS_Committee.KnessetNum is 16, but one
+# of its sessions is logged under 15), and one (committee, bill) pair actually
+# spans two different session KnessetNum values (15 and 16) for the same
+# committee. Grouping by the session's own KnessetNum would split that pair
+# into two rows — 13,399 total rows instead of the verified 13,398 distinct
+# pairs — breaking the "one row per (committee, bill) pair" contract this
+# snapshot makes. KNS_Committee.CommitteeID is 1:1 with KnessetNum (verified:
+# zero CommitteeIDs carry more than one KnessetNum in production), so keying
+# off the committee's own term is both stable (exactly one knesset_num per
+# committee_id, always) and consistent with committees_list, which keys every
+# CommitteeID to that same KNS_Committee.KnessetNum — a consumer joining
+# committee_bills to committees_list on (committee_id, knesset_num) will never
+# hit an orphan pair.
+_COMMITTEE_BILLS_SQL = """
+SELECT
+    CAST(cs.CommitteeID AS BIGINT)         AS committee_id,
+    CAST(c.KnessetNum AS INTEGER)          AS knesset_num,
+    CAST(csi.ItemID AS BIGINT)             AS bill_id,
+    COUNT(DISTINCT cs.CommitteeSessionID)  AS session_count
+FROM KNS_CmtSessionItem csi
+JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+JOIN KNS_Committee c ON c.CommitteeID = cs.CommitteeID
+WHERE csi.ItemTypeID = 2
+  AND cs.CommitteeID IS NOT NULL
+  AND csi.ItemID IS NOT NULL
+GROUP BY cs.CommitteeID, c.KnessetNum, csi.ItemID
+ORDER BY committee_id, knesset_num, bill_id
+""".strip()
+
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
 # for reproducibility guarantees (byte-equivalent manifest on unchanged data).
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
@@ -435,6 +478,7 @@ SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("mk_cv", _MK_CV_SQL),
     ("committee_members_by_faction", _COMMITTEE_MEMBERS_SQL),
     ("mk_committees", _MK_COMMITTEES_SQL),
+    ("committee_bills", _COMMITTEE_BILLS_SQL),
 )
 
 # Keep BILLS_QUERIES referenced so lint doesn't drop the import —

@@ -76,18 +76,33 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         INSERT INTO KNS_CommitteeSession VALUES
             (9001, 500, 26, '2026-01-10'),
             (9002, 500, 26, '2026-01-17'),
-            (9003, 500, 26, '2026-01-24');
+            (9003, 500, 26, '2026-01-24'),
+            -- 9004/9005 exist for committee_bills: 9004 discusses bill 7001 a
+            -- second time (so that pair's session_count must be 2, proving the
+            -- exporter counts DISTINCT sessions rather than raw item rows),
+            -- 9005 discusses bill 7002 once (a second, single-session pair, so
+            -- committee_bills has more than one (committee, bill) row to group).
+            (9004, 500, 26, '2026-01-31'),
+            (9005, 500, 26, '2026-02-01');
 
         CREATE TABLE KNS_CmtSessionItem (
             CmtSessionItemID BIGINT, ItemID BIGINT, CommitteeSessionID BIGINT,
             Ordinal BIGINT, StatusID BIGINT, Name VARCHAR, ItemTypeID BIGINT,
             LastUpdatedDate VARCHAR
         );
-        -- session 9001 → legislation (ItemTypeID 2), 9002 → oversight (11),
-        -- 9003 → no items (folds into 'אחר'); exercises every derivation branch.
+        -- session 9001 → legislation (ItemTypeID 2) on bill 7001, 9002 →
+        -- oversight (11), 9003 → no items (folds into 'אחר') — exercises every
+        -- committee_sessions_by_type derivation branch. 9004 discusses bill
+        -- 7001 again (same bill, second session — committee_bills.session_count
+        -- for (500, 7001) must be 2, not 1) and 9005 discusses bill 7002 once.
+        -- ItemID values 7001/7002 are real KNS_Bill ids (not placeholders) so
+        -- committee_bills rows resolve to an actual title via bills_list, as
+        -- production data guarantees.
         INSERT INTO KNS_CmtSessionItem VALUES
-            (1, 101, 9001, 1, 1, 'חוק לדוגמה', 2, '2026-01-10'),
-            (2, 102, 9002, 1, 1, 'סקירה כללית', 11, '2026-01-17');
+            (1, 7001, 9001, 1, 1, 'חוק לדוגמה', 2, '2026-01-10'),
+            (2, 102, 9002, 1, 1, 'סקירה כללית', 11, '2026-01-17'),
+            (3, 7001, 9004, 1, 1, 'חוק לדוגמה', 2, '2026-01-31'),
+            (4, 7002, 9005, 1, 1, 'הצעת חוק עם קידוד CAP', 2, '2026-02-01');
 
         CREATE TABLE UserCAPTaxonomy (
             MajorCode INTEGER, MajorTopic_HE VARCHAR, MajorTopic_EN VARCHAR,
@@ -623,13 +638,99 @@ def test_committee_sessions_by_type_derivation_and_reconciliation(
                 " WHERE committee_id = 500 ORDER BY type_he"
             ).fetchall()
         )
-        assert rows == {"חקיקה": 1, "דיון כללי (פיקוח)": 1, "אחר": 1}
-        # Reconciles with committees_list.session_count (3 sessions on committee 500).
+        # 9001 and 9004 both discuss bill 7001 (ItemTypeID 2) → two 'חקיקה'
+        # sessions; 9002 → one 'דיון כללי'; 9003 → one item-less 'אחר'; 9005
+        # discusses bill 7002 (ItemTypeID 2) → a third 'חקיקה' session.
+        assert rows == {"חקיקה": 3, "דיון כללי (פיקוח)": 1, "אחר": 1}
+        # Reconciles with committees_list.session_count (5 sessions on committee 500).
         total_by_type = sum(rows.values())
         list_count = con.execute(
             f"SELECT session_count FROM '{out / 'committees_list.parquet'}' WHERE committee_id = 500"
         ).fetchone()[0]
-        assert total_by_type == list_count == 3
+        assert total_by_type == list_count == 5
+    finally:
+        con.close()
+
+
+def test_committee_bills_has_expected_columns(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'committee_bills.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == ["committee_id", "knesset_num", "bill_id", "session_count"]
+    finally:
+        con.close()
+
+
+def test_committee_bills_counts_sessions_per_bill(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """session_count is the ועדות-3 depth metric — how much work a
+    committee actually put into each bill, which the item counts the
+    consumer shows today cannot express."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT committee_id, bill_id, session_count "
+        f"FROM read_parquet('{out}/committee_bills.parquet')"
+    ).fetchall()
+    assert rows
+    for cid, bid, n in rows:
+        assert cid is not None and bid is not None
+        assert n >= 1, "a (committee, bill) pair implies at least one session"
+
+
+def test_committee_bills_is_one_row_per_committee_bill_pair(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    total, distinct = con.execute(
+        f"SELECT COUNT(*), COUNT(DISTINCT (committee_id, bill_id)) "
+        f"FROM read_parquet('{out}/committee_bills.parquet')"
+    ).fetchone()
+    assert total == distinct
+
+
+def test_committee_bills_session_count_is_distinct_not_raw_item_rows(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Bill 7001 is discussed in two sessions (9001, 9004); bill 7002 in one
+    (9005). A query that forgot ``COUNT(DISTINCT CommitteeSessionID)`` — or
+    forgot to GROUP BY at all — could not tell these two pairs apart, and a
+    fixture where every bill only ever got one session could not catch it
+    either (both would show session_count=1 by coincidence)."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        by_bill = dict(
+            con.execute(
+                f"SELECT bill_id, session_count FROM read_parquet('{out}/committee_bills.parquet')"
+                " WHERE committee_id = 500"
+            ).fetchall()
+        )
+        assert by_bill == {7001: 2, 7002: 1}
+        # knesset_num comes from the committee's own KNS_Committee.KnessetNum
+        # (26 for committee 500), not the session's own KnessetNum column.
+        knesset_nums = {
+            r[0]
+            for r in con.execute(
+                f"SELECT DISTINCT knesset_num FROM read_parquet('{out}/committee_bills.parquet')"
+                " WHERE committee_id = 500"
+            ).fetchall()
+        }
+        assert knesset_nums == {26}
     finally:
         con.close()
 
