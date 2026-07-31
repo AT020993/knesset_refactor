@@ -76,18 +76,33 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         INSERT INTO KNS_CommitteeSession VALUES
             (9001, 500, 26, '2026-01-10'),
             (9002, 500, 26, '2026-01-17'),
-            (9003, 500, 26, '2026-01-24');
+            (9003, 500, 26, '2026-01-24'),
+            -- 9004/9005 exist for committee_bills: 9004 discusses bill 7001 a
+            -- second time (so that pair's session_count must be 2, proving the
+            -- exporter counts DISTINCT sessions rather than raw item rows),
+            -- 9005 discusses bill 7002 once (a second, single-session pair, so
+            -- committee_bills has more than one (committee, bill) row to group).
+            (9004, 500, 26, '2026-01-31'),
+            (9005, 500, 26, '2026-02-01');
 
         CREATE TABLE KNS_CmtSessionItem (
             CmtSessionItemID BIGINT, ItemID BIGINT, CommitteeSessionID BIGINT,
             Ordinal BIGINT, StatusID BIGINT, Name VARCHAR, ItemTypeID BIGINT,
             LastUpdatedDate VARCHAR
         );
-        -- session 9001 → legislation (ItemTypeID 2), 9002 → oversight (11),
-        -- 9003 → no items (folds into 'אחר'); exercises every derivation branch.
+        -- session 9001 → legislation (ItemTypeID 2) on bill 7001, 9002 →
+        -- oversight (11), 9003 → no items (folds into 'אחר') — exercises every
+        -- committee_sessions_by_type derivation branch. 9004 discusses bill
+        -- 7001 again (same bill, second session — committee_bills.session_count
+        -- for (500, 7001) must be 2, not 1) and 9005 discusses bill 7002 once.
+        -- ItemID values 7001/7002 are real KNS_Bill ids (not placeholders) so
+        -- committee_bills rows resolve to an actual title via bills_list, as
+        -- production data guarantees.
         INSERT INTO KNS_CmtSessionItem VALUES
-            (1, 101, 9001, 1, 1, 'חוק לדוגמה', 2, '2026-01-10'),
-            (2, 102, 9002, 1, 1, 'סקירה כללית', 11, '2026-01-17');
+            (1, 7001, 9001, 1, 1, 'חוק לדוגמה', 2, '2026-01-10'),
+            (2, 102, 9002, 1, 1, 'סקירה כללית', 11, '2026-01-17'),
+            (3, 7001, 9004, 1, 1, 'חוק לדוגמה', 2, '2026-01-31'),
+            (4, 7002, 9005, 1, 1, 'הצעת חוק עם קידוד CAP', 2, '2026-02-01');
 
         CREATE TABLE UserCAPTaxonomy (
             MajorCode INTEGER, MajorTopic_HE VARCHAR, MajorTopic_EN VARCHAR,
@@ -117,6 +132,17 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             -- NULL. cap_code must fall back to MajorIL so their topic data shows.
             (7005, 21, 2101, NULL, NULL, 0, 0, 'k25-il-only', NULL);
 
+        CREATE TABLE KNS_Status (
+            StatusID BIGINT, "Desc" VARCHAR, TypeID BIGINT, TypeDesc VARCHAR,
+            OrderTransition BIGINT, IsActive BOOLEAN, LastUpdatedDate VARCHAR
+        );
+        INSERT INTO KNS_Status VALUES
+            (118, 'התקבלה בקריאה שלישית', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (104, 'הונחה על שולחן הכנסת לדיון מוקדם', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (141, 'עברה קריאה טרומית', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (9,   'נענתה', 1, 'שאילתה', NULL, TRUE, '2026-01-01'),
+            (304, 'לדיון בוועדה', 4, 'הצעה לסדר היום', NULL, TRUE, '2026-01-01');
+
         CREATE TABLE KNS_Bill (
             BillID BIGINT, KnessetNum BIGINT, Name VARCHAR,
             SubTypeID BIGINT, SubTypeDesc VARCHAR, PrivateNumber DOUBLE,
@@ -127,10 +153,16 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             PublicationSeriesID DOUBLE, PublicationSeriesDesc VARCHAR,
             PublicationSeriesFirstCall DOUBLE, LastUpdatedDate VARCHAR
         );
+        -- StatusID values are real ladder-mapped ids (118 = law, 104 = tabled,
+        -- 141 = preliminary reading) so bills_list has a law and a tabled bill to
+        -- assert on, and so 7005 (private, K25) doesn't fall out of the ladder.
+        -- 7003/7004 keep an arbitrary unmapped id (1): they are government/
+        -- committee bills, excluded from bills_list by its SubTypeDesc filter,
+        -- so their status never reaches the ladder-guard test.
         INSERT INTO KNS_Bill VALUES
-            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 118, NULL,
              NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
-            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 104, NULL,
              NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             -- Government + committee bills carry MK initiator rows too (a minister
             -- who is an MK signs the government bill), but they are NOT the MK's own
@@ -139,7 +171,7 @@ def tiny_warehouse(tmp_path: Path) -> Path:
              NULL, NULL, '2026-02-03', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             (7004, 26, 'הצעת חוק ועדה', 3, 'ועדה', NULL, NULL, 1, NULL,
              NULL, NULL, '2026-02-04', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
-            (7005, 25, 'הצעת חוק מקודדת ב-MajorIL בלבד', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7005, 25, 'הצעת חוק מקודדת ב-MajorIL בלבד', 1, 'פרטית', NULL, NULL, 141, NULL,
              NULL, NULL, '2026-02-05', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE KNS_BillInitiator (
@@ -158,8 +190,12 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             TypeID BIGINT, TypeDesc VARCHAR, StatusID BIGINT,
             PersonID BIGINT, GovMinistryID BIGINT, SubmitDate VARCHAR
         );
+        -- StatusID 9 = 'נענתה' (answered) under TypeDesc='שאילתה' in KNS_Status
+        -- above (Task 4 decode). The prior placeholder (1) never matched any
+        -- KNS_Status row for the question family, which would have made the
+        -- status-decode test pass vacuously.
         INSERT INTO KNS_Query VALUES
-            (8001, 1.0, 26, 'שאילתה לדוגמה', 1, 'דחופה', 1, 2, 1, '2026-02-10');
+            (8001, 1.0, 26, 'שאילתה לדוגמה', 1, 'דחופה', 9, 2, 1, '2026-02-10');
 
         CREATE TABLE UserQueryCoding (
             QueryID INTEGER, MajorIL INTEGER, MinorIL INTEGER,
@@ -179,9 +215,13 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             CommitteeID DOUBLE, RecommendCommitteeID DOUBLE,
             MinisterPersonID DOUBLE, LastUpdatedDate VARCHAR
         );
+        -- StatusID 304 = 'לדיון בוועדה' under TypeDesc='הצעה לסדר היום' in
+        -- KNS_Status above (Task 4 decode). The prior placeholder (1) never
+        -- matched any KNS_Status row for the motion family, which would have
+        -- made the status-decode test pass vacuously.
         INSERT INTO KNS_Agenda VALUES
             (9001, 1.0, 1, NULL, NULL, 26, 'הצעה לסדר יום', 1, 'דחופה',
-             1, 1.0, NULL, NULL, '2026-02-15', NULL, NULL, NULL, NULL, NULL, NULL);
+             304, 1.0, NULL, NULL, '2026-02-15', NULL, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE UserAgendaCoding (
             AgendaID INTEGER, MajorIL INTEGER, MinorIL INTEGER,
@@ -222,10 +262,15 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             role_he VARCHAR, from_date VARCHAR, to_date VARCHAR
         );
         -- mk 1: current member of committee 500 (name matches KNS_Committee after
-        -- normalisation). mk 2: a PAST membership (to_date set) → excluded.
+        -- normalisation). mk 2: a PAST membership (to_date set) → excluded from
+        -- committee_members_by_faction but must still appear in mk_committees.
+        -- mk 1 also sits on an ad-hoc sub-committee with no KNS_Committee row at
+        -- all (mirrors the ~595 real unresolved names) — its membership must
+        -- still surface in mk_committees with a NULL committee_id, not vanish.
         INSERT INTO WebMkCommittee VALUES
             (1, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', NULL),
-            (2, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', '2026-01-01T00:00:00');
+            (2, 26, 'ועדת חוץ וביטחון', 'חבר בוועדת חוץ וביטחון', '2025-11-17T00:00:00', '2026-01-01T00:00:00'),
+            (1, 26, 'ועדת משנה לנושא שאינו קיים', 'חבר', '2025-12-01T00:00:00', NULL);
         """
     )
     con.close()
@@ -502,6 +547,82 @@ def test_committee_members_resolve_id_and_drop_past_memberships(
         con.close()
 
 
+def test_mk_committees_exports_full_history(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """mk_committees is a WebMkCommittee projection — unlike
+    committee_members_by_faction it deliberately keeps PAST memberships too
+    (to_date set): an MK's profile needs their whole committee history, not
+    just current seats."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'mk_committees.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == [
+            "mk_id",
+            "knesset_num",
+            "committee_id",
+            "committee_name_he",
+            "role_he",
+            "from_date",
+            "to_date",
+        ]
+        rows = con.execute(
+            f"SELECT mk_id, knesset_num, committee_id, committee_name_he, role_he, to_date "
+            f"FROM read_parquet('{out}/mk_committees.parquet')"
+        ).fetchall()
+        assert rows
+        for mk_id, kn, _committee_id, name, _role, _to_date in rows:
+            assert mk_id is not None and kn is not None
+            assert name, "a membership with no committee name is not useful"
+        # mk 2's membership ended in the fixture (to_date set) but must still
+        # be present — this is the one behaviour that distinguishes this
+        # snapshot from committee_members_by_faction, which drops it. A test
+        # that only checked non-null columns would pass identically whether
+        # or not that filter existed, so pin it explicitly.
+        mk_ids = {mk_id for mk_id, *_rest in rows}
+        assert mk_ids == {1, 2}
+        ended = [r for r in rows if r[5] is not None]
+        assert ended, "past memberships (to_date set) must be retained, not dropped"
+    finally:
+        con.close()
+
+
+def test_mk_committees_resolves_committee_id_but_keeps_unresolved_rows(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """committee_id resolves through the same name-normalisation as
+    committee_members_by_faction, but — unlike that inner-joined query —
+    an unresolvable committee name must NOT drop the row: the MK's
+    membership is real even when we can't link it to a committee page."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            f"SELECT mk_id, committee_name_he, committee_id "
+            f"FROM read_parquet('{out}/mk_committees.parquet')"
+        ).fetchall()
+        by_name = {(mk_id, name): cid for mk_id, name, cid in rows}
+        # mk 1's and mk 2's 'ועדת חוץ וביטחון' membership resolves to
+        # committee 500 (matches KNS_Committee after normalisation).
+        assert by_name[(1, "ועדת חוץ וביטחון")] == 500
+        assert by_name[(2, "ועדת חוץ וביטחון")] == 500
+        # mk 1's ad-hoc sub-committee has no KNS_Committee row at all (mirrors
+        # the real ~595 unresolved names) — it must still appear, with a NULL
+        # committee_id rather than being silently dropped.
+        assert (1, "ועדת משנה לנושא שאינו קיים") in by_name
+        assert by_name[(1, "ועדת משנה לנושא שאינו קיים")] is None
+    finally:
+        con.close()
+
+
 def test_committee_sessions_by_type_derivation_and_reconciliation(
     tiny_warehouse: Path, tmp_path: Path
 ) -> None:
@@ -517,12 +638,201 @@ def test_committee_sessions_by_type_derivation_and_reconciliation(
                 " WHERE committee_id = 500 ORDER BY type_he"
             ).fetchall()
         )
-        assert rows == {"חקיקה": 1, "דיון כללי (פיקוח)": 1, "אחר": 1}
-        # Reconciles with committees_list.session_count (3 sessions on committee 500).
+        # 9001 and 9004 both discuss bill 7001 (ItemTypeID 2) → two 'חקיקה'
+        # sessions; 9002 → one 'דיון כללי'; 9003 → one item-less 'אחר'; 9005
+        # discusses bill 7002 (ItemTypeID 2) → a third 'חקיקה' session.
+        assert rows == {"חקיקה": 3, "דיון כללי (פיקוח)": 1, "אחר": 1}
+        # Reconciles with committees_list.session_count (5 sessions on committee 500).
         total_by_type = sum(rows.values())
         list_count = con.execute(
             f"SELECT session_count FROM '{out / 'committees_list.parquet'}' WHERE committee_id = 500"
         ).fetchone()[0]
-        assert total_by_type == list_count == 3
+        assert total_by_type == list_count == 5
     finally:
         con.close()
+
+
+def test_committee_bills_has_expected_columns(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'committee_bills.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == ["committee_id", "knesset_num", "bill_id", "session_count"]
+    finally:
+        con.close()
+
+
+def test_committee_bills_counts_sessions_per_bill(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """session_count is the ועדות-3 depth metric — how much work a
+    committee actually put into each bill, which the item counts the
+    consumer shows today cannot express."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT committee_id, bill_id, session_count "
+        f"FROM read_parquet('{out}/committee_bills.parquet')"
+    ).fetchall()
+    assert rows
+    for cid, bid, n in rows:
+        assert cid is not None and bid is not None
+        assert n >= 1, "a (committee, bill) pair implies at least one session"
+
+
+def test_committee_bills_is_one_row_per_committee_bill_pair(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    total, distinct = con.execute(
+        f"SELECT COUNT(*), COUNT(DISTINCT (committee_id, bill_id)) "
+        f"FROM read_parquet('{out}/committee_bills.parquet')"
+    ).fetchone()
+    assert total == distinct
+
+
+def test_committee_bills_session_count_is_distinct_not_raw_item_rows(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Bill 7001 is discussed in two sessions (9001, 9004); bill 7002 in one
+    (9005). A query that forgot ``COUNT(DISTINCT CommitteeSessionID)`` — or
+    forgot to GROUP BY at all — could not tell these two pairs apart, and a
+    fixture where every bill only ever got one session could not catch it
+    either (both would show session_count=1 by coincidence)."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        by_bill = dict(
+            con.execute(
+                f"SELECT bill_id, session_count FROM read_parquet('{out}/committee_bills.parquet')"
+                " WHERE committee_id = 500"
+            ).fetchall()
+        )
+        assert by_bill == {7001: 2, 7002: 1}
+        # knesset_num comes from the committee's own KNS_Committee.KnessetNum
+        # (26 for committee 500), not the session's own KnessetNum column.
+        knesset_nums = {
+            r[0]
+            for r in con.execute(
+                f"SELECT DISTINCT knesset_num FROM read_parquet('{out}/committee_bills.parquet')"
+                " WHERE committee_id = 500"
+            ).fetchall()
+        }
+        assert knesset_nums == {26}
+    finally:
+        con.close()
+
+
+def test_bills_list_carries_title_status_and_rung(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT bill_id, name, status_id, status_desc, status_rung, "
+        f"status_rung_order FROM read_parquet('{out}/bills_list.parquet') "
+        f"ORDER BY bill_id"
+    ).fetchall()
+    assert rows, "bills_list must not be empty on the fixture"
+    for bill_id, name, status_id, desc, rung, order in rows:
+        assert name, f"bill {bill_id} has no title"
+        assert desc, f"bill {bill_id} status {status_id} did not decode"
+        assert rung, f"bill {bill_id} status {status_id} has no rung"
+        assert order is not None
+
+
+def test_bills_list_is_one_row_per_bill(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Keyed on bill_id — not per initiator, which is what mk_bills is for."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    total, distinct = con.execute(
+        f"SELECT COUNT(*), COUNT(DISTINCT bill_id) "
+        f"FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchone()
+    assert total == distinct
+
+
+def test_bills_list_scoped_to_private_member_bills(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """A bills_list carrying government/committee bills would let a join
+    silently reintroduce the bills mk_bills deliberately excludes."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    sub_types = con.execute(
+        f"SELECT DISTINCT sub_type FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchall()
+    bill_ids = con.execute(
+        f"SELECT DISTINCT bill_id FROM read_parquet('{out}/bills_list.parquet') ORDER BY bill_id"
+    ).fetchall()
+    assert sub_types == [("פרטית",)]
+    # 7003 (ממשלתית) + 7004 (ועדה) excluded; 7001/7002/7005 (private) kept
+    assert bill_ids == [(7001,), (7002,), (7005,)]
+
+
+def test_bills_list_rung_order_matches_the_ladder(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    from data.snapshots.bill_status import RUNG_ORDER
+
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    for rung, order in con.execute(
+        f"SELECT DISTINCT status_rung, status_rung_order "
+        f"FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchall():
+        assert RUNG_ORDER.index(rung) == order
+
+
+def test_no_bill_status_falls_outside_the_ladder(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The ladder is hand-authored, so a future Knesset introducing an
+    unmapped status must break loudly rather than silently fall out of
+    every rung."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    unmapped = con.execute(
+        f"SELECT COUNT(*) FROM read_parquet('{out}/bills_list.parquet') "
+        f"WHERE status_rung IS NULL"
+    ).fetchone()[0]
+    assert unmapped == 0
+
+
+def test_question_and_motion_status_decode(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """These render to the public. An undecoded status_id reaches a reader
+    as 'סטטוס 304', which is why four UI blocks had to be removed
+    downstream (knesset-platform issue #34)."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    for pack in ("mk_questions", "mk_motions"):
+        rows = con.execute(
+            f"SELECT status_id, status_desc "
+            f"FROM read_parquet('{out}/{pack}.parquet') "
+            f"WHERE status_id IS NOT NULL"
+        ).fetchall()
+        assert rows, f"{pack} fixture must have at least one status"
+        for status_id, desc in rows:
+            assert desc, f"{pack} status {status_id} did not decode"

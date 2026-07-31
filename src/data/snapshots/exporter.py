@@ -29,6 +29,7 @@ from data.queries.packs.committees import COMMITTEES_QUERIES
 from data.queries.packs.mks import MK_QUERIES
 from data.queries.packs.parties import PARTIES_QUERIES
 from data.queries.packs.votes import VOTES_QUERIES
+from data.snapshots.bill_status import BILL_STATUS_RUNGS, RUNG_ORDER
 from data.snapshots.manifest import Manifest, SnapshotEntry, write_manifest
 
 log = logging.getLogger("data.snapshots.exporter")
@@ -65,17 +66,95 @@ WHERE bi.PersonID IS NOT NULL
 ORDER BY bi.BillID, bi.Ordinal, bi.PersonID
 """.strip()
 
+
+def _bill_status_rung_case_sql(column: str) -> str:
+    """``CASE`` mapping a bill status id to its rung label.
+
+    Generated from ``BILL_STATUS_RUNGS`` (Task 1) so the ladder has exactly
+    one definition — the SQL below must never retype the status ids.
+    """
+    lines = ["    CASE"]
+    for rung, ids in BILL_STATUS_RUNGS.items():
+        id_list = ", ".join(str(i) for i in ids)
+        escaped = rung.replace("'", "''")
+        lines.append(f"        WHEN {column} IN ({id_list}) THEN '{escaped}'")
+    lines.append("        ELSE NULL")
+    lines.append("    END")
+    return "\n".join(lines)
+
+
+def _bill_status_rung_order_case_sql(column: str) -> str:
+    """``CASE`` mapping a bill status id to its rung's position in
+    ``RUNG_ORDER`` — lets the consumer sort by "furthest reading reached"
+    without re-deriving the ladder's order itself."""
+    lines = ["    CASE"]
+    for order, rung in enumerate(RUNG_ORDER):
+        id_list = ", ".join(str(i) for i in BILL_STATUS_RUNGS[rung])
+        lines.append(f"        WHEN {column} IN ({id_list}) THEN {order}")
+    lines.append("        ELSE NULL")
+    lines.append("    END")
+    return "\n".join(lines)
+
+
+# bills_list — titles + decoded status + reading-stage rung, keyed on
+# bill_id. Kept as its own snapshot rather than denormalised into
+# mk_bills: titles average 70 chars and mk_bills has 165k rows against 59k
+# distinct bills, so denormalising would repeat each title 2.8x (11.6 MB vs
+# 4.1 MB). The platform already carries bill_id and can join on it.
+_BILLS_LIST_SQL = f"""
+SELECT
+    b.BillID                        AS bill_id,
+    CAST(b.KnessetNum AS INTEGER)   AS knesset_num,
+    b.Name                          AS name,
+    b.SubTypeDesc                   AS sub_type,
+    CAST(b.StatusID AS INTEGER)     AS status_id,
+    s."Desc"                        AS status_desc,
+{_bill_status_rung_case_sql("b.StatusID")} AS status_rung,
+{_bill_status_rung_order_case_sql("b.StatusID")} AS status_rung_order
+FROM KNS_Bill b
+-- StatusID happens to be globally unique across KNS_Status today (verified
+-- against production: 81 rows, 81 distinct ids), so this TypeDesc predicate
+-- changes no output right now. It is defensive, not redundant: StatusID is
+-- only *semantically* scoped to a TypeDesc family (bill/question/motion
+-- share the table), and nothing in the schema enforces that a future id
+-- can't collide across families. Without this, such a collision would
+-- silently attach a question/motion's status label to a bill. Do not
+-- delete this as a no-op — keep it even though no fixture can prove it
+-- fires today.
+LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID AND s.TypeDesc = 'הצעת חוק'
+-- Scoped to private-member bills to match mk_bills, which is 'פרטית'-only by
+-- construction (see _MK_BILLS_SQL) — a bills_list carrying government/
+-- committee bills would let a join silently reintroduce them.
+WHERE b.SubTypeDesc = 'פרטית'
+ORDER BY b.BillID
+""".strip()
+
 _MK_QUESTIONS_SQL = """
 SELECT
     q.PersonID                      AS mk_id,
     q.QueryID                       AS question_id,
     CAST(q.KnessetNum AS INTEGER)   AS knesset_num,
     CAST(q.StatusID AS INTEGER)     AS status_id,
+    s."Desc"                        AS status_desc,
     q.TypeDesc                      AS type_he,
     uqc.MajorCAP                    AS cap_code,
     q.SubmitDate                    AS submit_date
 FROM KNS_Query q
 LEFT JOIN UserQueryCoding uqc ON q.QueryID = uqc.QueryID
+-- Denormalising status_desc straight into this row (rather than a separate
+-- status_decode snapshot, the way _BILLS_LIST_SQL above is kept separate
+-- from mk_bills) is the opposite call from bill titles, made deliberately:
+-- there are only 15 short status labels total across questions and motions
+-- combined, vs. titles averaging 70 chars over 165k bill rows. Joining the
+-- label here spares every consumer a join and a second lookup table; the
+-- two decisions look similar but are not in tension.
+-- StatusID is only unique *within* a TypeDesc family in KNS_Status (bill/
+-- question/motion share the table) — this predicate is defensive, not
+-- currently load-bearing: verified against production, zero status ids
+-- are reused across families today. Keep it anyway; an unscoped join would
+-- silently attach a bill/motion status label to a question if that ever
+-- changes. See _BILLS_LIST_SQL for the same pattern.
+LEFT JOIN KNS_Status s ON q.StatusID = s.StatusID AND s.TypeDesc = 'שאילתה'
 WHERE q.PersonID IS NOT NULL
 ORDER BY q.QueryID
 """.strip()
@@ -86,11 +165,19 @@ SELECT
     a.AgendaID                          AS motion_id,
     CAST(a.KnessetNum AS INTEGER)       AS knesset_num,
     CAST(a.StatusID AS INTEGER)         AS status_id,
+    s."Desc"                            AS status_desc,
     a.SubTypeDesc                       AS type_he,
     uac.MajorIL                         AS cap_code,
     a.PresidentDecisionDate             AS decision_date
 FROM KNS_Agenda a
 LEFT JOIN UserAgendaCoding uac ON a.AgendaID = uac.AgendaID
+-- Denormalised status_desc for the same reason as _MK_QUESTIONS_SQL above
+-- (few, short values — spares every consumer a join and a lookup table),
+-- deliberately the opposite call from _BILLS_LIST_SQL's separate snapshot.
+-- Same defensive TypeDesc scoping as _MK_QUESTIONS_SQL above: StatusID is
+-- only semantically unique within a TypeDesc family, even though no
+-- production collision exists today.
+LEFT JOIN KNS_Status s ON a.StatusID = s.StatusID AND s.TypeDesc = 'הצעה לסדר היום'
 WHERE a.InitiatorPersonID IS NOT NULL
 ORDER BY a.AgendaID, a.InitiatorPersonID
 """.strip()
@@ -201,6 +288,30 @@ FROM WebMkCv
 ORDER BY mk_id
 """.strip()
 
+def _committee_name_norm_sql(column: str) -> str:
+    """Whitespace/punctuation-stripped normalisation for matching a free-text
+    committee name (``WebMkCommittee.committee_name_he``, from the site
+    backend) to ``KNS_Committee.Name``. Factored out so
+    ``_COMMITTEE_MEMBERS_SQL`` and ``_MK_COMMITTEES_SQL`` share one
+    definition — see ``_COMMITTEE_IDS_CTE_SQL`` below — instead of each
+    re-typing the regex and silently drifting apart."""
+    return f"regexp_replace(TRIM({column}), '[\\s,\"'']', '', 'g')"
+
+
+# committee_ids — shared CTE resolving every KNS_Committee row to its
+# normalised name. Embedded (via an f-string) into both queries below that
+# need to match a WebMkCommittee free-text committee name to a
+# committees_list id, so the resolution logic lives in exactly one place.
+_COMMITTEE_IDS_CTE_SQL = f"""
+committee_ids AS (
+    SELECT
+        CAST(CommitteeID AS BIGINT) AS committee_id,
+        KnessetNum,
+        {_committee_name_norm_sql("Name")} AS norm_name
+    FROM KNS_Committee
+)
+""".strip()
+
 # committee_members_by_faction — currently-serving members per committee, grouped
 # downstream by faction. Source is WebMkCommittee (site backend); we keep only
 # current memberships (to_date IS NULL), resolve the committee NAME to a
@@ -208,7 +319,7 @@ ORDER BY mk_id
 # matches the permanent committees; ad-hoc sub/joint committees with divergent
 # names simply don't resolve and are dropped, matching the spec's scope), and
 # attach each MK's latest faction for that term (same logic as mk_summary).
-_COMMITTEE_MEMBERS_SQL = r"""
+_COMMITTEE_MEMBERS_SQL = f"""
 WITH latest_faction AS (
     SELECT
         PersonID, KnessetNum, FactionID, FactionName,
@@ -220,13 +331,7 @@ WITH latest_faction AS (
     FROM KNS_PersonToPosition
     WHERE FactionID IS NOT NULL
 ),
-committee_ids AS (
-    SELECT
-        CAST(CommitteeID AS BIGINT) AS committee_id,
-        KnessetNum,
-        regexp_replace(TRIM(Name), '[\s,"'']', '', 'g') AS norm_name
-    FROM KNS_Committee
-)
+{_COMMITTEE_IDS_CTE_SQL}
 SELECT DISTINCT
     ci.committee_id                       AS committee_id,
     CAST(wmc.knesset_num AS INTEGER)      AS knesset_num,
@@ -240,11 +345,110 @@ FROM WebMkCommittee wmc
 JOIN KNS_Person p ON p.PersonID = wmc.mk_id
 JOIN committee_ids ci
     ON ci.KnessetNum = wmc.knesset_num
-    AND ci.norm_name = regexp_replace(TRIM(wmc.committee_name_he), '[\s,"'']', '', 'g')
+    AND ci.norm_name = {_committee_name_norm_sql("wmc.committee_name_he")}
 LEFT JOIN latest_faction lf
     ON lf.PersonID = wmc.mk_id AND lf.KnessetNum = wmc.knesset_num AND lf.rn = 1
 WHERE wmc.to_date IS NULL
 ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
+""".strip()
+
+# mk_committees — full committee-membership HISTORY for one MK, straight off
+# WebMkCommittee (site backend; see data.mk_details.ingest). Unlike
+# committee_members_by_faction above, this deliberately does NOT filter
+# to_date IS NULL: an MK's profile needs past memberships too, not just
+# current seats, so both are kept.
+#
+# committee_id resolves through the same committee_ids CTE/normalisation as
+# committee_members_by_faction (LEFT, not that query's inner JOIN — see
+# below) so the site can link straight to /he/committee/{id} instead of
+# reimplementing the name-normalisation match on its own side of the repo
+# boundary. Verified against production: 1,000 of 1,595 rows (62.7%)
+# resolve; of the other 595, 491 (40 distinct names) have no KNS_Committee
+# row under ANY Knesset — genuine ad-hoc sub/joint committees never
+# separately catalogued (same "ad-hoc … simply don't resolve" scope note as
+# committee_members_by_faction above), e.g. "ועדת משנה לספורט" or a joint
+# committee named after the bill it's convened for. The remaining 104 (6
+# distinct names, e.g. "ועדת משנה לקידום עסקים קטנים ובינוניים") DO have a
+# same-name KNS_Committee row, just tagged to a different KnessetNum than
+# this membership's own 25 — the join is scoped to KnessetNum for both this
+# query and committee_members_by_faction, so these don't resolve either;
+# that's an existing characteristic of the shared resolution (not something
+# this task introduces), and widening the join's Knesset scope is out of
+# scope here. Unlike committee_members_by_faction — which only ever wanted
+# resolved rows and so can inner-join and drop the rest — an MK's membership
+# in any of these 595 is still real service, so the row is kept with
+# committee_id = NULL rather than dropped; dropping it would understate that
+# MK's committee record.
+#
+# LIMITATION (belongs here, not just in a plan doc, so it travels with the
+# data): WebMkCommittee covers Knesset 25 ONLY — verified against production,
+# `SELECT COUNT(DISTINCT knesset_num) FROM WebMkCommittee` = 1, 1,595 rows
+# across 134 MKs. An MK who served solely in an earlier Knesset will have
+# ZERO rows here. Do not treat that as a bug to special-case — the consumer
+# must render an honest empty state (the site's existing `data_gaps`
+# convention on the committee page) rather than implying no committee
+# service ever occurred.
+#
+# The mk_id/knesset_num/committee_name_he WHERE clause below is defensive,
+# not a real-world filter today: on production data it excludes 0 of 1,595
+# rows (verified) since the ingest step already skips blank committee names.
+# Kept anyway so a future ingest regression can't silently emit a membership
+# with no committee name — such a row is useless to the consumer, not just
+# incomplete.
+_MK_COMMITTEES_SQL = f"""
+WITH {_COMMITTEE_IDS_CTE_SQL}
+SELECT
+    CAST(wmc.mk_id AS BIGINT)        AS mk_id,
+    CAST(wmc.knesset_num AS INTEGER) AS knesset_num,
+    ci.committee_id                  AS committee_id,
+    wmc.committee_name_he            AS committee_name_he,
+    wmc.role_he                      AS role_he,
+    wmc.from_date                    AS from_date,
+    wmc.to_date                      AS to_date
+FROM WebMkCommittee wmc
+LEFT JOIN committee_ids ci
+    ON ci.KnessetNum = wmc.knesset_num
+    AND ci.norm_name = {_committee_name_norm_sql("wmc.committee_name_he")}
+WHERE wmc.mk_id IS NOT NULL
+  AND wmc.knesset_num IS NOT NULL
+  AND wmc.committee_name_he IS NOT NULL
+  AND TRIM(wmc.committee_name_he) != ''
+ORDER BY wmc.mk_id, wmc.knesset_num, wmc.committee_name_he, wmc.role_he,
+    wmc.from_date, wmc.to_date
+""".strip()
+
+# committee_bills — sessions-per-bill "depth" metric: for each (committee,
+# bill) pair, how many DISTINCT sessions actually discussed it. Item/session
+# counts elsewhere (committees_list.session_count, committee_sessions_by_type)
+# answer "how many things is this committee doing" but not "how much work did
+# it put into THIS bill" — a bill discussed once and one discussed across nine
+# sessions look identical today. Join path: KNS_CmtSessionItem ->
+# KNS_CommitteeSession on CommitteeSessionID (which carries CommitteeID),
+# filtered to ItemTypeID = 2 (הצעת חוק).
+#
+# knesset_num comes from KNS_Committee (the committee's own term), NOT from
+# KNS_CommitteeSession.KnessetNum. Session terms are occasionally stale
+# relative to their committee's, and at least one (committee, bill) pair spans
+# two session terms — grouping by the session's term would split it and break
+# the one-row-per-pair contract this snapshot makes. The committee's term is
+# 1:1 with CommitteeID and is also what committees_list keys on, so a consumer
+# joining the two on (committee_id, knesset_num) never hits an orphan.
+# Measured figures behind this live in docs/phase-c-snapshot-scope.md; they are
+# re-export-dependent and deliberately not frozen here.
+_COMMITTEE_BILLS_SQL = """
+SELECT
+    CAST(cs.CommitteeID AS BIGINT)         AS committee_id,
+    CAST(c.KnessetNum AS INTEGER)          AS knesset_num,
+    CAST(csi.ItemID AS BIGINT)             AS bill_id,
+    COUNT(DISTINCT cs.CommitteeSessionID)  AS session_count
+FROM KNS_CmtSessionItem csi
+JOIN KNS_CommitteeSession cs ON csi.CommitteeSessionID = cs.CommitteeSessionID
+JOIN KNS_Committee c ON c.CommitteeID = cs.CommitteeID
+WHERE csi.ItemTypeID = 2
+  AND cs.CommitteeID IS NOT NULL
+  AND csi.ItemID IS NOT NULL
+GROUP BY cs.CommitteeID, c.KnessetNum, csi.ItemID
+ORDER BY committee_id, knesset_num, bill_id
 """.strip()
 
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
@@ -252,6 +456,7 @@ ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("mk_summary", MK_QUERIES["mk_summary"]["sql"]),
     ("mk_bills", _MK_BILLS_SQL),
+    ("bills_list", _BILLS_LIST_SQL),
     ("mk_questions", _MK_QUESTIONS_SQL),
     ("mk_motions", _MK_MOTIONS_SQL),
     ("parties_list", PARTIES_QUERIES["party_list"]["sql"]),
@@ -263,6 +468,8 @@ SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("committee_sessions_by_type", _COMMITTEE_SESSIONS_BY_TYPE_SQL),
     ("mk_cv", _MK_CV_SQL),
     ("committee_members_by_faction", _COMMITTEE_MEMBERS_SQL),
+    ("mk_committees", _MK_COMMITTEES_SQL),
+    ("committee_bills", _COMMITTEE_BILLS_SQL),
 )
 
 # Keep BILLS_QUERIES referenced so lint doesn't drop the import —
