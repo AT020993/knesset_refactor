@@ -141,6 +141,13 @@ SELECT
     q.SubmitDate                    AS submit_date
 FROM KNS_Query q
 LEFT JOIN UserQueryCoding uqc ON q.QueryID = uqc.QueryID
+-- Denormalising status_desc straight into this row (rather than a separate
+-- status_decode snapshot, the way _BILLS_LIST_SQL above is kept separate
+-- from mk_bills) is the opposite call from bill titles, made deliberately:
+-- there are only 15 short status labels total across questions and motions
+-- combined, vs. titles averaging 70 chars over 165k bill rows. Joining the
+-- label here spares every consumer a join and a second lookup table; the
+-- two decisions look similar but are not in tension.
 -- StatusID is only unique *within* a TypeDesc family in KNS_Status (bill/
 -- question/motion share the table) — this predicate is defensive, not
 -- currently load-bearing: verified against production, zero status ids
@@ -164,6 +171,9 @@ SELECT
     a.PresidentDecisionDate             AS decision_date
 FROM KNS_Agenda a
 LEFT JOIN UserAgendaCoding uac ON a.AgendaID = uac.AgendaID
+-- Denormalised status_desc for the same reason as _MK_QUESTIONS_SQL above
+-- (few, short values — spares every consumer a join and a lookup table),
+-- deliberately the opposite call from _BILLS_LIST_SQL's separate snapshot.
 -- Same defensive TypeDesc scoping as _MK_QUESTIONS_SQL above: StatusID is
 -- only semantically unique within a TypeDesc family, even though no
 -- production collision exists today.
