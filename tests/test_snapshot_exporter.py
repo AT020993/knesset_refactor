@@ -117,6 +117,17 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             -- NULL. cap_code must fall back to MajorIL so their topic data shows.
             (7005, 21, 2101, NULL, NULL, 0, 0, 'k25-il-only', NULL);
 
+        CREATE TABLE KNS_Status (
+            StatusID BIGINT, "Desc" VARCHAR, TypeID BIGINT, TypeDesc VARCHAR,
+            OrderTransition BIGINT, IsActive BOOLEAN, LastUpdatedDate VARCHAR
+        );
+        INSERT INTO KNS_Status VALUES
+            (118, 'התקבלה בקריאה שלישית', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (104, 'הונחה על שולחן הכנסת לדיון מוקדם', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (141, 'עברה קריאה טרומית', 2, 'הצעת חוק', NULL, TRUE, '2026-01-01'),
+            (9,   'נענתה', 1, 'שאילתה', NULL, TRUE, '2026-01-01'),
+            (304, 'לדיון בוועדה', 4, 'הצעה לסדר היום', NULL, TRUE, '2026-01-01');
+
         CREATE TABLE KNS_Bill (
             BillID BIGINT, KnessetNum BIGINT, Name VARCHAR,
             SubTypeID BIGINT, SubTypeDesc VARCHAR, PrivateNumber DOUBLE,
@@ -127,10 +138,16 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             PublicationSeriesID DOUBLE, PublicationSeriesDesc VARCHAR,
             PublicationSeriesFirstCall DOUBLE, LastUpdatedDate VARCHAR
         );
+        -- StatusID values are real ladder-mapped ids (118 = law, 104 = tabled,
+        -- 141 = preliminary reading) so bills_list has a law and a tabled bill to
+        -- assert on, and so 7005 (private, K25) doesn't fall out of the ladder.
+        -- 7003/7004 keep an arbitrary unmapped id (1): they are government/
+        -- committee bills, excluded from bills_list by its SubTypeDesc filter,
+        -- so their status never reaches the ladder-guard test.
         INSERT INTO KNS_Bill VALUES
-            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 118, NULL,
              NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
-            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 104, NULL,
              NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             -- Government + committee bills carry MK initiator rows too (a minister
             -- who is an MK signs the government bill), but they are NOT the MK's own
@@ -139,7 +156,7 @@ def tiny_warehouse(tmp_path: Path) -> Path:
              NULL, NULL, '2026-02-03', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             (7004, 26, 'הצעת חוק ועדה', 3, 'ועדה', NULL, NULL, 1, NULL,
              NULL, NULL, '2026-02-04', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
-            (7005, 25, 'הצעת חוק מקודדת ב-MajorIL בלבד', 1, 'פרטית', NULL, NULL, 1, NULL,
+            (7005, 25, 'הצעת חוק מקודדת ב-MajorIL בלבד', 1, 'פרטית', NULL, NULL, 141, NULL,
              NULL, NULL, '2026-02-05', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL);
 
         CREATE TABLE KNS_BillInitiator (
@@ -526,3 +543,86 @@ def test_committee_sessions_by_type_derivation_and_reconciliation(
         assert total_by_type == list_count == 3
     finally:
         con.close()
+
+
+def test_bills_list_carries_title_status_and_rung(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT bill_id, name, status_id, status_desc, status_rung, "
+        f"status_rung_order FROM read_parquet('{out}/bills_list.parquet') "
+        f"ORDER BY bill_id"
+    ).fetchall()
+    assert rows, "bills_list must not be empty on the fixture"
+    for bill_id, name, status_id, desc, rung, order in rows:
+        assert name, f"bill {bill_id} has no title"
+        assert desc, f"bill {bill_id} status {status_id} did not decode"
+        assert rung, f"bill {bill_id} status {status_id} has no rung"
+        assert order is not None
+
+
+def test_bills_list_is_one_row_per_bill(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Keyed on bill_id — not per initiator, which is what mk_bills is for."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    total, distinct = con.execute(
+        f"SELECT COUNT(*), COUNT(DISTINCT bill_id) "
+        f"FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchone()
+    assert total == distinct
+
+
+def test_bills_list_scoped_to_private_member_bills(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """A bills_list carrying government/committee bills would let a join
+    silently reintroduce the bills mk_bills deliberately excludes."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    sub_types = con.execute(
+        f"SELECT DISTINCT sub_type FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchall()
+    bill_ids = con.execute(
+        f"SELECT DISTINCT bill_id FROM read_parquet('{out}/bills_list.parquet') ORDER BY bill_id"
+    ).fetchall()
+    assert sub_types == [("פרטית",)]
+    # 7003 (ממשלתית) + 7004 (ועדה) excluded; 7001/7002/7005 (private) kept
+    assert bill_ids == [(7001,), (7002,), (7005,)]
+
+
+def test_bills_list_rung_order_matches_the_ladder(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    from data.snapshots.bill_status import RUNG_ORDER
+
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    for rung, order in con.execute(
+        f"SELECT DISTINCT status_rung, status_rung_order "
+        f"FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchall():
+        assert RUNG_ORDER.index(rung) == order
+
+
+def test_no_bill_status_falls_outside_the_ladder(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The ladder is hand-authored, so a future Knesset introducing an
+    unmapped status must break loudly rather than silently fall out of
+    every rung."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    unmapped = con.execute(
+        f"SELECT COUNT(*) FROM read_parquet('{out}/bills_list.parquet') "
+        f"WHERE status_rung IS NULL"
+    ).fetchone()[0]
+    assert unmapped == 0

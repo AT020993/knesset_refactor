@@ -29,6 +29,7 @@ from data.queries.packs.committees import COMMITTEES_QUERIES
 from data.queries.packs.mks import MK_QUERIES
 from data.queries.packs.parties import PARTIES_QUERIES
 from data.queries.packs.votes import VOTES_QUERIES
+from data.snapshots.bill_status import BILL_STATUS_RUNGS, RUNG_ORDER
 from data.snapshots.manifest import Manifest, SnapshotEntry, write_manifest
 
 log = logging.getLogger("data.snapshots.exporter")
@@ -63,6 +64,60 @@ LEFT JOIN UserCAPTaxonomy ubcap_tax ON ubcap.CAPMinorCode = ubcap_tax.MinorCode
 WHERE bi.PersonID IS NOT NULL
   AND b.SubTypeDesc = 'פרטית'
 ORDER BY bi.BillID, bi.Ordinal, bi.PersonID
+""".strip()
+
+
+def _bill_status_rung_case_sql(column: str) -> str:
+    """``CASE`` mapping a bill status id to its rung label.
+
+    Generated from ``BILL_STATUS_RUNGS`` (Task 1) so the ladder has exactly
+    one definition — the SQL below must never retype the status ids.
+    """
+    lines = ["    CASE"]
+    for rung, ids in BILL_STATUS_RUNGS.items():
+        id_list = ", ".join(str(i) for i in ids)
+        escaped = rung.replace("'", "''")
+        lines.append(f"        WHEN {column} IN ({id_list}) THEN '{escaped}'")
+    lines.append("        ELSE NULL")
+    lines.append("    END")
+    return "\n".join(lines)
+
+
+def _bill_status_rung_order_case_sql(column: str) -> str:
+    """``CASE`` mapping a bill status id to its rung's position in
+    ``RUNG_ORDER`` — lets the consumer sort by "furthest reading reached"
+    without re-deriving the ladder's order itself."""
+    lines = ["    CASE"]
+    for order, rung in enumerate(RUNG_ORDER):
+        id_list = ", ".join(str(i) for i in BILL_STATUS_RUNGS[rung])
+        lines.append(f"        WHEN {column} IN ({id_list}) THEN {order}")
+    lines.append("        ELSE NULL")
+    lines.append("    END")
+    return "\n".join(lines)
+
+
+# bills_list — titles + decoded status + reading-stage rung, keyed on
+# bill_id. Kept as its own snapshot rather than denormalised into
+# mk_bills: titles average 70 chars and mk_bills has 165k rows against 59k
+# distinct bills, so denormalising would repeat each title 2.8x (11.6 MB vs
+# 4.1 MB). The platform already carries bill_id and can join on it.
+_BILLS_LIST_SQL = f"""
+SELECT
+    b.BillID                        AS bill_id,
+    CAST(b.KnessetNum AS INTEGER)   AS knesset_num,
+    b.Name                          AS name,
+    b.SubTypeDesc                   AS sub_type,
+    CAST(b.StatusID AS INTEGER)     AS status_id,
+    s."Desc"                        AS status_desc,
+{_bill_status_rung_case_sql("b.StatusID")} AS status_rung,
+{_bill_status_rung_order_case_sql("b.StatusID")} AS status_rung_order
+FROM KNS_Bill b
+LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
+-- Scoped to private-member bills to match mk_bills, which is 'פרטית'-only by
+-- construction (see _MK_BILLS_SQL) — a bills_list carrying government/
+-- committee bills would let a join silently reintroduce them.
+WHERE b.SubTypeDesc = 'פרטית'
+ORDER BY b.BillID
 """.strip()
 
 _MK_QUESTIONS_SQL = """
@@ -252,6 +307,7 @@ ORDER BY committee_id, faction_name NULLS LAST, mk_name_he, mk_id, role_he
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("mk_summary", MK_QUERIES["mk_summary"]["sql"]),
     ("mk_bills", _MK_BILLS_SQL),
+    ("bills_list", _BILLS_LIST_SQL),
     ("mk_questions", _MK_QUESTIONS_SQL),
     ("mk_motions", _MK_MOTIONS_SQL),
     ("parties_list", PARTIES_QUERIES["party_list"]["sql"]),
