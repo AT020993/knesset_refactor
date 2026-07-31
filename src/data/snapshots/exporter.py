@@ -112,7 +112,16 @@ SELECT
 {_bill_status_rung_case_sql("b.StatusID")} AS status_rung,
 {_bill_status_rung_order_case_sql("b.StatusID")} AS status_rung_order
 FROM KNS_Bill b
-LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID
+-- StatusID happens to be globally unique across KNS_Status today (verified
+-- against production: 81 rows, 81 distinct ids), so this TypeDesc predicate
+-- changes no output right now. It is defensive, not redundant: StatusID is
+-- only *semantically* scoped to a TypeDesc family (bill/question/motion
+-- share the table), and nothing in the schema enforces that a future id
+-- can't collide across families. Without this, such a collision would
+-- silently attach a question/motion's status label to a bill. Do not
+-- delete this as a no-op — keep it even though no fixture can prove it
+-- fires today.
+LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID AND s.TypeDesc = 'הצעת חוק'
 -- Scoped to private-member bills to match mk_bills, which is 'פרטית'-only by
 -- construction (see _MK_BILLS_SQL) — a bills_list carrying government/
 -- committee bills would let a join silently reintroduce them.
