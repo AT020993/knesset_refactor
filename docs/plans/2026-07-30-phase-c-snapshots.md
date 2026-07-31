@@ -487,61 +487,71 @@ got one session, 2,627 got two."
 
 ## Task 6: Release v4.0.0
 
-- [ ] **Step 1: Full suite and lint**
+- [x] **Step 1: Full suite and lint**
+
+> **Corrected during execution.** The original step said `ruff check src tests` and `mypy src` must pass. Neither has ever passed on `main`: `src` carries **1,220 pre-existing ruff errors** and **36 mypy errors in 13 files**, and CI (`.github/workflows/ci.yml`) gates both on a narrow **"wave scope"** allowlist that does not include `src/data/snapshots`. Demanding a repo-wide clean would have blocked a release on unrelated legacy debt. The honest gate is the full suite plus lint on the code this phase touched, measured against `main` as the baseline.
 
 ```bash
-uv run pytest tests -q --ignore=tests/test_e2e.py
-uv run ruff check src tests
-uv run mypy src
+uv run pytest tests -q --ignore=tests/test_e2e.py          # 771 pass, exit 0
+uv run ruff check src/data/snapshots tests/test_snapshot_exporter.py tests/test_bill_status.py
+uv run mypy src                                            # compare the count to main
 ```
 
-All three must pass.
+Result: **771 tests pass**; ruff clean on the snapshot module; mypy **36 errors in 13 files on both `main` and the branch, none in `src/data/snapshots`** — Phase C added one source file and zero type errors.
+
+Note the exit-code trap: `pyproject.toml` sets `addopts = "-q --durations=10"`, which suppresses the "N passed" summary, and piping pytest through `tail` makes `$?` the *tail's* status. Redirect to a file and read `$?` directly.
 
 - [ ] **Step 2: Resolve the missing v3.0.0 tag**
 
 `pyproject.toml` says `3.0.0` but tags stop at `v2.0.0`. The consumer's `CLAUDE.md` cites `knesset_refactor@v3.0.0` as its contract, so that reference currently points at nothing. Tag the commit that shipped 3.0.0 retroactively, or note in the release why it was skipped — do not leave a dangling contract reference.
 
-- [ ] **Step 3: Bump and export**
+- [x] **Step 3: Bump and export**
 
-Set `version = "4.0.0"` in `pyproject.toml`. Then re-export:
+> **Corrected during execution, three ways.** (a) The count was wrong: it is **16 snapshots (13 existing + 3 new)**, not 17 — Task 4 *extended* `mk_questions`/`mk_motions` rather than adding snapshots, so four *changes* produce three new files. (b) The exporter flag is `--output-dir`, not `--output`. (c) **Do not export in place.** `data/snapshots` is read live by the running platform; if the Task 2 ladder guard trips on the full warehouse, an in-place run leaves a half-written live directory. Export to a candidate dir, verify, then swap — which Step 4 gives for free.
+
+Set `version = "4.0.0"` in `pyproject.toml` and commit. Back up the live directory, then let Step 4's `compare` produce the candidate export.
+
+Confirm the manifest lists **16** snapshots, that `mk_questions` and `mk_motions` carry `status_desc`, and check each new file against these verified figures: **`bills_list` 51,704** (the private-member subset of 59,015 total), `mk_committees` 1,595, `committee_bills` 13,398.
+
+Result: all three row counts matched exactly; manifest went 13 → 16 with `generated_at_utc` the only other changed field; `status_desc` decoded for 100% of rows in both extended snapshots; `status_rung` null for 0 of 51,704 bills.
+
+- [x] **Step 4: Run the regression check**
+
+> **Corrected during execution.** The original step ran the script bare and claimed "it compares against the previous export". It does neither: it requires an `action` argument, and **both** `baseline` and `compare` run the exporter with *current* code. Running `baseline` then `compare` now would export the same code twice and report BYTE-IDENTICAL — proving nothing. The baseline must come from **v3.0.0** code.
+
+The live `data/snapshots/` *is* a v3.0.0 artifact — launchd exported it at 12:30 from `main`. Verify the warehouse is older than that export (else the comparison confounds data drift with code change), then seed the baseline from it. Seed from the **manifest's snapshot keys**, not a `*.parquet` glob: `bill_classifications.parquet` lives in that directory and is not exporter output.
 
 ```bash
-uv run python -m data.snapshots.exporter --warehouse data/warehouse.duckdb --output data/snapshots
+stat -f "%Sm %N" -t "%Y-%m-%d %H:%M" data/warehouse.duckdb data/snapshots/manifest.json
+# warehouse older → seed /tmp/knesset_snapshot_baseline from the live dir, then:
+uv run python scripts/check_snapshot_regression.py compare
 ```
 
-Confirm the manifest now lists 17 snapshots (13 existing + 4 new), that `mk_questions` and `mk_motions` carry `status_desc`, and report each new file's row count against these verified figures: **`bills_list` 51,704** (the private-member subset of 59,015 total), `mk_committees` 1,595, `committee_bills` 13,398.
+**Expect exit 2, and read the table, not the exit code.** The script is a *dependency-upgrade* tool, so a deliberate shape change reads as red (the two extended snapshots trip `ROWS DIFFER`, and a changed `manifest.json` sets `any_row_diff` at line 178). The pass condition is: **3 × NEW FILE, 2 × ROWS DIFFER at identical row counts, 11 × BYTE-IDENTICAL** — which is exactly what it returned.
 
-- [ ] **Step 4: Run the regression check**
+- [x] **Step 5: Verify the consumer still runs**
 
-```bash
-uv run python scripts/check_snapshot_regression.py
-```
-
-It compares against the previous export. New snapshots will appear as additions; confirm no **existing** snapshot lost rows or columns unexpectedly. `mk_questions` and `mk_motions` should show a gained column and identical row counts.
-
-- [ ] **Step 5: Verify the consumer still runs**
-
-The platform reads this directory live. Rebuild and restart it, then confirm the pages still serve:
+> **Corrected during execution, twice.** (a) The hand-rolled sequence never restarts the **API** — only the site — so a broken snapshot read would have stayed cached behind a live FastAPI process. The project's own standing rule names `scripts/redeploy.sh`; `--skip-export` runs exactly the right steps (restart API → clear ISR cache → rebuild → restart site → verify) and skips only the re-export, which we did by hand above. (b) The five-page check does not exercise the only shape change. `mk_questions`/`mk_motions` gaining `status_desc` is the sole break vector, and issue #34 records that the UI blocks rendering them were *removed* — so all five pages can return 200 while nothing touches the changed data. Hit the API endpoints directly.
 
 ```bash
-cd ~/Projects/knesset-platform
-export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
-rm -rf apps/knesset_site/.next/cache
-corepack pnpm --filter knesset_site build && launchctl kickstart -k "gui/$(id -u)/com.knesset.site"
-for p in mk/4395 party/1096 coalition committee/4187 topic/1; do
-  printf "  /he/%-16s %s\n" "$p" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/he/$p)"
+cd ~/Projects/knesset-platform && ./scripts/redeploy.sh --skip-export
+for u in /v1/mks/4395/questions /v1/mks/4395/motions \
+         /v1/parties/1096/questions /v1/parties/1096/motions \
+         /v1/meta/weekly-activity /v1/meta/freshness /v1/coalition /v1/topics/1; do
+  printf "  %-38s %s\n" "$u" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$u")"
 done
 ```
 
-All must return 200. The platform does not read the new snapshots yet, but the two extended ones must not have broken it.
+Result: all 8 endpoints 200, all 11 site pages 200, `/v1/meta/freshness` advertising 16 snapshots. A static read backs this up — every query against the two changed snapshots uses an **explicit column list**, and the only two `SELECT *` are inner subqueries over `mk_summary` wrapped in explicit outer projections, so an added column cannot reach a Pydantic model.
 
-- [ ] **Step 6: Tag and push**
+- [x] **Step 6: Tag and push**
+
+> **Corrected during execution.** `git push origin main --tags` violates the standing rule that code ships via PR — this is a 10-commit branch. Also, `git add data/snapshots` is a no-op: `.gitignore` excludes `/data/*`, so the snapshots are **not tracked**; the release commit is the version bump alone, and the export is a filesystem artifact the consumer reads directly.
 
 ```bash
-git add pyproject.toml data/snapshots
-git commit -m "release: v4.0.0 — Phase C snapshots"
-git tag v4.0.0
-git push origin main --tags
+git commit pyproject.toml -m "release: v4.0.0 — Phase C snapshots"
+git push -u origin feat/phase-c-snapshots
+gh pr create --base main   # watch CI, merge on green, then tag v4.0.0 on the merge commit
 ```
 
 - [ ] **Step 7: Report what the consumer can now build**
