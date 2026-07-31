@@ -125,3 +125,20 @@ Recorded here so the upstream work is sized against the full downstream need:
 
 - **Protocol ingestion.** Would unlock literal MK quotes and committee attendance. Neither is in any of the 43 warehouse tables. Separate project.
 - **CAP coding gaps.** K21 has 5 of 557 bills coded, K22 has 38 of 1,423, K25 is missing ~1,970. `UserBillCoding` has the rows; the topic columns are blank. This is research work, not engineering, and no export changes it.
+
+---
+
+## Measured figures behind the `committee_bills` `knesset_num` choice
+
+Recorded here rather than frozen in a code comment, since they change on re-export.
+
+`knesset_num` reads from `KNS_Committee`, not `KNS_CommitteeSession`. Verified against the warehouse on 2026-07-30:
+
+| Check | Result |
+|---|---|
+| Grouping by the **committee's** term | **13,398** rows — matches the distinct (committee, bill) pair count |
+| Grouping by the **session's** term | **13,399** rows — one pair splits across two session terms |
+| Session rows whose term disagrees with their committee's | 83 (e.g. committee 25 is `KnessetNum` 16, one of its sessions is logged under 15) |
+| `CommitteeID`s carrying more than one `KnessetNum` | **0** — the committee's term is stable |
+
+The one-row-per-pair contract is what the choice protects. `committees_list` keys every `CommitteeID` to the same `KNS_Committee.KnessetNum`, so a consumer joining `committee_bills` to it on `(committee_id, knesset_num)` never hits an orphan.

@@ -424,26 +424,17 @@ ORDER BY wmc.mk_id, wmc.knesset_num, wmc.committee_name_he, wmc.role_he,
 # it put into THIS bill" — a bill discussed once and one discussed across nine
 # sessions look identical today. Join path: KNS_CmtSessionItem ->
 # KNS_CommitteeSession on CommitteeSessionID (which carries CommitteeID),
-# filtered to ItemTypeID = 2 (הצעת חוק). Verified in production: 40,284 rows
-# -> 13,398 distinct (committee, bill) pairs across 729 committees.
+# filtered to ItemTypeID = 2 (הצעת חוק).
 #
-# knesset_num is read from KNS_Committee (the committee's own canonical term),
-# NOT from KNS_CommitteeSession.KnessetNum. The session's own KnessetNum is
-# occasionally stale relative to its committee's KNS_Committee.KnessetNum
-# (verified in production: 83 session rows disagree with their committee's
-# canonical term — e.g. committee 25's KNS_Committee.KnessetNum is 16, but one
-# of its sessions is logged under 15), and one (committee, bill) pair actually
-# spans two different session KnessetNum values (15 and 16) for the same
-# committee. Grouping by the session's own KnessetNum would split that pair
-# into two rows — 13,399 total rows instead of the verified 13,398 distinct
-# pairs — breaking the "one row per (committee, bill) pair" contract this
-# snapshot makes. KNS_Committee.CommitteeID is 1:1 with KnessetNum (verified:
-# zero CommitteeIDs carry more than one KnessetNum in production), so keying
-# off the committee's own term is both stable (exactly one knesset_num per
-# committee_id, always) and consistent with committees_list, which keys every
-# CommitteeID to that same KNS_Committee.KnessetNum — a consumer joining
-# committee_bills to committees_list on (committee_id, knesset_num) will never
-# hit an orphan pair.
+# knesset_num comes from KNS_Committee (the committee's own term), NOT from
+# KNS_CommitteeSession.KnessetNum. Session terms are occasionally stale
+# relative to their committee's, and at least one (committee, bill) pair spans
+# two session terms — grouping by the session's term would split it and break
+# the one-row-per-pair contract this snapshot makes. The committee's term is
+# 1:1 with CommitteeID and is also what committees_list keys on, so a consumer
+# joining the two on (committee_id, knesset_num) never hits an orphan.
+# Measured figures behind this live in docs/phase-c-snapshot-scope.md; they are
+# re-export-dependent and deliberately not frozen here.
 _COMMITTEE_BILLS_SQL = """
 SELECT
     CAST(cs.CommitteeID AS BIGINT)         AS committee_id,
