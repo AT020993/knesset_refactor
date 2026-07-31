@@ -501,9 +501,11 @@ Result: **771 tests pass**; ruff clean on the snapshot module; mypy **36 errors 
 
 Note the exit-code trap: `pyproject.toml` sets `addopts = "-q --durations=10"`, which suppresses the "N passed" summary, and piping pytest through `tail` makes `$?` the *tail's* status. Redirect to a file and read `$?` directly.
 
-- [ ] **Step 2: Resolve the missing v3.0.0 tag**
+- [x] **Step 2: Resolve the missing v3.0.0 tag**
 
 `pyproject.toml` says `3.0.0` but tags stop at `v2.0.0`. The consumer's `CLAUDE.md` cites `knesset_refactor@v3.0.0` as its contract, so that reference currently points at nothing. Tag the commit that shipped 3.0.0 retroactively, or note in the release why it was skipped — do not leave a dangling contract reference.
+
+Resolved: it was an oversight. The 3.0.0 bump shipped inside feature commit `294d32c` rather than a dedicated release commit, so the tag step was simply missed. Tagged retroactively (annotated, explaining the gap) at **`0a50eda`** — the last commit that changed exporter behaviour while the version was 3.0.0, i.e. the code that produced the snapshots the platform actually consumed. The two later commits on `main` at 3.0.0 are Phase C planning docs and do not affect the exported artifact.
 
 - [x] **Step 3: Bump and export**
 
@@ -554,9 +556,20 @@ git push -u origin feat/phase-c-snapshots
 gh pr create --base main   # watch CI, merge on green, then tag v4.0.0 on the merge commit
 ```
 
-- [ ] **Step 7: Report what the consumer can now build**
+- [x] **Step 7: Report what the consumer can now build**
 
 Comment on `knesset-platform` issues #31 and #34 that the upstream export has landed, naming the new snapshot columns each needs.
+
+Done — with the status **distributions**, not just the column names, because both comments needed a design warning the column list alone would not have surfaced:
+
+- **#34**: only **3** of the 4 `KNS_Status` question statuses actually occur, and 97.0% are `נענתה`. **`השר סירב לענות` — the case the issue was built around — appears in zero of 42,757 rows.** A questions chart is therefore one bar plus two slivers, and any "answered vs refused" framing is unsupportable. Motions are the opposite: 11 statuses, top at 46%, genuinely worth charting, with a five-category sub-1% tail to group.
+- **#31**: `bills_list.name` is 100% populated (median 69 chars, K1–K25), so cell-level drill-down would render real titles rather than bare IDs — but `bills_list` is private-member only, so the join is safe only within that subset.
+
+## Release outcome
+
+Merged as `8fab3b8` (squash, all 5 CI checks green); **v4.0.0** tagged and pushed; `v3.0.0` tagged retroactively at `0a50eda`; `uv.lock` synced in `77d2ad1`. Consumer verified live on the new snapshots.
+
+**One gap left open, deliberately:** the unmapped-status guard runs against the 4-status test fixture, not the 29-status warehouse, so a future status would emit NULL `status_rung` silently. Task 2 Step 6 of this plan is what weakened the scope doc's "fail the export if not" to a fixture test. Filed as **#53** rather than widened mid-release.
 
 ---
 
