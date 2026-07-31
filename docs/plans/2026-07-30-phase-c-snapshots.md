@@ -15,7 +15,7 @@
 - **The ladder lives here, never in the consumer.** The platform must receive `status_rung` and `status_desc`, not a raw `status_id` to decode.
 - Every SQL constant goes in `src/data/snapshots/exporter.py` beside its siblings, following their style: named `_SNAKE_CASE_SQL`, `.strip()`-ed, with a comment explaining any non-obvious filter or join.
 - The `tiny_warehouse` fixture in `tests/test_snapshot_exporter.py` already creates `KNS_Bill`, `KNS_CmtSessionItem`, `KNS_CommitteeSession`, and `WebMkCommittee`. **Only `KNS_Status` must be added.**
-- Run tests with `uv run pytest tests -q` from the repo root.
+- Run tests with `uv run pytest tests -q --ignore=tests/test_e2e.py` from the repo root. **The `--ignore` is required and pre-existing:** `tests/test_e2e.py` is a Playwright suite for the Streamlit app, `playwright` is not in the default dev env, and it fails at *import* time — so the `e2e` marker declared in `pyproject.toml` cannot skip it and a bare `pytest tests` aborts collection on `main` too. It is unrelated to the exporter.
 - Do not regenerate `data/snapshots/*.parquet` until Task 6 — the platform reads that directory live via `KNESSET_SNAPSHOT_DIR`, and a half-finished export would break the running site.
 - Commit per task.
 
@@ -259,7 +259,7 @@ Build the rung mapping into the SQL as a `CASE` generated from `BILL_STATUS_RUNG
 
 - [ ] **Step 5: Run the tests**
 
-Run: `uv run pytest tests -q`
+Run: `uv run pytest tests -q --ignore=tests/test_e2e.py`
 Expected: PASS, including the pre-existing suite.
 
 - [ ] **Step 6: Guard against an unmapped status**
@@ -345,7 +345,7 @@ Run: `uv run pytest tests/test_snapshot_exporter.py -q -k mk_committees` → FAI
 
 - [ ] **Step 3: Run the tests, then commit**
 
-Run: `uv run pytest tests -q`
+Run: `uv run pytest tests -q --ignore=tests/test_e2e.py`
 
 ```bash
 git add src/data/snapshots/exporter.py tests/test_snapshot_exporter.py
@@ -404,7 +404,7 @@ I checked: **zero status ids are currently reused across `TypeDesc`**, so an uns
 
 - [ ] **Step 4: Run the tests, then commit**
 
-Run: `uv run pytest tests -q`
+Run: `uv run pytest tests -q --ignore=tests/test_e2e.py`
 
 ```bash
 git add src/data/snapshots/exporter.py tests/test_snapshot_exporter.py
@@ -472,7 +472,7 @@ Verified in production: 40,284 rows → 13,398 distinct (committee, bill) pairs 
 
 - [ ] **Step 3: Run the tests, then commit**
 
-Run: `uv run pytest tests -q`
+Run: `uv run pytest tests -q --ignore=tests/test_e2e.py`
 
 ```bash
 git add src/data/snapshots/exporter.py tests/test_snapshot_exporter.py
@@ -490,7 +490,7 @@ got one session, 2,627 got two."
 - [ ] **Step 1: Full suite and lint**
 
 ```bash
-uv run pytest tests -q
+uv run pytest tests -q --ignore=tests/test_e2e.py
 uv run ruff check src tests
 uv run mypy src
 ```
