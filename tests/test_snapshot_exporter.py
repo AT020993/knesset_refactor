@@ -519,6 +519,52 @@ def test_committee_members_resolve_id_and_drop_past_memberships(
         con.close()
 
 
+def test_mk_committees_exports_full_history(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """mk_committees is a straight WebMkCommittee projection — unlike
+    committee_members_by_faction it deliberately keeps PAST memberships too
+    (to_date set): an MK's profile needs their whole committee history, not
+    just current seats."""
+    out = tmp_path / "snapshots"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect()
+    try:
+        cols = [
+            c[0]
+            for c in con.execute(
+                f"DESCRIBE SELECT * FROM '{out / 'mk_committees.parquet'}'"
+            ).fetchall()
+        ]
+        assert cols == [
+            "mk_id",
+            "knesset_num",
+            "committee_name_he",
+            "role_he",
+            "from_date",
+            "to_date",
+        ]
+        rows = con.execute(
+            f"SELECT mk_id, knesset_num, committee_name_he, role_he, to_date "
+            f"FROM read_parquet('{out}/mk_committees.parquet')"
+        ).fetchall()
+        assert rows
+        for mk_id, kn, name, _role, _to_date in rows:
+            assert mk_id is not None and kn is not None
+            assert name, "a membership with no committee name is not useful"
+        # mk 2's membership ended in the fixture (to_date set) but must still
+        # be present — this is the one behaviour that distinguishes this
+        # snapshot from committee_members_by_faction, which drops it. A test
+        # that only checked non-null columns would pass identically whether
+        # or not that filter existed, so pin it explicitly.
+        mk_ids = {mk_id for mk_id, *_rest in rows}
+        assert mk_ids == {1, 2}
+        ended = [r for r in rows if r[4] is not None]
+        assert ended, "past memberships (to_date set) must be retained, not dropped"
+    finally:
+        con.close()
+
+
 def test_committee_sessions_by_type_derivation_and_reconciliation(
     tiny_warehouse: Path, tmp_path: Path
 ) -> None:
