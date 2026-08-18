@@ -117,6 +117,9 @@ SELECT
     CAST(b.KnessetNum AS INTEGER)   AS knesset_num,
     b.Name                          AS name,
     b.SubTypeDesc                   AS sub_type,
+    CAST(b.PrivateNumber AS BIGINT) AS private_number,
+    b.IsContinuationBill            AS is_continuation_bill,
+    fp.first_plenum_date            AS first_plenum_date,
     CAST(b.StatusID AS INTEGER)     AS status_id,
     s."Desc"                        AS status_desc,
 {_bill_status_rung_case_sql("b.StatusID")} AS status_rung,
@@ -132,6 +135,33 @@ FROM KNS_Bill b
 -- delete this as a no-op — keep it even though no fixture can prove it
 -- fires today.
 LEFT JOIN KNS_Status s ON b.StatusID = s.StatusID AND s.TypeDesc = 'הצעת חוק'
+-- Earliest plenum sitting at which the bill appeared — in practice its
+-- preliminary reading (דיון מוקדם).
+--
+-- 🔴 This is NOT the submission date, and must not be renamed to suggest it
+-- is. The warehouse has no submission date: KNS_Bill.PublicationDate is the
+-- official gazette date and lands AFTER passage (172 of 6,674 K25 private
+-- bills, median 366 days after this field), and KNS_BillHistoryInitiator is a
+-- removal log — it records people ceasing to be initiators (חדל להיות חבר
+-- כנסת, מינוי לתפקיד שר בממשלה), not joining.
+--
+-- What it is good for: dating a bill to a point inside the term, which
+-- PublicationDate cannot do at 2.6% coverage. Consumers attributing a bill to
+-- an MK's faction-at-the-time should use this and accept that submission
+-- preceded it — a bill switching factions between submission and preliminary
+-- reading is misattributed, which is still far better than attributing the
+-- whole term to wherever the MK ended up.
+--
+-- Validated: 99.2% coverage on K25 private bills, and all 172 bills that also
+-- have a PublicationDate have this date at or before it.
+LEFT JOIN (
+    SELECT p.ItemID AS BillID,
+           MIN(TRY_CAST(ps.StartDate AS TIMESTAMP)) AS first_plenum_date
+    FROM KNS_PlmSessionItem p
+    JOIN KNS_PlenumSession ps ON p.PlenumSessionID = ps.PlenumSessionID
+    WHERE p.ItemTypeDesc = 'הצעת חוק'
+    GROUP BY p.ItemID
+) fp ON b.BillID = fp.BillID
 -- Scoped to private-member bills to match mk_bills, which is 'פרטית'-only by
 -- construction (see _MK_BILLS_SQL) — a bills_list carrying government/
 -- committee bills would let a join silently reintroduce them.
