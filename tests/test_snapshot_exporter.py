@@ -1147,8 +1147,13 @@ def test_bills_list_flags_continuation_bills(
     out = tmp_path / "snap"
     export_all(tiny_warehouse, out)
     con = duckdb.connect(":memory:")
-    flags = con.execute(
-        f"SELECT DISTINCT is_continuation_bill "
-        f"FROM read_parquet('{out}/bills_list.parquet')"
+    rows = con.execute(
+        f"SELECT is_continuation_bill, COUNT(*) "
+        f"FROM read_parquet('{out}/bills_list.parquet') GROUP BY 1"
     ).fetchall()
-    assert flags == [(False,)]
+    # Never NULL. Upstream the column is NULL on 6,664 of 6,674 K25 private
+    # bills and TRUE on the other 10 — it is never FALSE — so a consumer
+    # writing `AND NOT is_continuation_bill` would silently drop every
+    # ordinary bill. The flag is COALESCEd to FALSE for that reason.
+    assert all(flag is not None for flag, _ in rows)
+    assert rows == [(False, 3)]  # the fixture holds three private-member bills
