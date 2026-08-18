@@ -463,8 +463,129 @@ ORDER BY committee_id, knesset_num, bill_id
 
 # (snapshot_name, SQL) tuples in stable order. Stable order is important
 # for reproducibility guarantees (byte-equivalent manifest on unchanged data).
+_MK_ROLES_SQL = """
+-- Executive office held by a person, with dates. One row per posting, so an
+-- MK who moved between ministries in one term has several.
+--
+-- ``GovMinistryName IS NOT NULL`` IS the executive predicate. It selects
+-- exactly nine PositionIDs — 31 vice-PM, 39/57 minister, 40/59 deputy
+-- minister, 45 PM, 50 deputy PM, 51 acting PM, 73 alternate PM — every one of
+-- which carries both a ministry and a DutyDesc, and nothing else in the table
+-- carries a ministry at all. This is preferred over a hardcoded PositionID
+-- list because the warehouse has no position codelist to check such a list
+-- against; the predicate is self-describing and cannot silently drift.
+--
+-- Why this exists: ministers and deputy ministers may not submit private
+-- bills, so a per-MK bill average is structurally depressed for whichever
+-- bloc is governing. Consumers need the DATES, not just the fact of office —
+-- 24 K25 members held a post for only 3.2% of the term (the outgoing
+-- government's ministers, who then sat in opposition), so a flat "ever held
+-- office" exclusion would be badly wrong.
+--
+-- ``is_current`` is deliberately not carried: ``finish_date IS NULL`` says
+-- the same thing and is what date arithmetic actually needs.
+SELECT
+    PersonID                                AS mk_id,
+    CAST(KnessetNum AS INTEGER)             AS knesset_num,
+    CAST(PositionID AS INTEGER)             AS position_id,
+    DutyDesc                                AS duty_desc,
+    CAST(GovMinistryID AS BIGINT)           AS ministry_id,
+    GovMinistryName                         AS ministry_name,
+    CAST(GovernmentNum AS INTEGER)          AS government_num,
+    StartDate                               AS start_date,
+    FinishDate                              AS finish_date
+FROM KNS_PersonToPosition
+WHERE GovMinistryName IS NOT NULL
+  AND KnessetNum IS NOT NULL
+ORDER BY PersonID, KnessetNum, StartDate
+"""
+
+
+_MK_FACTION_SPANS_SQL = """
+-- Dated faction membership per (MK, Knesset), as a NON-OVERLAPPING timeline.
+--
+-- ``mk_summary`` is last-faction-wins: it keeps one faction per MK per term,
+-- so an MK who crossed the floor has their whole term attributed to wherever
+-- they ended up. That makes any time-aware question unanswerable — most
+-- sharply for coalition/opposition cohesion, where it silently scored an
+-- MK's pre-switch votes against the bloc they had not yet joined.
+--
+-- The raw rows cannot be used directly. They duplicate (the same faction
+-- appears two or three times per MK with different date ranges) and they
+-- overlap (a superseded faction and its successor both start on the day of
+-- the split). A consumer joining votes to raw spans would count one MK twice
+-- in a single tally. Two passes fix that:
+--
+--   collapsed — one row per (MK, Knesset, faction). An open row anywhere in
+--               the group wins, because a NULL FinishDate means still serving
+--               and MAX() would otherwise prefer a stale closed duplicate.
+--   trimmed   — each span ends where the next one begins, so the timeline is
+--               a partition rather than a set of intervals. Spans left with
+--               zero or negative length are same-day supersessions and are
+--               dropped: the successor already covers that instant.
+--
+-- The result is guaranteed at most one faction per MK per instant.
+WITH raw AS (
+    SELECT
+        PersonID,
+        CAST(KnessetNum AS INTEGER)             AS KnessetNum,
+        FactionID,
+        FactionName,
+        TRY_CAST(StartDate AS TIMESTAMP)        AS sd,
+        TRY_CAST(FinishDate AS TIMESTAMP)       AS fd
+    FROM KNS_PersonToPosition
+    WHERE FactionID IS NOT NULL
+      AND KnessetNum IS NOT NULL
+      AND StartDate IS NOT NULL
+),
+collapsed AS (
+    SELECT
+        PersonID,
+        KnessetNum,
+        FactionID,
+        ANY_VALUE(FactionName)                  AS FactionName,
+        MIN(sd)                                 AS sd,
+        CASE
+            WHEN COUNT(*) FILTER (WHERE fd IS NULL) > 0 THEN NULL
+            ELSE MAX(fd)
+        END                                     AS fd
+    FROM raw
+    GROUP BY PersonID, KnessetNum, FactionID
+),
+seq AS (
+    SELECT
+        *,
+        LEAD(sd) OVER (
+            PARTITION BY PersonID, KnessetNum
+            ORDER BY sd, FactionID
+        )                                       AS next_sd
+    FROM collapsed
+),
+trimmed AS (
+    SELECT
+        PersonID                                AS mk_id,
+        KnessetNum                              AS knesset_num,
+        CAST(FactionID AS BIGINT)               AS faction_id,
+        FactionName                             AS faction_name,
+        sd                                      AS start_date,
+        CASE
+            WHEN next_sd IS NOT NULL AND (fd IS NULL OR next_sd < fd)
+            THEN next_sd
+            ELSE fd
+        END                                     AS finish_date
+    FROM seq
+)
+SELECT *
+FROM trimmed
+WHERE finish_date IS NULL OR finish_date > start_date
+ORDER BY mk_id, knesset_num, start_date
+"""
+
+
 SNAPSHOTS: tuple[tuple[str, str], ...] = (
     ("mk_summary", MK_QUERIES["mk_summary"]["sql"]),
+    ("mk_roles", _MK_ROLES_SQL),
+    ("mk_faction_spans", _MK_FACTION_SPANS_SQL),
     ("mk_bills", _MK_BILLS_SQL),
     ("bills_list", _BILLS_LIST_SQL),
     ("mk_questions", _MK_QUESTIONS_SQL),

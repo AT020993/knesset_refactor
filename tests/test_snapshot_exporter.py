@@ -42,8 +42,20 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             FactionID DOUBLE, FactionName VARCHAR, GovernmentNum DOUBLE
         );
         INSERT INTO KNS_PersonToPosition VALUES
+            -- MK 1 stays put all term.
             (1, 1, 10, 26.0, '2025-11-01', NULL, NULL, NULL, 'חברת כנסת', 1001.0, 'מפלגה א', NULL),
-            (2, 2, 10, 26.0, '2025-11-01', NULL, NULL, NULL, 'חבר כנסת',  1002.0, 'מפלגה ב', NULL);
+            -- MK 2 crosses the floor mid-term. The rows are deliberately as
+            -- messy as the real warehouse: the first faction is DUPLICATED
+            -- with a different range, and the successor's row starts on the
+            -- same day the predecessor ends. mk_faction_spans has to collapse
+            -- and trim these into a non-overlapping timeline.
+            (2, 2, 10, 26.0, '2025-11-01', '2026-03-01', NULL, NULL, 'חבר כנסת', 1002.0, 'מפלגה ב', NULL),
+            (3, 2, 10, 26.0, '2025-12-01', '2026-03-01', NULL, NULL, 'חבר כנסת', 1002.0, 'מפלגה ב', NULL),
+            (4, 2, 10, 26.0, '2026-03-01', NULL, NULL, NULL, 'חבר כנסת', 1001.0, 'מפלגה א', NULL),
+            -- MK 1 also holds an executive post. Faction-seat rows carry no
+            -- DutyDesc and executive rows carry no FactionID — the disjointness
+            -- that made mk_summary.current_role permanently NULL.
+            (5, 1, 39, 26.0, '2025-11-15', NULL, 7.0, 'משרד האוצר', 'שרת האוצר', NULL, NULL, 37.0);
 
         CREATE TABLE KNS_Faction (
             FactionID BIGINT, Name VARCHAR, KnessetNum BIGINT,
@@ -907,3 +919,126 @@ def test_question_and_motion_status_decode(
         assert rows, f"{pack} fixture must have at least one status"
         for status_id, desc in rows:
             assert desc, f"{pack} status {status_id} did not decode"
+
+
+# ---- mk_roles / mk_faction_spans -------------------------------------------
+
+
+def test_mk_roles_captures_executive_office_with_dates(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The executive roster the per-MK bill average needs.
+
+    Ministers and deputy ministers may not submit private bills, so a bloc's
+    per-MK average is structurally depressed while it governs. Correcting for
+    that needs the DATES, not just the fact of office.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    rows = con.execute(
+        f"SELECT mk_id, position_id, duty_desc, ministry_name, government_num, "
+        f"start_date, finish_date FROM read_parquet('{out}/mk_roles.parquet')"
+    ).fetchall()
+    assert rows == [(1, 39, "שרת האוצר", "משרד האוצר", 37, "2025-11-15", None)]
+
+
+def test_mk_roles_excludes_plain_faction_seats(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Sitting as an MK is not executive office.
+
+    Faction-seat rows and executive rows are disjoint in KNS_PersonToPosition;
+    the ministry predicate must not sweep the former in.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    mk_ids = con.execute(
+        f"SELECT DISTINCT mk_id FROM read_parquet('{out}/mk_roles.parquet')"
+    ).fetchall()
+    assert mk_ids == [(1,)]  # MK 2 holds only a faction seat
+
+
+def test_mk_summary_current_role_is_populated(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Regression: the column was NULL on every row in production.
+
+    It was mapped from ``lpt.DutyDesc`` while ``LatestPerTerm`` filtered
+    ``FactionID IS NOT NULL`` — and DutyDesc is non-null on exactly zero of
+    those rows, so the filter made the column unfillable by construction.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    roles = dict(
+        con.execute(
+            f"SELECT mk_id, current_role FROM read_parquet('{out}/mk_summary.parquet')"
+        ).fetchall()
+    )
+    assert roles[1] == "שרת האוצר"
+    assert roles[2] is None  # never held office
+
+
+def test_faction_spans_are_never_overlapping(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The invariant the whole snapshot exists to provide.
+
+    Raw rows duplicate and overlap — a superseded faction and its successor
+    both carry the day of the split. A consumer joining votes to overlapping
+    spans counts one MK twice inside a single tally, which silently corrupts
+    any per-bloc aggregate.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    overlaps = con.execute(
+        f"""
+        WITH s AS (SELECT * FROM read_parquet('{out}/mk_faction_spans.parquet'))
+        SELECT COUNT(*) FROM s a JOIN s b
+          ON a.mk_id = b.mk_id AND a.knesset_num = b.knesset_num
+         AND a.faction_id <> b.faction_id
+        WHERE a.start_date < COALESCE(b.finish_date, TIMESTAMP '2999-01-01')
+          AND b.start_date < COALESCE(a.finish_date, TIMESTAMP '2999-01-01')
+        """
+    ).fetchone()
+    assert overlaps == (0,)
+
+
+def test_faction_spans_collapse_duplicates_and_trim_at_the_switch(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """MK 2's three raw rows become two clean, adjacent spans.
+
+    The duplicate row (same faction, later start) must not produce a second
+    span, and the outgoing span must end exactly where the incoming one
+    begins — not on its own stale FinishDate.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    spans = con.execute(
+        f"SELECT faction_id, start_date, finish_date "
+        f"FROM read_parquet('{out}/mk_faction_spans.parquet') "
+        f"WHERE mk_id = 2 ORDER BY start_date"
+    ).fetchall()
+    assert len(spans) == 2
+    assert spans[0][0] == 1002 and spans[1][0] == 1001
+    assert spans[0][2] == spans[1][1]  # contiguous, no gap and no overlap
+    assert spans[1][2] is None  # still serving
+
+
+def test_faction_spans_keep_a_stable_mk_to_one_span(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """An MK who never switches gets exactly one open span."""
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    spans = con.execute(
+        f"SELECT faction_id, finish_date FROM "
+        f"read_parquet('{out}/mk_faction_spans.parquet') WHERE mk_id = 1"
+    ).fetchall()
+    assert spans == [(1001, None)]
