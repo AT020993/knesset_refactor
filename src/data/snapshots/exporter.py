@@ -118,7 +118,13 @@ SELECT
     b.Name                          AS name,
     b.SubTypeDesc                   AS sub_type,
     CAST(b.PrivateNumber AS BIGINT) AS private_number,
-    b.IsContinuationBill            AS is_continuation_bill,
+    -- COALESCE, not the raw column: KNS_Bill.IsContinuationBill is NULL on
+    -- 6,664 of 6,674 K25 private bills and TRUE on the other 10 — it is never
+    -- FALSE. A consumer writing the obvious `AND NOT is_continuation_bill`
+    -- gets NULL, which is not TRUE, so every ordinary bill silently drops out
+    -- of their filter. That is a footgun this snapshot should not ship: the
+    -- flag answers a yes/no question and should be yes or no.
+    COALESCE(b.IsContinuationBill, FALSE) AS is_continuation_bill,
     fp.first_plenum_date            AS first_plenum_date,
     CAST(b.StatusID AS INTEGER)     AS status_id,
     s."Desc"                        AS status_desc,
