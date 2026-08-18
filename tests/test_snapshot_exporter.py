@@ -145,6 +145,28 @@ def tiny_warehouse(tmp_path: Path) -> Path:
             -- NULL. cap_code must fall back to MajorIL so their topic data shows.
             (7005, 21, 2101, NULL, NULL, 0, 0, 'k25-il-only', NULL);
 
+        CREATE TABLE KNS_PlenumSession (
+            PlenumSessionID BIGINT, Number DOUBLE, KnessetNum BIGINT, Name VARCHAR,
+            StartDate VARCHAR, FinishDate VARCHAR, IsSpecialMeeting BOOLEAN,
+            LastUpdatedDate VARCHAR
+        );
+        INSERT INTO KNS_PlenumSession VALUES
+            (900, 1, 26, 'ישיבה ראשונה', '2026-01-10T16:00:00', NULL, FALSE, NULL),
+            (901, 2, 26, 'ישיבה שנייה',  '2026-01-24T16:00:00', NULL, FALSE, NULL);
+
+        CREATE TABLE KNS_PlmSessionItem (
+            plmPlenumSessionID BIGINT, ItemID BIGINT, PlenumSessionID BIGINT,
+            ItemTypeID BIGINT, ItemTypeDesc VARCHAR, Ordinal VARCHAR, Name VARCHAR,
+            StatusID DOUBLE, IsDiscussion BIGINT, LastUpdatedDate VARCHAR
+        );
+        INSERT INTO KNS_PlmSessionItem VALUES
+            -- 7001 appears twice; the EARLIER sitting must win.
+            (1, 7001, 901, 1, 'הצעת חוק', '1', NULL, NULL, 1, NULL),
+            (2, 7001, 900, 1, 'הצעת חוק', '1', NULL, NULL, 1, NULL),
+            -- A non-bill item on the same sitting must not leak in.
+            (3, 7002, 900, 2, 'שאילתה',   '2', NULL, NULL, 1, NULL);
+        -- 7002 therefore has NO bill-typed plenum item and must come out NULL.
+
         CREATE TABLE KNS_Status (
             StatusID BIGINT, "Desc" VARCHAR, TypeID BIGINT, TypeDesc VARCHAR,
             OrderTransition BIGINT, IsActive BOOLEAN, LastUpdatedDate VARCHAR
@@ -173,9 +195,9 @@ def tiny_warehouse(tmp_path: Path) -> Path:
         -- committee bills, excluded from bills_list by its SubTypeDesc filter,
         -- so their status never reaches the ladder-guard test.
         INSERT INTO KNS_Bill VALUES
-            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', NULL, NULL, 118, NULL,
+            (7001, 26, 'הצעת חוק לדוגמה', 1, 'פרטית', 4101, NULL, 118, NULL,
              NULL, NULL, '2026-02-01', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
-            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', NULL, NULL, 104, NULL,
+            (7002, 26, 'הצעת חוק עם קידוד CAP', 1, 'פרטית', 4102, NULL, 104, NULL,
              NULL, NULL, '2026-02-02', NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL),
             -- Government + committee bills carry MK initiator rows too (a minister
             -- who is an MK signs the government bill), but they are NOT the MK's own
@@ -1042,3 +1064,91 @@ def test_faction_spans_keep_a_stable_mk_to_one_span(
         f"read_parquet('{out}/mk_faction_spans.parquet') WHERE mk_id = 1"
     ).fetchall()
     assert spans == [(1001, None)]
+
+
+# ---- bill dating proxies ---------------------------------------------------
+
+
+def test_bills_list_dates_a_bill_by_its_earliest_plenum_sitting(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The date that makes bloc attribution possible at all.
+
+    `PublicationDate` — which `mk_bills.submit_date` carries — is the official
+    gazette date and exists for 2.6% of K25 private bills, so a consumer
+    joining bills to dated faction spans would discard 97% of them. The first
+    plenum sitting covers 99.2%.
+
+    7001 appears at two sittings; the earlier must win.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    rows = dict(
+        con.execute(
+            f"SELECT bill_id, first_plenum_date "
+            f"FROM read_parquet('{out}/bills_list.parquet')"
+        ).fetchall()
+    )
+    assert str(rows[7001]) == "2026-01-10 16:00:00"
+
+
+def test_bills_list_first_plenum_ignores_non_bill_items(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """`KNS_PlmSessionItem` mixes bills, questions and motions on one sitting.
+
+    7002's only plenum row is a שאילתה, so it must date to NULL rather than
+    borrow the sitting a different item type happened to share.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    rows = dict(
+        con.execute(
+            f"SELECT bill_id, first_plenum_date "
+            f"FROM read_parquet('{out}/bills_list.parquet')"
+        ).fetchall()
+    )
+    assert rows[7002] is None
+
+
+def test_bills_list_carries_the_private_number(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """The פ/ number, assigned at submission and 100% populated.
+
+    It is not a date, but it is the only field that exists for every bill and
+    orders by submission — it correlates 0.93 with the plenum date on real
+    K25 data, so it is the fallback when a bill has no sitting.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    rows = dict(
+        con.execute(
+            f"SELECT bill_id, private_number "
+            f"FROM read_parquet('{out}/bills_list.parquet')"
+        ).fetchall()
+    )
+    assert rows[7001] == 4101
+    assert rows[7002] == 4102
+
+
+def test_bills_list_flags_continuation_bills(
+    tiny_warehouse: Path, tmp_path: Path
+) -> None:
+    """Continuation bills date BEFORE their own Knesset convened.
+
+    All ten K25 private bills whose first sitting predates 2022-11-15 are
+    `IsContinuationBill`, carried over under דין רציפות. Without the flag a
+    consumer filtering "dates inside the term" would silently drop them.
+    """
+    out = tmp_path / "snap"
+    export_all(tiny_warehouse, out)
+    con = duckdb.connect(":memory:")
+    flags = con.execute(
+        f"SELECT DISTINCT is_continuation_bill "
+        f"FROM read_parquet('{out}/bills_list.parquet')"
+    ).fetchall()
+    assert flags == [(False,)]
