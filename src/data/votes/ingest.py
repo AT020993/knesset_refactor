@@ -135,6 +135,21 @@ def _parse_vote(
         "total_against": totals["against"],
         "total_abstain": totals["abstain"],
         "total_present": totals["present"],
+        # The plenum's decision, verbatim: "לקבל בקריאה שנייה",
+        # "להעביר את הצעת החוק לוועדה להכנה לקריאה ראשונה", and so on. This is
+        # the only field that separates two votes on the same bill in the same
+        # sitting — 46700 and 46699 are a second and a third reading, identical
+        # in every other column including the timestamp.
+        #
+        # Stored verbatim and never parsed into a stage ordinal. `status_rung_order`
+        # upstream is the scar for that: a hand-authored ladder that reads like a
+        # progress score and is not one. The plenum already wrote the sentence;
+        # the site shows the sentence.
+        #
+        # Null for חשאית (secret) votes — 8 of 7,574 — which is the API's own
+        # behaviour, verified per vote type before the backfill ran, not a
+        # fetch failure.
+        "decision": vh0.get("Decision"),
     }
     return header_row, mk_rows, unresolved, unknown
 
@@ -221,7 +236,13 @@ def _append(con: duckdb.DuckDBPyConnection, table: str, df_new: pd.DataFrame) ->
     ).fetchone()
     con.register("df_new", df_new)
     if exists:
-        con.execute(f'INSERT INTO "{table}" SELECT * FROM df_new')
+        # Name the columns rather than `SELECT *`: a positional insert aligns
+        # the DataFrame's column order against the table's, so adding a key
+        # anywhere but last in the row dict would silently shift every value
+        # one column over. Naming them makes order irrelevant and turns a
+        # missing column into an error instead of corrupt data.
+        cols = ", ".join(f'"{c}"' for c in df_new.columns)
+        con.execute(f'INSERT INTO "{table}" ({cols}) SELECT {cols} FROM df_new')
     else:
         con.execute(f'CREATE TABLE "{table}" AS SELECT * FROM df_new')
     con.unregister("df_new")
